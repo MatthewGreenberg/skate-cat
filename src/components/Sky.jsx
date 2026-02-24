@@ -2,173 +2,154 @@ import { useRef, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
-const skyVertexShader = /* glsl */ `
-  varying vec3 vWorldPosition;
-  void main() {
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    vWorldPosition = worldPos.xyz;
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
-  }
-`
+function makeGradientTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 512
+  const ctx = canvas.getContext('2d')
+  const g = ctx.createLinearGradient(0, 0, 0, 512)
+  // 0 = zenith, 0.5 = horizon, 1 = nadir
+  g.addColorStop(0, '#0f1e50')
+  g.addColorStop(0.2, '#1e3a78')
+  g.addColorStop(0.35, '#4a78b4')
+  g.addColorStop(0.44, '#88b4d8')
+  g.addColorStop(0.48, '#c8a87a')
+  g.addColorStop(0.5, '#e8926a')
+  g.addColorStop(0.53, '#f0b868')
+  g.addColorStop(0.58, '#f0d898')
+  g.addColorStop(0.7, '#d4c8b0')
+  g.addColorStop(1, '#a09880')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 1, 512)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.mapping = THREE.EquirectangularReflectionMapping
+  return tex
+}
 
-const skyFragmentShader = /* glsl */ `
-  uniform float uTime;
-  varying vec3 vWorldPosition;
+function CartoonCloud({ position, scale = 1 }) {
+  return (
+    <group position={position} scale={scale}>
+      <mesh>
+        <sphereGeometry args={[1, 12, 12]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+      <mesh position={[1.1, 0.15, 0]}>
+        <sphereGeometry args={[0.75, 12, 12]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+      <mesh position={[-1.0, 0.1, 0]}>
+        <sphereGeometry args={[0.8, 12, 12]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+      <mesh position={[0.5, 0.5, 0]}>
+        <sphereGeometry args={[0.7, 12, 12]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+      <mesh position={[-0.4, 0.45, 0.1]}>
+        <sphereGeometry args={[0.65, 12, 12]} />
+        <meshBasicMaterial color="#fff8f0" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, -0.2, 0.3]}>
+        <sphereGeometry args={[0.85, 12, 12]} />
+        <meshBasicMaterial color="#f8f4ff" toneMapped={false} />
+      </mesh>
+    </group>
+  )
+}
 
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-  }
+function Sun({ position }) {
+  return (
+    <group position={position}>
+      <mesh>
+        <sphereGeometry args={[2, 16, 16]} />
+        <meshBasicMaterial color="#fffbe6" toneMapped={false} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[4.5, 16, 16]} />
+        <meshBasicMaterial color="#ffe880" transparent opacity={0.22} toneMapped={false} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[9, 16, 16]} />
+        <meshBasicMaterial color="#ffd060" transparent opacity={0.08} toneMapped={false} />
+      </mesh>
+    </group>
+  )
+}
 
-  float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
+function Mountains() {
+  const geo = useMemo(() => {
+    const segments = 120
+    const radius = 160
+    const positions = []
+    const colors = []
+    const col = new THREE.Color('#6a5a88')
 
-  float fbm(vec2 p) {
-    float value = 0.0;
-    float amp = 0.5;
-    for (int i = 0; i < 5; i++) {
-      value += amp * noise(p);
-      p *= 2.0;
-      amp *= 0.5;
-    }
-    return value;
-  }
+    for (let i = 0; i < segments; i++) {
+      const a0 = (i / segments) * Math.PI * 2
+      const a1 = ((i + 1) / segments) * Math.PI * 2
+      const x0 = Math.cos(a0) * radius
+      const z0 = Math.sin(a0) * radius
+      const x1 = Math.cos(a1) * radius
+      const z1 = Math.sin(a1) * radius
+      const h = 1.5
+        + Math.sin(i * 0.4) * 1.2
+        + Math.sin(i * 0.9 + 1.0) * 0.8
+        + Math.cos(i * 0.15) * 1.5
 
-  float mountainLayer(vec2 p, float scale, float height, float sharpness) {
-    float n = fbm(p * scale);
-    n = n * height;
-    return n;
-  }
+      positions.push(x0, -1, z0, x1, -1, z1, (x0 + x1) / 2, h, (z0 + z1) / 2)
 
-  void main() {
-    vec3 dir = normalize(vWorldPosition);
-    float h = dir.y;
-
-    // --- Sky gradient ---
-    vec3 zenith   = vec3(0.18, 0.32, 0.72);
-    vec3 midHigh  = vec3(0.35, 0.55, 0.88);
-    vec3 midLow   = vec3(0.65, 0.72, 0.90);
-    vec3 horizonA = vec3(0.95, 0.75, 0.55);
-    vec3 horizonB = vec3(1.0, 0.85, 0.60);
-
-    vec3 sky;
-    if (h > 0.5) {
-      sky = mix(midHigh, zenith, smoothstep(0.5, 1.0, h));
-    } else if (h > 0.15) {
-      sky = mix(midLow, midHigh, smoothstep(0.15, 0.5, h));
-    } else if (h > 0.0) {
-      sky = mix(horizonA, midLow, smoothstep(0.0, 0.15, h));
-    } else {
-      sky = mix(horizonB, horizonA, smoothstep(-0.05, 0.0, h));
-    }
-
-    // --- Sun ---
-    vec3 sunDir = normalize(vec3(-0.3, 0.28, -1.0));
-    float sunDot = dot(dir, sunDir);
-    float sunDisc = smoothstep(0.9975, 0.999, sunDot);
-    float sunGlow = pow(max(sunDot, 0.0), 48.0) * 0.5;
-    float sunHalo = pow(max(sunDot, 0.0), 8.0) * 0.2;
-    float sunScatter = pow(max(sunDot, 0.0), 3.0) * 0.08;
-
-    sky += vec3(1.0, 0.98, 0.92) * sunDisc * 2.0;
-    sky += vec3(1.0, 0.85, 0.5) * sunGlow;
-    sky += vec3(1.0, 0.7, 0.4) * sunHalo;
-    sky += vec3(1.0, 0.6, 0.3) * sunScatter;
-
-    // --- Clouds ---
-    if (h > 0.0) {
-      vec2 cloudUV = dir.xz / (h + 0.05) * 1.5;
-      float drift = uTime * 0.015;
-
-      float cloud1 = fbm(cloudUV * 1.0 + vec2(drift, drift * 0.3));
-      cloud1 = smoothstep(0.42, 0.72, cloud1);
-
-      float cloud2 = fbm(cloudUV * 0.6 + vec2(drift * 0.7 + 10.0, drift * 0.2 + 5.0));
-      cloud2 = smoothstep(0.45, 0.75, cloud2);
-
-      float cloud = max(cloud1, cloud2 * 0.7);
-
-      float cloudFade = smoothstep(0.0, 0.12, h) * smoothstep(0.7, 0.35, h);
-      cloud *= cloudFade;
-
-      float cloudSunLight = pow(max(sunDot, 0.0), 4.0) * 0.3;
-      vec3 cloudLit   = vec3(1.0, 0.97, 0.93) + cloudSunLight;
-      vec3 cloudShade = vec3(0.65, 0.60, 0.72);
-      float detail = fbm(cloudUV * 3.0 + drift * 0.5);
-      vec3 cloudColor = mix(cloudShade, cloudLit, smoothstep(0.3, 0.7, detail));
-
-      sky = mix(sky, cloudColor, cloud * 0.85);
+      const shade = 0.85 + Math.sin(i * 0.3) * 0.15
+      for (let j = 0; j < 3; j++) {
+        colors.push(col.r * shade, col.g * shade, col.b * shade)
+      }
     }
 
-    // --- Mountains (3 layered ridges) ---
-    float angle = atan(dir.x, dir.z);
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+    return g
+  }, [])
 
-    float m1 = mountainLayer(vec2(angle, 0.0), 3.0, 0.10, 1.0);
-    float m2 = mountainLayer(vec2(angle + 5.0, 1.0), 5.0, 0.07, 1.0);
-    float m3 = mountainLayer(vec2(angle + 10.0, 2.0), 4.0, 0.05, 1.0);
-
-    vec3 mtnFar    = vec3(0.45, 0.40, 0.60);
-    vec3 mtnMid    = vec3(0.35, 0.32, 0.52);
-    vec3 mtnNear   = vec3(0.25, 0.25, 0.42);
-
-    // Apply atmospheric haze to far mountains
-    float sunInfluence = pow(max(dot(normalize(vec3(dir.x, 0.0, dir.z)), normalize(vec3(sunDir.x, 0.0, sunDir.z))), 0.0), 3.0);
-    mtnFar  = mix(mtnFar,  vec3(0.7, 0.55, 0.55), sunInfluence * 0.4);
-    mtnMid  = mix(mtnMid,  vec3(0.6, 0.45, 0.50), sunInfluence * 0.3);
-    mtnNear = mix(mtnNear, vec3(0.5, 0.35, 0.45), sunInfluence * 0.2);
-
-    if (h < m1 + 0.02) {
-      float blend = smoothstep(m1 - 0.005, m1 + 0.02, h);
-      sky = mix(mix(mtnFar, sky, 0.3), sky, blend);
-    }
-    if (h < m2 + 0.01) {
-      float blend = smoothstep(m2 - 0.005, m2 + 0.01, h);
-      sky = mix(mix(mtnMid, sky, 0.15), sky, blend);
-    }
-    if (h < m3 + 0.005) {
-      float blend = smoothstep(m3 - 0.005, m3 + 0.005, h);
-      sky = mix(mtnNear, sky, blend);
-    }
-
-    gl_FragColor = vec4(sky, 1.0);
-  }
-`
+  return (
+    <mesh geometry={geo}>
+      <meshBasicMaterial vertexColors side={THREE.DoubleSide} />
+    </mesh>
+  )
+}
 
 export default function Sky() {
-  const meshRef = useRef()
   const { scene } = useThree()
+  const cloudsRef = useRef()
 
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-  }), [])
-
-  const material = useMemo(() => {
-    return new THREE.ShaderMaterial({
-      uniforms,
-      vertexShader: skyVertexShader,
-      fragmentShader: skyFragmentShader,
-      side: THREE.BackSide,
-      depthWrite: false,
-    })
-  }, [uniforms])
+  useMemo(() => {
+    const tex = makeGradientTexture()
+    scene.background = tex
+    return () => tex.dispose()
+  }, [scene])
 
   useFrame((_, delta) => {
-    uniforms.uTime.value += delta
-    if (meshRef.current) {
-      meshRef.current.position.copy(scene.getObjectByProperty('isCamera', true).position)
+    if (cloudsRef.current) {
+      cloudsRef.current.children.forEach((cloud) => {
+        cloud.position.x += delta * 0.15
+        if (cloud.position.x > 60) cloud.position.x = -60
+      })
     }
   })
 
   return (
-    <mesh ref={meshRef} material={material} renderOrder={-1}>
-      <sphereGeometry args={[500, 32, 32]} />
-    </mesh>
+    <>
+      <Sun position={[-12, 5, -20]} />
+      <Mountains />
+      <group ref={cloudsRef}>
+        <CartoonCloud position={[-8, 5, -25]} scale={1.5} />
+        <CartoonCloud position={[5, 6, -35]} scale={1.8} />
+        <CartoonCloud position={[-20, 4.5, -20]} scale={1.2} />
+        <CartoonCloud position={[14, 5.5, -42]} scale={1.7} />
+        <CartoonCloud position={[-28, 6, -30]} scale={1.4} />
+        <CartoonCloud position={[8, 7, -50]} scale={2.0} />
+        <CartoonCloud position={[-14, 5.5, -40]} scale={1.6} />
+        <CartoonCloud position={[20, 4, -28]} scale={1.3} />
+      </group>
+    </>
   )
 }
