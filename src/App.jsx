@@ -16,8 +16,9 @@ export default function App() {
     >
       <CameraRig />
       <Sky />
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[5, 10, 5]} intensity={1} />
+      <ambientLight intensity={0.7} />
+      <directionalLight position={[5, 10, 5]} intensity={1.2} />
+      <hemisphereLight args={['#87CEEB', '#7EC850', 0.4]} />
       <Ground />
       <SkateCat trailTargetRef={trailTarget} />
       <MeshTrail targetRef={trailTarget} />
