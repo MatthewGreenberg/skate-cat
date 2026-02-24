@@ -5,6 +5,7 @@ import Ground from './components/Ground'
 import SkateCat from './components/SkateCat'
 import MeshTrail from './components/MeshTrail'
 import CameraRig from './components/CameraRig'
+import KickflipSparks from './components/KickflipSparks'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
       <Ground />
       <SkateCat trailTargetRef={trailTarget} />
       <MeshTrail targetRef={trailTarget} />
+      <KickflipSparks />
       <EffectComposer>
         <Bloom
           intensity={1.2}
