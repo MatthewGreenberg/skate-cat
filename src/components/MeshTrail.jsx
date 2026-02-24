@@ -1,12 +1,22 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { useControls } from 'leva'
 import * as THREE from 'three'
 
 const TRAIL_LENGTH = 80
-const TRAIL_WIDTH = 0.15
 
 export default function MeshTrail({ targetRef }) {
   const meshRef = useRef()
+  const matRef = useRef()
+
+  const { color, width, opacity, trailLength, offsetZ, height } = useControls('Trail', {
+    color: '#FF6B35',
+    width: { value: 0.15, min: 0.01, max: 1, step: 0.01 },
+    opacity: { value: 0.8, min: 0, max: 1, step: 0.05 },
+    trailLength: { value: 80, min: 10, max: 200, step: 5 },
+    offsetZ: { value: 0.5, min: -2, max: 3, step: 0.1 },
+    height: { value: 0.15, min: 0, max: 1, step: 0.01 },
+  })
 
   const { positions, geometry } = useMemo(() => {
     const pos = new Float32Array(TRAIL_LENGTH * 2 * 3)
@@ -37,13 +47,21 @@ export default function MeshTrail({ targetRef }) {
   useFrame(() => {
     if (!targetRef?.current) return
 
+    // Update material
+    if (matRef.current) {
+      matRef.current.color.set(color)
+      matRef.current.opacity = opacity
+    }
+
+    const len = Math.min(trailLength, TRAIL_LENGTH)
+
     for (let i = TRAIL_LENGTH - 1; i > 0; i--) {
       points.current[i].copy(points.current[i - 1])
     }
 
     targetRef.current.getWorldPosition(_worldPos)
-    _worldPos.z += 0.5
-    _worldPos.y = 0.15
+    _worldPos.z += offsetZ
+    _worldPos.y = height
     points.current[0].copy(_worldPos)
 
     for (let i = 0; i < TRAIL_LENGTH; i++) {
@@ -52,8 +70,8 @@ export default function MeshTrail({ targetRef }) {
       _tangent.subVectors(next, p).normalize()
       _side.crossVectors(_tangent, _up).normalize()
 
-      const fade = 1 - i / TRAIL_LENGTH
-      const w = TRAIL_WIDTH * fade
+      const fade = i < len ? 1 - i / len : 0
+      const w = width * fade
 
       const idx = i * 2 * 3
       positions[idx] = p.x - _side.x * w
@@ -71,9 +89,10 @@ export default function MeshTrail({ targetRef }) {
   return (
     <mesh ref={meshRef} geometry={geometry} frustumCulled={false}>
       <meshBasicMaterial
-        color="#FF6B35"
+        ref={matRef}
+        color={color}
         transparent
-        opacity={0.8}
+        opacity={opacity}
         side={THREE.DoubleSide}
         blending={THREE.AdditiveBlending}
         depthWrite={false}

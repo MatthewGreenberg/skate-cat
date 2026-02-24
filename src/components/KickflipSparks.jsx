@@ -32,11 +32,11 @@ export default function KickflipSparks() {
         if (p.active) continue
         p.active = true
         p.life = PARTICLE_LIFETIME
-        p.position.set(spawnPos[0], spawnPos[1] + 0.5, spawnPos[2])
+        p.position.set(spawnPos[0], spawnPos[1] - 0.1, spawnPos[2])
         p.velocity.set(
-          (Math.random() - 0.5) * 4,
-          Math.random() * 3 + 2,
-          (Math.random() - 0.5) * 4
+          (Math.random() - 0.5) * 3,
+          Math.random() * 1.5 + 0.5,
+          (Math.random() - 0.5) * 3
         )
       }
     }
@@ -65,7 +65,7 @@ export default function KickflipSparks() {
       p.position.addScaledVector(p.velocity, delta)
 
       const t = p.life / PARTICLE_LIFETIME
-      const scale = t * 0.08
+      const scale = t * 0.03
 
       _dummy.position.copy(p.position)
       _dummy.scale.setScalar(scale)

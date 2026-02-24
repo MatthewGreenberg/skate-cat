@@ -3,7 +3,6 @@ import { Canvas } from '@react-three/fiber'
 import Sky from './components/Sky'
 import Ground from './components/Ground'
 import SkateCat from './components/SkateCat'
-import MeshTrail from './components/MeshTrail'
 import SpeedLines from './components/SpeedLines'
 import Obstacles from './components/Obstacles'
 import CameraRig from './components/CameraRig'
@@ -51,7 +50,6 @@ export default function App() {
         <hemisphereLight args={['#87CEEB', '#7EC850', 0.4]} />
         <Ground />
         <SkateCat trailTargetRef={trailTarget} />
-        <MeshTrail targetRef={trailTarget} />
         <Obstacles />
         <SpeedLines />
         <KickflipSparks />

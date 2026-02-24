@@ -1,9 +1,10 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
+import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState } from '../store'
-import SpeedFlame from './SpeedFlame'
+
 
 const JUMP_HEIGHT = 1.2
 const JUMP_DURATION = 0.6
@@ -18,11 +19,17 @@ const DEATH_DURATION = 1.0
 const DEATH_TUMBLE_SPEED = 8
 
 export default function SkateCat({ trailTargetRef }) {
+  const { catRotX, catRotY, catRotZ } = useControls('Cat', {
+    catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+    catRotY: { value: 1.3, min: -Math.PI, max: Math.PI, step: 0.05 },
+    catRotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+  })
+
   const groupRef = useRef()
   const boardRef = useRef()
   const catRef = useRef()
   const skateboard = useGLTF('/skateboard.glb')
-  const cat = useGLTF('/cat/scene.gltf')
+  const cat = useGLTF('/maxwell_the_cat_dingus.glb')
 
   const jumpState = useRef({
     active: false,
@@ -75,7 +82,7 @@ export default function SkateCat({ trailTargetRef }) {
       deathState.current.time = 0
       groupRef.current.position.set(0, 0.05, 0)
       groupRef.current.rotation.set(0, 0, 0)
-      catRef.current.position.set(0, 0.35, 0)
+      catRef.current.position.set(0, 0.2, 0)
       catRef.current.rotation.set(0, 0, 0)
       if (boardRef.current) boardRef.current.rotation.z = 0
       jumpState.current.active = false
@@ -97,7 +104,7 @@ export default function SkateCat({ trailTargetRef }) {
       // Cat hops off to the side with a tumble
       const hopHeight = 4 * DEATH_HOP_HEIGHT * t * (1 - t)
       catRef.current.position.x = t * DEATH_HOP_SIDE
-      catRef.current.position.y = 0.35 + hopHeight
+      catRef.current.position.y = 0.2 + hopHeight
       catRef.current.rotation.z = deathState.current.time * DEATH_TUMBLE_SPEED
 
       return
@@ -144,9 +151,7 @@ export default function SkateCat({ trailTargetRef }) {
       if (boardRef.current) boardRef.current.rotation.z = 0
     }
 
-    // Reset cat local position (in case it was moved by death)
-    catRef.current.position.set(0, 0.35, 0)
-    catRef.current.rotation.set(0, 0, 0)
+
   })
 
   return (
@@ -159,18 +164,24 @@ export default function SkateCat({ trailTargetRef }) {
           position={[0, 0, 0]}
         />
       </group>
-      <group ref={catRef} position={[0, 0.35, 0]}>
+      <group ref={catRef} position={[0, 0.2, 0]}>
         <primitive
           object={cat.scene.clone()}
-          scale={1.5}
-          rotation={[0, Math.PI, 0]}
+          scale={0.03}
+          rotation={[catRotX, catRotY, catRotZ]}
         />
       </group>
       <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
-      <SpeedFlame />
+      <pointLight
+        position={[0.5, 1.5, 0.5]}
+        intensity={5}
+        distance={2.5}
+        decay={2}
+        color="#ffe8cc"
+      />
     </group>
   )
 }
 
 useGLTF.preload('/skateboard.glb')
-useGLTF.preload('/cat/scene.gltf')
+useGLTF.preload('/maxwell_the_cat_dingus.glb')
