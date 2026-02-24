@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { gameState } from '../store'
+import SpeedFlame from './SpeedFlame'
 
 export default function SkateCat({ trailTargetRef }) {
   const groupRef = useRef()
@@ -66,6 +67,7 @@ export default function SkateCat({ trailTargetRef }) {
       />
       {/* Trail attachment point at back of skateboard */}
       <group ref={trailTargetRef} position={[0, 0.1, 0.5]} />
+      <SpeedFlame />
     </group>
   )
 }
