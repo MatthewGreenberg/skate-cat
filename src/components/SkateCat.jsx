@@ -1,7 +1,9 @@
 import { useRef, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
+import * as THREE from 'three'
 import { gameState } from '../store'
+import SpeedFlame from './SpeedFlame'
 
 const JUMP_HEIGHT = 1.2
 const JUMP_DURATION = 0.6
@@ -43,6 +45,12 @@ export default function SkateCat({ trailTargetRef }) {
         jumpState.current.active = true
         jumpState.current.time = 0
         jumpState.current.direction = Math.random() < 0.5 ? 1 : -1
+
+        const wp = new THREE.Vector3()
+        if (groupRef.current) {
+          groupRef.current.getWorldPosition(wp)
+        }
+        gameState.kickflip.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
       }
       if (e.key === 'ArrowRight') keys.current.right = true
     }
@@ -159,6 +167,7 @@ export default function SkateCat({ trailTargetRef }) {
         />
       </group>
       <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
+      <SpeedFlame />
     </group>
   )
 }

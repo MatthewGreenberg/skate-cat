@@ -8,6 +8,7 @@ import SpeedLines from './components/SpeedLines'
 import Obstacles from './components/Obstacles'
 import CameraRig from './components/CameraRig'
 import GameOverScreen from './components/GameOverScreen'
+import KickflipSparks from './components/KickflipSparks'
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 import { useControls } from 'leva'
 import { gameState } from './store'
@@ -53,6 +54,7 @@ export default function App() {
         <MeshTrail targetRef={trailTarget} />
         <Obstacles />
         <SpeedLines />
+        <KickflipSparks />
         <EffectComposer>
           <Bloom
             intensity={bloomIntensity}
