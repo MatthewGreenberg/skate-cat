@@ -140,7 +140,7 @@ const DEATH_WALK_SPEED = 1.2
 const DEATH_WALK_BOB_SPEED = 8
 const DEATH_WALK_BOB_HEIGHT = 0.06
 
-export default function SkateCat({ trailTargetRef, controlsEnabled = true, musicRef, onJumpTiming, onJumpSfx }) {
+export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasStartedGame = false, musicRef, onJumpTiming, onJumpSfx }) {
   const { catRotX, catRotY, catRotZ } = useControls('Cat', {
     catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
     catRotY: { value: 1.3, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -171,6 +171,13 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, music
     eyeRadiusY: { value: 0.05, min: 0.005, max: 0.15, step: 0.005 },
     lidColor: '#1a1a2e',
     forceClose: false,
+  })
+
+  const introControls = useControls('Cat Intro', {
+    introX: { value: 0.70, min: -3, max: 3, step: 0.05 },
+    introY: { value: 0.00, min: -1, max: 2, step: 0.05 },
+    introZ: { value: 0.50, min: -3, max: 3, step: 0.05 },
+    introRotY: { value: -1.5, min: -Math.PI, max: Math.PI, step: 0.05 },
   })
 
   const blinkState = useRef({ timer: 3, blinking: false, blinkTime: 0, amount: 0, blinksLeft: 0 })
@@ -256,6 +263,24 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, music
   const squashState = useRef({ active: false, time: 0 })
   const SQUASH_DURATION = 0.4
 
+  // Intro toon shader overrides (lerp to gameplay values on start)
+  const INTRO_TOON = {
+    lightX: 20.0, lightY: 13.0, lightZ: 2.0,
+    rimAmount: 0.45, shadowBrightness: 0.05,
+    brightness: 2.05, outlineThickness: 0.0,
+  }
+  const introLerp = useRef(0) // 0 = intro, 1 = gameplay
+
+  // Intro hop-on state
+  const introState = useRef({
+    phase: 'idle', // 'idle' | 'hopping' | 'done'
+    time: 0,
+  })
+  const HOP_ON_DURATION = 0.4
+  const HOP_ON_HEIGHT = 0.8
+  const CAT_INTRO_OFFSET_X = 1.2 // cat starts to the side
+  const CAT_INTRO_Y = 0.0 // cat starts on the ground
+
   const deathState = useRef({
     active: false,
     time: 0,
@@ -276,6 +301,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, music
     spinState.current.time = 0
     squashState.current.active = false
     squashState.current.time = 0
+    introState.current.phase = 'done'
+    introState.current.time = 0
     if (groupRef.current) {
       groupRef.current.position.set(0, 0.05, 0)
       groupRef.current.rotation.set(0, 0, 0)
@@ -287,6 +314,16 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, music
     }
     if (boardRef.current) boardRef.current.rotation.z = 0
   }
+
+  // Trigger hop-on when game starts
+  const prevStarted = useRef(false)
+  useEffect(() => {
+    if (hasStartedGame && !prevStarted.current) {
+      introState.current.phase = 'hopping'
+      introState.current.time = 0
+    }
+    prevStarted.current = hasStartedGame
+  }, [hasStartedGame])
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -373,17 +410,27 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, music
       }
     }
 
+    // Lerp intro -> gameplay
+    const targetLerp = introState.current.phase === 'idle' ? 0 : 1
+    introLerp.current = THREE.MathUtils.lerp(introLerp.current, targetLerp, delta * 3)
+    const il = introLerp.current
+    const mix = (intro, gameplay) => intro + (gameplay - intro) * il
+
     // Update toon + blink uniforms on cached meshes (no traverse)
     for (const child of cachedMeshes.toonMeshes) {
       const u = child.material.uniforms
-      u.uLightDirection.value.set(toonControls.lightX, toonControls.lightY, toonControls.lightZ)
+      u.uLightDirection.value.set(
+        mix(INTRO_TOON.lightX, toonControls.lightX),
+        mix(INTRO_TOON.lightY, toonControls.lightY),
+        mix(INTRO_TOON.lightZ, toonControls.lightZ),
+      )
       u.uGlossiness.value = toonControls.glossiness
-      u.uRimAmount.value = toonControls.rimAmount
+      u.uRimAmount.value = mix(INTRO_TOON.rimAmount, toonControls.rimAmount)
       u.uRimThreshold.value = toonControls.rimThreshold
       u.uRimColor.value.set(toonControls.rimColor)
       u.uSteps.value = toonControls.steps
-      u.uShadowBrightness.value = toonControls.shadowBrightness
-      u.uBrightness.value = toonControls.brightness
+      u.uShadowBrightness.value = mix(INTRO_TOON.shadowBrightness, toonControls.shadowBrightness)
+      u.uBrightness.value = mix(INTRO_TOON.brightness, toonControls.brightness)
       u.uLeftEyeCenter.value.set(blinkControls.leftEyeX, blinkControls.leftEyeY)
       u.uRightEyeCenter.value.set(blinkControls.rightEyeX, blinkControls.rightEyeY)
       u.uEyeRadius.value.set(blinkControls.eyeRadiusX, blinkControls.eyeRadiusY)
@@ -391,13 +438,48 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, music
       u.uBlinkAmount.value = s.amount
     }
     for (const child of cachedMeshes.outlineMeshes) {
-      child.material.uniforms.uThickness.value = toonControls.outlineThickness
+      child.material.uniforms.uThickness.value = mix(INTRO_TOON.outlineThickness, toonControls.outlineThickness)
       child.material.uniforms.uOutlineColor.value.set(toonControls.outlineColor)
     }
   })
 
   useFrame((state, delta) => {
     if (!groupRef.current || !catRef.current) return
+
+    // Intro: cat sits beside the board, then hops on
+    const intro = introState.current
+    if (intro.phase === 'idle') {
+      // Cat on ground, facing camera, no board
+      catRef.current.position.set(introControls.introX, introControls.introY, introControls.introZ)
+      catRef.current.rotation.set(0, introControls.introRotY, 0)
+      if (boardRef.current) boardRef.current.visible = false
+      // Breathing effect
+      const breath = Math.sin(state.clock.elapsedTime * 1.8) * 0.03
+      catRef.current.scale.set(1, 1 + breath, 1)
+      return
+    }
+    if (intro.phase === 'hopping') {
+      if (boardRef.current) boardRef.current.visible = true
+      intro.time += delta
+      const t = Math.min(intro.time / HOP_ON_DURATION, 1)
+      // Arc from intro position to on-board
+      const hopHeight = 4 * HOP_ON_HEIGHT * t * (1 - t)
+      const x = introControls.introX * (1 - t)
+      const z = introControls.introZ * (1 - t)
+      const y = introControls.introY + hopHeight + 0.2 * t
+      catRef.current.position.set(x, y, z)
+      // Rotate from facing camera to facing forward
+      catRef.current.rotation.set(0, introControls.introRotY * (1 - t), 0)
+      if (t >= 1) {
+        intro.phase = 'done'
+        catRef.current.position.set(0, 0.2, 0)
+        catRef.current.rotation.set(0, 0, 0)
+        // Landing squash
+        squashState.current.active = true
+        squashState.current.time = 0
+      }
+      return
+    }
 
     // Reset on restart
     if (wasGameOver.current && !gameState.gameOver) {

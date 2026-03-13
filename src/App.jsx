@@ -350,6 +350,7 @@ export default function App() {
         <SkateCat
           trailTargetRef={trailTarget}
           controlsEnabled={hasStartedGame && !isGameOver && !isCountdownActive}
+          hasStartedGame={hasStartedGame}
           musicRef={musicRef}
           onJumpTiming={handleJumpTiming}
           onJumpSfx={playJumpSfx}
@@ -370,7 +371,7 @@ export default function App() {
             offset={[caOffset, caOffset]}
           /> */}
           <Bloom
-            intensity={bloomIntensity}
+            intensity={hasStartedGame ? bloomIntensity : 3.4}
             luminanceThreshold={bloomThreshold}
             luminanceSmoothing={bloomSmoothing}
             mipmapBlur

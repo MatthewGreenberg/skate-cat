@@ -26,7 +26,7 @@ export default function Pebbles({ segmentSeed = 0 }) {
     const generatedColors = []
 
     for (let i = 0; i < PEBBLE_COUNT; i++) {
-      const onRoad = random() < 0.38
+      const onRoad = false
       let x
       if (onRoad) {
         // Keep road pebbles subtle and inside the strip.

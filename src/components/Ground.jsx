@@ -134,7 +134,7 @@ export default function Ground() {
   }, [])
   // Sync leva base speed to game state
   gameState.baseSpeed = baseSpeed
-  if (gameState.speed.current < baseSpeed) gameState.speed.current = baseSpeed
+  if (gameState.speed.current > 0 && gameState.speed.current < baseSpeed) gameState.speed.current = baseSpeed
   const groupRefs = useRef([])
   const totalLength = SEGMENT_COUNT * SEGMENT_LENGTH
   const scrollOffset = useRef(0)
@@ -188,7 +188,6 @@ export default function Ground() {
             <planeGeometry args={[3, SEGMENT_LENGTH]} />
             <shadowMaterial transparent opacity={0.35} depthWrite={false} />
           </mesh>
-          <Pebbles segmentSeed={i} />
           <Grass />
           <Wildflowers />
         </group>

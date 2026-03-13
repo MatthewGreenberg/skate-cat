@@ -7,8 +7,8 @@ export const gameState = {
   speed: createRef(),
   baseSpeed: 8,
   postMilestoneSpeedBoost: 3.5,
-  speedBoostActive: true,
-  speedLinesOn: true,
+  speedBoostActive: false,
+  speedLinesOn: false,
   jumping: false,
   gameOver: false,
   score: 0,
@@ -19,7 +19,7 @@ export const gameState = {
   landed: createRef(),
   streak: createRef(),
 }
-gameState.speed.current = 8
+gameState.speed.current = 0
 gameState.kickflip.current = { triggered: false, position: [0, 0, 0] }
 gameState.screenShake.current = 0
 gameState.landed.current = { triggered: false, position: [0, 0, 0] }

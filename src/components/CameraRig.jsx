@@ -4,17 +4,18 @@ import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState } from '../store'
 
-const INTRO_ZOOM_OUT = 2.5
-const INTRO_HEIGHT_EXTRA = 1.0
-const INTRO_LERP_SPEED = 3.5
+// Tight intro camera (close-up on cat)
+const INTRO_CAM = { x: 1.0, y: 0.8, z: 1.2 }
+const INTRO_LOOK = { x: 0.5, y: 0.2, z: 0 }
+const INTRO_LERP_SPEED = 2.5
 
 export default function CameraRig({ started = false }) {
   const { camera } = useThree()
   const currentZoom = useRef(0)
   const jumpZoom = useRef(0)
   const shakeTime = useRef(0)
-  const introZoom = useRef(INTRO_ZOOM_OUT)
-  const introHeight = useRef(INTRO_HEIGHT_EXTRA)
+  const camPos = useRef(new THREE.Vector3(INTRO_CAM.x, INTRO_CAM.y, INTRO_CAM.z))
+  const camLook = useRef(new THREE.Vector3(INTRO_LOOK.x, INTRO_LOOK.y, INTRO_LOOK.z))
 
   const { posX, posY, posZ, lookX, lookY, lookZ, kickflipZoom, kickflipLerp, kickflipAngleX, kickflipAngleY } = useControls('Camera', {
     posX: { value: 1.9, min: -10, max: 10, step: 0.1 },
@@ -30,14 +31,9 @@ export default function CameraRig({ started = false }) {
   })
 
   useFrame((_, delta) => {
-    // Intro cinematic zoom
-    const introTarget = started ? 0 : 1
-    introZoom.current = THREE.MathUtils.lerp(introZoom.current, introTarget * INTRO_ZOOM_OUT, delta * INTRO_LERP_SPEED)
-    introHeight.current = THREE.MathUtils.lerp(introHeight.current, introTarget * INTRO_HEIGHT_EXTRA, delta * INTRO_LERP_SPEED)
-
     // Calculate zoom-out based on speed above base
     const speedExtra = Math.max(0, gameState.speed.current - gameState.baseSpeed)
-    const targetZoom = speedExtra * 0.08 // pull back proportionally
+    const targetZoom = speedExtra * 0.08
     currentZoom.current = THREE.MathUtils.lerp(currentZoom.current, targetZoom, delta * 5)
 
     // Jump zoom-out
@@ -53,13 +49,26 @@ export default function CameraRig({ started = false }) {
     const shakeX = Math.sin(shakeTime.current * 1.1) * shakeIntensity
     const shakeY = Math.cos(shakeTime.current * 1.7) * shakeIntensity
 
-    const z = currentZoom.current + jumpZoom.current + introZoom.current
-    camera.position.set(
-      posX + jumpZoom.current * kickflipAngleX + shakeX,
-      posY + jumpZoom.current * kickflipAngleY + shakeY + introHeight.current,
-      posZ + z
-    )
-    camera.lookAt(lookX, lookY, lookZ)
+    // Target position/lookAt
+    const z = currentZoom.current + jumpZoom.current
+    const targetPos = started
+      ? new THREE.Vector3(
+          posX + jumpZoom.current * kickflipAngleX + shakeX,
+          posY + jumpZoom.current * kickflipAngleY + shakeY,
+          posZ + z
+        )
+      : new THREE.Vector3(INTRO_CAM.x, INTRO_CAM.y, INTRO_CAM.z)
+
+    const targetLook = started
+      ? new THREE.Vector3(lookX, lookY, lookZ)
+      : new THREE.Vector3(INTRO_LOOK.x, INTRO_LOOK.y, INTRO_LOOK.z)
+
+    const lerpSpeed = started ? INTRO_LERP_SPEED : 10 // snap fast on intro, smooth transition out
+    camPos.current.lerp(targetPos, delta * lerpSpeed)
+    camLook.current.lerp(targetLook, delta * lerpSpeed)
+
+    camera.position.copy(camPos.current)
+    camera.lookAt(camLook.current)
   })
 
   return null
