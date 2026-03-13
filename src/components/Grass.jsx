@@ -2,6 +2,7 @@ import { useRef, useMemo, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
+import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 
 const MAX_BLADES = 4000
 const SEGMENT_LENGTH = 20
@@ -226,14 +227,30 @@ export default function Grass() {
 
   useFrame((_, delta) => {
     const u = uniformsRef.current
+    const t = gameState.timeOfDay.current
+    const nightFactor = getNightFactor(t)
+    const sunsetFactor = getSunsetFactor(t)
+    const sunriseFactor = getSunriseFactor(t)
+    const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
+
     u.uTime.value += delta
     u.uWindSpeed.value = windSpeed
     u.uWindStrength.value = windStrength
     u.uThickness.value = thickness
     u.uVisibleCount.value = bladeCount
-    u.uColorBase.value.set(colorBase)
-    u.uColorTip.value.set(colorTip)
-    u.uColorDry.value.set(colorDry)
+
+    // Lerp grass colors — warm hazy tint during sunset/sunrise
+    lerpDayNightColor(u.uColorBase.value, colorBase, '#0f1f0d', nightFactor, '#4a5a30', warmFactor)
+    lerpDayNightColor(u.uColorTip.value, colorTip, '#1a3a15', nightFactor, '#7a8a50', warmFactor)
+    lerpDayNightColor(u.uColorDry.value, colorDry, '#3a3510', nightFactor, '#8a7a44', warmFactor)
+
+    // Dim grass lighting at night to match scene
+    u.uAmbientStrength.value = THREE.MathUtils.lerp(0.7, 0.25, nightFactor)
+    u.uShadowBrightness.value = THREE.MathUtils.lerp(0.55, 0.2, nightFactor)
+    lerpDayNightColor(u.uSunColor.value, '#ffe6bf', '#334466', nightFactor)
+
+    // Match fog color to scene
+    lerpDayNightColor(u.uFogColor.value, '#c8d8c0', '#1a2233', nightFactor, '#9a7a60', warmFactor)
   })
 
   return (

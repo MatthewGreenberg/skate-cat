@@ -1,12 +1,13 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { gameState } from '../store'
+import { gameState, getNightFactor } from '../store'
 
 const PARTICLE_COUNT = 40
 
 export default function AmbientParticles() {
   const meshRef = useRef()
+  const matRef = useRef()
 
   const particles = useMemo(() => {
     return Array.from({ length: PARTICLE_COUNT }, () => ({
@@ -30,6 +31,15 @@ export default function AmbientParticles() {
 
     const time = state.clock.elapsedTime
     const scrollSpeed = gameState.gameOver ? 0 : gameState.speed.current
+    const nightFactor = getNightFactor(gameState.timeOfDay.current)
+
+    // At night: particles get bigger and brighter (firefly effect)
+    const nightScale = 1 + nightFactor * 2.5
+    const nightOpacity = THREE.MathUtils.lerp(0.7, 1.0, nightFactor)
+
+    if (matRef.current) {
+      matRef.current.opacity = nightOpacity
+    }
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const p = particles[i]
@@ -48,11 +58,13 @@ export default function AmbientParticles() {
         p.baseY = 0.5 + Math.random() * 3
       }
 
-      // Gentle twinkle
-      const twinkle = 0.6 + Math.sin(time * 3 + p.phase) * 0.4
+      // Gentle twinkle — more pronounced at night
+      const twinkleSpeed = THREE.MathUtils.lerp(3, 1.5, nightFactor)
+      const twinkleRange = THREE.MathUtils.lerp(0.4, 0.6, nightFactor)
+      const twinkle = (1 - twinkleRange) + Math.sin(time * twinkleSpeed + p.phase) * twinkleRange
 
       _dummy.position.copy(p.position)
-      _dummy.scale.setScalar(p.scale * twinkle)
+      _dummy.scale.setScalar(p.scale * twinkle * nightScale)
       _dummy.updateMatrix()
       meshRef.current.setMatrixAt(i, _dummy.matrix)
     }
@@ -65,6 +77,7 @@ export default function AmbientParticles() {
   return (
     <instancedMesh ref={meshRef} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
       <meshBasicMaterial
+        ref={matRef}
         color="#ffe8a0"
         transparent
         opacity={0.7}

@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { gameState } from '../store'
+import { gameState, getNightFactor } from '../store'
 
 // Build a single merged "puff" geometry from several low-poly icosahedrons
 function buildCloudGeometry() {
@@ -84,6 +84,11 @@ export default function Sky() {
     return { geometry: geo, material: mat, cloudScales: scales }
   }, [])
 
+  const cloudColorDay = useMemo(() => new THREE.Color('#fffaf4'), [])
+  const cloudColorNight = useMemo(() => new THREE.Color('#334466'), [])
+  const cloudEmissiveDay = useMemo(() => new THREE.Color('#dbe6ff'), [])
+  const cloudEmissiveNight = useMemo(() => new THREE.Color('#112244'), [])
+
   const dummyRef = useRef(new THREE.Object3D())
   const tempMatrixRef = useRef(new THREE.Matrix4())
   const tempPosRef = useRef(new THREE.Vector3())
@@ -123,8 +128,16 @@ export default function Sky() {
     const targetEmissive = 0.16 + speedFactor * 0.14
     const drift = (0.3 + speed * 0.1) * delta
 
-    cloudMaterial.opacity = THREE.MathUtils.lerp(cloudMaterial.opacity, targetOpacity, delta * 2)
-    cloudMaterial.emissiveIntensity = THREE.MathUtils.lerp(cloudMaterial.emissiveIntensity, targetEmissive, delta * 2)
+    const nightFactor = getNightFactor(gameState.timeOfDay.current)
+
+    // Lerp cloud color/emissive for day/night
+    cloudMaterial.color.copy(cloudColorDay).lerp(cloudColorNight, nightFactor)
+    cloudMaterial.emissive.copy(cloudEmissiveDay).lerp(cloudEmissiveNight, nightFactor)
+
+    const nightOpacityTarget = targetOpacity * (1 - nightFactor * 0.75)
+    cloudMaterial.opacity = THREE.MathUtils.lerp(cloudMaterial.opacity, nightOpacityTarget, delta * 2)
+    const nightEmissiveTarget = targetEmissive * (1 - nightFactor * 0.85)
+    cloudMaterial.emissiveIntensity = THREE.MathUtils.lerp(cloudMaterial.emissiveIntensity, nightEmissiveTarget, delta * 2)
 
     for (let i = 0; i < CLOUD_COUNT; i++) {
       mesh.getMatrixAt(i, tempMatrix)

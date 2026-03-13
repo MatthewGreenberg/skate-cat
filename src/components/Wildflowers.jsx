@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
+import { gameState, getNightFactor } from '../store'
 
 const FLOWER_COUNT = 50
 const SEGMENT_LENGTH = 20
@@ -29,6 +30,7 @@ const PALETTE = [
 
 export default function Wildflowers() {
   const meshRef = useRef()
+  const matRef = useRef()
   const uniformsRef = useRef({
     uTime: { value: 0 },
   })
@@ -65,6 +67,12 @@ export default function Wildflowers() {
 
   useFrame((state) => {
     uniformsRef.current.uTime.value = state.clock.elapsedTime
+
+    // Boost emissive at night so flowers keep their color
+    const nightFactor = getNightFactor(gameState.timeOfDay.current)
+    if (matRef.current) {
+      matRef.current.emissiveIntensity = THREE.MathUtils.lerp(0.25, 0.8, nightFactor)
+    }
   })
 
   return (
@@ -85,6 +93,7 @@ export default function Wildflowers() {
     >
       <icosahedronGeometry args={[1, 1]} />
       <meshToonMaterial
+        ref={matRef}
         color="#ffffff"
         emissive="#ffffff"
         emissiveIntensity={0.25}

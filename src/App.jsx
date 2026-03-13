@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useProgress } from '@react-three/drei'
 import Ground from './components/Ground'
@@ -18,8 +18,87 @@ import GameHud from './components/GameHud'
 import { EffectComposer, Bloom, SMAA, ChromaticAberration, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
 import { useControls } from 'leva'
-import { gameState } from './store'
+import { gameState, DAY_NIGHT_CYCLE_SPEED, getNightFactor, getNightContrastOffset, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from './store'
 import { BEAT_INTERVAL } from './rhythm'
+
+// Reusable temp color for DayNightController
+const _tmpColor = new THREE.Color()
+
+
+function DayNightController() {
+  const dirLightRef = useRef()
+  const ambientRef = useRef()
+  const hemiRef = useRef()
+  const { scene } = useThree()
+  const { timeOfDay, paused } = useControls('Day/Night', {
+    timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },
+    paused: false,
+  })
+
+  useFrame((_, delta) => {
+    // Cycle timeOfDay (or use leva override when paused)
+    if (paused) {
+      gameState.timeOfDay.current = timeOfDay
+    } else {
+      gameState.timeOfDay.current = (gameState.timeOfDay.current + delta * DAY_NIGHT_CYCLE_SPEED) % 1
+    }
+
+    const nightFactor = getNightFactor(gameState.timeOfDay.current)
+    const sunriseFactor = getSunriseFactor(gameState.timeOfDay.current)
+    const sunsetFactor = getSunsetFactor(gameState.timeOfDay.current)
+    const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
+
+    // Directional light — warm tint during sunrise/sunset
+    if (dirLightRef.current) {
+      lerpDayNightColor(dirLightRef.current.color, '#ffe6bf', '#4466aa', nightFactor, '#ffaa77', warmFactor)
+      dirLightRef.current.intensity = THREE.MathUtils.lerp(1.65, 0.3, nightFactor)
+    }
+
+    // Ambient light
+    if (ambientRef.current) {
+      ambientRef.current.intensity = THREE.MathUtils.lerp(0.22, 0.08, nightFactor)
+    }
+
+    // Hemisphere light
+    if (hemiRef.current) {
+      lerpDayNightColor(hemiRef.current.color, '#b7dbff', '#1a2244', nightFactor)
+      lerpDayNightColor(hemiRef.current.groundColor, '#78a24f', '#0a1a0a', nightFactor)
+      hemiRef.current.intensity = THREE.MathUtils.lerp(0.55, 0.15, nightFactor)
+    }
+
+    // Fog
+    if (scene.fog) {
+      lerpDayNightColor(scene.fog.color, '#c4d4b8', '#1a2233', nightFactor, '#9a7a60', warmFactor)
+    }
+
+    // Night contrast offset
+    gameState.nightContrast.current = getNightContrastOffset(gameState.timeOfDay.current)
+  })
+
+  return (
+    <>
+      <ambientLight ref={ambientRef} color="#f2f7ff" intensity={0.22} />
+      <directionalLight
+        ref={dirLightRef}
+        position={[5, 10, 3]}
+        color="#ffe6bf"
+        intensity={1.65}
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
+        shadow-camera-near={0.1}
+        shadow-camera-far={50}
+        shadow-bias={-0.002}
+        shadow-normalBias={0.02}
+      />
+      <hemisphereLight ref={hemiRef} args={['#b7dbff', '#78a24f', 0.55]} />
+    </>
+  )
+}
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 
@@ -490,25 +569,7 @@ export default function App() {
         <fog attach="fog" args={['#c4d4b8', 55, 130]} />
 
         <CameraRig started={hasStartedGame} />
-
-        <ambientLight color="#f2f7ff" intensity={0.22} />
-        <directionalLight
-          position={[5, 10, 3]}
-          color="#ffe6bf"
-          intensity={1.65}
-          castShadow
-          shadow-mapSize-width={1024}
-          shadow-mapSize-height={1024}
-          shadow-camera-left={-10}
-          shadow-camera-right={10}
-          shadow-camera-top={10}
-          shadow-camera-bottom={-10}
-          shadow-camera-near={0.1}
-          shadow-camera-far={50}
-          shadow-bias={-0.002}
-          shadow-normalBias={0.02}
-        />
-        <hemisphereLight args={['#b7dbff', '#78a24f', 0.55]} />
+        <DayNightController />
 
         <Ground />
         <Background />
@@ -538,7 +599,7 @@ export default function App() {
             offset={[caOffset, caOffset]}
           /> */}
           <Bloom
-            intensity={hasStartedGame ? bloomIntensity : 3.4}
+            intensity={bloomIntensity}
             luminanceThreshold={bloomThreshold}
             luminanceSmoothing={bloomSmoothing}
             mipmapBlur

@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import Grass from './Grass'
 import Pebbles from './Pebbles'
 import Wildflowers from './Wildflowers'
-import { gameState } from '../store'
+import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 
 const SEGMENT_COUNT = 8
 const SEGMENT_LENGTH = 20
@@ -135,17 +135,24 @@ export default function Ground() {
   // Sync leva base speed to game state
   gameState.baseSpeed = baseSpeed
   if (gameState.speed.current > 0 && gameState.speed.current < baseSpeed) gameState.speed.current = baseSpeed
+  const groundMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: '#4CB944' }), [])
   const groupRefs = useRef([])
   const totalLength = SEGMENT_COUNT * SEGMENT_LENGTH
   const scrollOffset = useRef(0)
 
   useFrame((_, delta) => {
+    const t = gameState.timeOfDay.current
+    const nightFactor = getNightFactor(t)
+    const sunsetFactor = getSunsetFactor(t)
+    const sunriseFactor = getSunriseFactor(t)
+    const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
+
     if (roadMaterial) {
-      roadMaterial.uniforms.uBaseColor.value.set(roadColor)
-      roadMaterial.uniforms.uDetailColor.value.set(roadDetail)
-      roadMaterial.uniforms.uEdgeColor.value.set(edgeColor)
+      lerpDayNightColor(roadMaterial.uniforms.uBaseColor.value, roadColor, '#5a3a28', nightFactor, '#c47840', warmFactor)
+      lerpDayNightColor(roadMaterial.uniforms.uDetailColor.value, roadDetail, '#3a2518', nightFactor, '#9a5a30', warmFactor)
+      lerpDayNightColor(roadMaterial.uniforms.uEdgeColor.value, edgeColor, '#6a5a48', nightFactor, '#ffcc88', warmFactor)
       roadMaterial.uniforms.uToonSteps.value = toonSteps
-      roadMaterial.uniforms.uShadowBrightness.value = shadowBrightness
+      roadMaterial.uniforms.uShadowBrightness.value = THREE.MathUtils.lerp(shadowBrightness, 0.3, nightFactor)
       roadMaterial.uniforms.uGrainAmount.value = grainAmount
       roadMaterial.uniforms.uGrainScale.value = grainScale
       roadMaterial.uniforms.uGradientStrength.value = gradientStrength
@@ -153,6 +160,10 @@ export default function Ground() {
       roadMaterial.uniforms.uCenterLineOpacity.value = centerLineOpacity
       roadMaterial.uniforms.uVignetteStrength.value = vignetteStrength
     }
+
+    // Lerp ground green color — warm tint at sunset/sunrise
+    lerpDayNightColor(groundMaterial.color, '#4CB944', '#1a3318', nightFactor, '#7a8a30', warmFactor)
+
     if (gameState.gameOver) return
     scrollOffset.current += gameState.speed.current * delta
     for (let i = 0; i < SEGMENT_COUNT; i++) {
@@ -175,9 +186,8 @@ export default function Ground() {
           position={[0, 0, -(i * SEGMENT_LENGTH)]}
         >
           {/* Green ground — toon flat */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} material={groundMaterial} receiveShadow>
             <planeGeometry args={[SEGMENT_WIDTH, SEGMENT_LENGTH]} />
-            <meshToonMaterial color="#4CB944" />
           </mesh>
           {/* Textured road strip */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} material={roadMaterial} receiveShadow>

@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState } from '../store'
+import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 
 const bgVertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -23,6 +23,10 @@ const bgFragmentShader = /* glsl */ `
   uniform vec3 uSkyMid;
   uniform vec3 uHorizon;
   uniform vec3 uBelowHorizon;
+  uniform vec3 uMtColor1;
+  uniform vec3 uMtColor2;
+  uniform vec3 uMtColor3;
+  uniform float uStarVisibility;
   varying vec2 vUv;
 
   // Simple noise
@@ -82,23 +86,30 @@ const bgFragmentShader = /* glsl */ `
     float sunGlow = exp(-sunDist * 3.5) * 0.5;
     sky += vec3(1.0, 0.85, 0.5) * sunGlow * uSunGlowStrength;
 
+    // Stars (hash-based dots, only above horizon)
+    if (uStarVisibility > 0.01 && uv.y > horizonLine + 0.05) {
+      vec2 starUv = uv * 120.0;
+      vec2 starCell = floor(starUv);
+      float starVal = hash(starCell);
+      float starBright = step(0.97, starVal) * hash(starCell + vec2(7.0, 13.0));
+      float twinkle = 0.7 + 0.3 * sin(uTime * 2.0 + starVal * 50.0);
+      sky += vec3(0.9, 0.92, 1.0) * starBright * uStarVisibility * twinkle;
+    }
+
     // Distant mountains (layer 1 - far, blue-ish, tall peaks)
     float mt1 = fbm2(vec2(uv.x * 2.5 + 1.5, 0.0)) * 0.15 + 0.34;
     float mountain1 = smoothstep(mt1, mt1 + 0.01, uv.y);
-    vec3 mtColor1 = vec3(0.5, 0.6, 0.75);
-    sky = mix(mtColor1, sky, mountain1);
+    sky = mix(uMtColor1, sky, mountain1);
 
     // Closer hills (layer 2 - green rolling hills)
     float mt2 = fbm2(vec2(uv.x * 4.0 + 3.0, 0.5)) * 0.1 + 0.28;
     float mountain2 = smoothstep(mt2, mt2 + 0.006, uv.y);
-    vec3 mtColor2 = vec3(0.38, 0.58, 0.32);
-    sky = mix(mtColor2, sky, mountain2);
+    sky = mix(uMtColor2, sky, mountain2);
 
     // Nearest hills (layer 3 - darker green, matches ground)
     float mt3 = fbm2(vec2(uv.x * 7.0 + 7.0, 1.0)) * 0.07 + 0.22;
     float mountain3 = smoothstep(mt3, mt3 + 0.004, uv.y);
-    vec3 mtColor3 = vec3(0.28, 0.45, 0.22);
-    sky = mix(mtColor3, sky, mountain3);
+    sky = mix(uMtColor3, sky, mountain3);
 
     // Clouds - fluffy cumulus shapes
     float cloud1 = fbm3(vec2(uv.x * 3.0 + uTime * 0.015, uv.y * 4.0 + 1.0));
@@ -156,6 +167,10 @@ export default function Background() {
       uSkyMid: { value: new THREE.Color('#73b3ff') },
       uHorizon: { value: new THREE.Color('#ffe0a6') },
       uBelowHorizon: { value: new THREE.Color('#66994d') },
+      uMtColor1: { value: new THREE.Color(0.5, 0.6, 0.75) },
+      uMtColor2: { value: new THREE.Color(0.38, 0.58, 0.32) },
+      uMtColor3: { value: new THREE.Color(0.28, 0.45, 0.22) },
+      uStarVisibility: { value: 0 },
     },
     vertexShader: bgVertexShader,
     fragmentShader: bgFragmentShader,
@@ -167,15 +182,23 @@ export default function Background() {
     const mesh = meshRef.current
     if (!mesh) return
 
+    const t = gameState.timeOfDay.current
+    const nightFactor = getNightFactor(t)
+    const sunsetFactor = getSunsetFactor(t)
+    const sunriseFactor = getSunriseFactor(t)
+    const warmFactor = Math.max(sunsetFactor, sunriseFactor)
+
     const speed = gameState.gameOver ? 0 : gameState.speed.current || 0
     const speedFactor = Math.min(speed / gameState.baseSpeed, 1.35)
     const targetCloudStrength = cloudStrength + speedFactor * 0.1
     const targetHazeStrength = hazeStrength + speedFactor * 0.04
 
     material.uniforms.uTime.value = state.clock.elapsedTime
-    material.uniforms.uBrightness.value = brightness
+    material.uniforms.uBrightness.value = THREE.MathUtils.lerp(brightness, 0.25, nightFactor)
     material.uniforms.uSaturation.value = saturation
-    material.uniforms.uSunGlowStrength.value = sunGlowStrength
+    material.uniforms.uSunGlowStrength.value = THREE.MathUtils.lerp(
+      sunGlowStrength + warmFactor * 0.3, 0.0, nightFactor
+    )
     material.uniforms.uCloudStrength.value = THREE.MathUtils.lerp(
       material.uniforms.uCloudStrength.value,
       targetCloudStrength,
@@ -186,10 +209,25 @@ export default function Background() {
       targetHazeStrength,
       delta * 2
     )
-    material.uniforms.uSkyTop.value.set(skyTop)
-    material.uniforms.uSkyMid.value.set(skyMid)
-    material.uniforms.uHorizon.value.set(horizon)
-    material.uniforms.uBelowHorizon.value.set(belowHorizon)
+
+    // Lerp sky colors — use sunrise or sunset warm tint (they never overlap)
+    const activeWarmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
+    const warmTop = sunriseFactor > 0 ? '#3d2a5a' : '#2a1a4d'
+    const warmMid = sunriseFactor > 0 ? '#dd7799' : '#cc4488'
+    const warmHorizon = sunriseFactor > 0 ? '#ffaa66' : '#ff6633'
+
+    lerpDayNightColor(material.uniforms.uSkyTop.value, skyTop, '#0a0e2a', nightFactor, warmTop, activeWarmFactor)
+    lerpDayNightColor(material.uniforms.uSkyMid.value, skyMid, '#121833', nightFactor, warmMid, activeWarmFactor)
+    lerpDayNightColor(material.uniforms.uHorizon.value, horizon, '#1a1530', nightFactor, warmHorizon, activeWarmFactor)
+    lerpDayNightColor(material.uniforms.uBelowHorizon.value, belowHorizon, '#1a2a15', nightFactor)
+
+    // Mountain colors — at night, blend into surrounding sky so they don't create visible bands
+    lerpDayNightColor(material.uniforms.uMtColor1.value, '#8099bf', '#101628', nightFactor)
+    lerpDayNightColor(material.uniforms.uMtColor2.value, '#619452', '#12162a', nightFactor)
+    lerpDayNightColor(material.uniforms.uMtColor3.value, '#477338', '#151428', nightFactor)
+
+    // Stars fade in when nightFactor > 0.5
+    material.uniforms.uStarVisibility.value = Math.max(0, (nightFactor - 0.5) * 2)
 
     const distance = 139
     const skyHeight = 28
