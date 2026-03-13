@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
+import { gameState } from '../store'
 
 const bgVertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -103,7 +104,7 @@ const bgFragmentShader = /* glsl */ `
     float cloud1 = fbm3(vec2(uv.x * 3.0 + uTime * 0.015, uv.y * 4.0 + 1.0));
     float cloud2 = fbm3(vec2(uv.x * 5.0 + uTime * 0.01 + 3.0, uv.y * 3.0 + 2.0));
     float cloudShape = max(cloud1, cloud2 * 0.8);
-    float cloudMask = smoothstep(0.48, 0.72, cloudShape) * smoothstep(0.35, 0.55, uv.y) * smoothstep(0.95, 0.75, uv.y) * 0.35;
+    float cloudMask = smoothstep(0.48, 0.72, cloudShape) * smoothstep(0.12, 0.30, uv.y) * smoothstep(0.76, 0.58, uv.y) * 0.55;
     sky = mix(sky, vec3(1.0, 0.98, 0.95), cloudMask * uCloudStrength);
 
     // Atmospheric haze near horizon
@@ -135,8 +136,8 @@ export default function Background() {
     brightness: { value: 0.65, min: 0.4, max: 1.4, step: 0.01 },
     saturation: { value: 1.5, min: 0, max: 1.5, step: 0.01 },
     sunGlowStrength: { value: 0.45, min: 0, max: 1.5, step: 0.01 },
-    cloudStrength: { value: 0.0, min: 0, max: 1.5, step: 0.01 },
-    hazeStrength: { value: 0.0, min: 0, max: 1.5, step: 0.01 },
+    cloudStrength: { value: 0.22, min: 0, max: 1.5, step: 0.01 },
+    hazeStrength: { value: 0.12, min: 0, max: 1.5, step: 0.01 },
     skyTop: '#4d8cff',
     skyMid: '#73b3ff',
     horizon: '#ffe0a6',
@@ -149,8 +150,8 @@ export default function Background() {
       uBrightness: { value: 0.65 },
       uSaturation: { value: 1.5 },
       uSunGlowStrength: { value: 0.45 },
-      uCloudStrength: { value: 0.0 },
-      uHazeStrength: { value: 0.0 },
+      uCloudStrength: { value: 0.22 },
+      uHazeStrength: { value: 0.12 },
       uSkyTop: { value: new THREE.Color('#4d8cff') },
       uSkyMid: { value: new THREE.Color('#73b3ff') },
       uHorizon: { value: new THREE.Color('#ffe0a6') },
@@ -162,16 +163,29 @@ export default function Background() {
     depthWrite: false,
   }), [])
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
+
+    const speed = gameState.gameOver ? 0 : gameState.speed.current || 0
+    const speedFactor = Math.min(speed / gameState.baseSpeed, 1.35)
+    const targetCloudStrength = cloudStrength + speedFactor * 0.1
+    const targetHazeStrength = hazeStrength + speedFactor * 0.04
 
     material.uniforms.uTime.value = state.clock.elapsedTime
     material.uniforms.uBrightness.value = brightness
     material.uniforms.uSaturation.value = saturation
     material.uniforms.uSunGlowStrength.value = sunGlowStrength
-    material.uniforms.uCloudStrength.value = cloudStrength
-    material.uniforms.uHazeStrength.value = hazeStrength
+    material.uniforms.uCloudStrength.value = THREE.MathUtils.lerp(
+      material.uniforms.uCloudStrength.value,
+      targetCloudStrength,
+      delta * 2
+    )
+    material.uniforms.uHazeStrength.value = THREE.MathUtils.lerp(
+      material.uniforms.uHazeStrength.value,
+      targetHazeStrength,
+      delta * 2
+    )
     material.uniforms.uSkyTop.value.set(skyTop)
     material.uniforms.uSkyMid.value.set(skyMid)
     material.uniforms.uHorizon.value.set(horizon)

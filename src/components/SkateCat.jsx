@@ -175,9 +175,20 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
   const introControls = useControls('Cat Intro', {
     introX: { value: 0.70, min: -3, max: 3, step: 0.05 },
-    introY: { value: 0.00, min: -1, max: 2, step: 0.05 },
+    introY: { value: 0.15, min: -1, max: 2, step: 0.05 },
     introZ: { value: 0.50, min: -3, max: 3, step: 0.05 },
+    introRotX: { value: -0.1, min: -Math.PI, max: Math.PI, step: 0.05 },
     introRotY: { value: -1.5, min: -Math.PI, max: Math.PI, step: 0.05 },
+    introRotZ: { value: 0.60, min: -Math.PI, max: Math.PI, step: 0.05 },
+    introScale: { value: 0.025, min: 0.01, max: 0.05, step: 0.001 },
+  })
+
+  const boxControls = useControls('Intro Box', {
+    boxX: { value: 0.35, min: -3, max: 3, step: 0.05 },
+    boxY: { value: 0, min: -2, max: 2, step: 0.05 },
+    boxZ: { value: 0.20, min: -3, max: 3, step: 0.05 },
+    boxScale: { value: 6, min: 1, max: 50, step: 1 },
+    boxRotY: { value: 0.30, min: -Math.PI, max: Math.PI, step: 0.05 },
   })
 
   const blinkState = useRef({ timer: 3, blinking: false, blinkTime: 0, amount: 0, blinksLeft: 0 })
@@ -187,6 +198,9 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   const catRef = useRef()
   const skateboard = useGLTF('/skateboard.glb')
   const { scene: catScene } = useGLTF('/maxwell_the_cat_dingus/scene.gltf')
+  const { scene: boxScene } = useGLTF('/empty_cardboard_box/scene.gltf')
+  const boxRef = useRef()
+  const catModelRef = useRef()
   const paintedBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor_painted-2.jpg')
   const paintedBodyMap = useMemo(() => {
     const map = paintedBodyMapSource.clone()
@@ -240,20 +254,48 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     return clone
   }, [catScene, paintedBodyMap])
 
+  // Apply toon shading to the box model
+  const boxWithToon = useMemo(() => {
+    const clone = boxScene.clone(true)
+    const meshes = []
+    clone.traverse((child) => { if (child.isMesh) meshes.push(child) })
+    for (const child of meshes) {
+      const oldMat = child.material
+      const mat = createToonMaterial()
+      if (oldMat.map) { mat.uniforms.uMap.value = oldMat.map; mat.uniforms.uHasMap.value = 1.0 }
+      if (oldMat.transparent) { mat.transparent = true; mat.uniforms.uAlphaTest.value = 0.5; mat.depthWrite = false }
+      if (oldMat.side === THREE.DoubleSide) mat.side = THREE.DoubleSide
+      child.material = mat
+      child.castShadow = true
+
+      if (!oldMat.transparent && child.geometry) {
+        const outlineMat = createOutlineMaterial()
+        const outlineMesh = new THREE.Mesh(child.geometry, outlineMat)
+        outlineMesh.matrixAutoUpdate = false
+        outlineMesh.userData.__toonOutline = true
+        child.add(outlineMesh)
+      }
+    }
+    return clone
+  }, [boxScene])
+
   // Cache mesh references to avoid traverse() every frame
   const cachedMeshes = useMemo(() => {
     const toonMeshes = []
     const outlineMeshes = []
-    catWithToon.traverse((child) => {
-      if (!child.isMesh || !child.material?.isShaderMaterial) return
-      if (child.userData.__toonOutline) {
-        outlineMeshes.push(child)
-      } else if (child.material.uniforms?.uLightDirection) {
-        toonMeshes.push(child)
-      }
-    })
+    const sources = [catWithToon, boxWithToon]
+    for (const root of sources) {
+      root.traverse((child) => {
+        if (!child.isMesh || !child.material?.isShaderMaterial) return
+        if (child.userData.__toonOutline) {
+          outlineMeshes.push(child)
+        } else if (child.material.uniforms?.uLightDirection) {
+          toonMeshes.push(child)
+        }
+      })
+    }
     return { toonMeshes, outlineMeshes }
-  }, [catWithToon])
+  }, [catWithToon, boxWithToon])
 
   const jumpState = useRef({
     active: false,
@@ -453,15 +495,28 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       catRef.current.position.set(introControls.introX, introControls.introY, introControls.introZ)
       catRef.current.rotation.set(0, introControls.introRotY, 0)
       if (boardRef.current) boardRef.current.visible = false
-      // Breathing effect
+      if (boxRef.current) boxRef.current.visible = true
+      // Intro scale + rotation + breathing effect
+      if (catModelRef.current) {
+        catModelRef.current.scale.setScalar(introControls.introScale)
+        catModelRef.current.rotation.set(introControls.introRotX, introControls.introRotY, introControls.introRotZ)
+      }
       const breath = Math.sin(state.clock.elapsedTime * 1.8) * 0.03
       catRef.current.scale.set(1, 1 + breath, 1)
       return
     }
     if (intro.phase === 'hopping') {
       if (boardRef.current) boardRef.current.visible = true
+      if (boxRef.current) boxRef.current.visible = false
       intro.time += delta
       const t = Math.min(intro.time / HOP_ON_DURATION, 1)
+      if (catModelRef.current) {
+        const s = THREE.MathUtils.lerp(introControls.introScale, 0.03, t)
+        catModelRef.current.scale.setScalar(s)
+        catModelRef.current.rotation.x = THREE.MathUtils.lerp(introControls.introRotX, catRotX, t)
+        catModelRef.current.rotation.y = THREE.MathUtils.lerp(introControls.introRotY, catRotY, t)
+        catModelRef.current.rotation.z = THREE.MathUtils.lerp(introControls.introRotZ, catRotZ, t)
+      }
       // Arc from intro position to on-board
       const hopHeight = 4 * HOP_ON_HEIGHT * t * (1 - t)
       const x = introControls.introX * (1 - t)
@@ -622,9 +677,17 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       </group>
       <group ref={catRef} position={[0, 0.2, 0]}>
         <primitive
+          ref={catModelRef}
           object={catWithToon}
           scale={0.03}
           rotation={[catRotX, catRotY, catRotZ]}
+        />
+      </group>
+      <group ref={boxRef} position={[introControls.introX + boxControls.boxX, boxControls.boxY, introControls.introZ + boxControls.boxZ]}>
+        <primitive
+          object={boxWithToon}
+          scale={boxControls.boxScale / 1000}
+          rotation={[0, boxControls.boxRotY, 0]}
         />
       </group>
       <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
@@ -641,3 +704,4 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
 useGLTF.preload('/skateboard.glb')
 useGLTF.preload('/maxwell_the_cat_dingus/scene.gltf')
+useGLTF.preload('/empty_cardboard_box/scene.gltf')

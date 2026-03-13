@@ -12,6 +12,7 @@ import KickflipSparks from './components/KickflipSparks'
 import DustTrail from './components/DustTrail'
 import AmbientParticles from './components/AmbientParticles'
 import Background from './components/Background'
+import Sky from './components/Sky'
 import IntroRainbow from './components/IntroRainbow'
 import GameHud from './components/GameHud'
 import { EffectComposer, Bloom, SMAA, ChromaticAberration, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
@@ -511,6 +512,7 @@ export default function App() {
 
         <Ground />
         <Background />
+        <Sky />
         <IntroRainbow visible={!hasStartedGame} />
         <SkateCat
           trailTargetRef={trailTarget}
