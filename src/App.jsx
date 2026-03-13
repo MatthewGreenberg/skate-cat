@@ -12,6 +12,7 @@ import KickflipSparks from './components/KickflipSparks'
 import DustTrail from './components/DustTrail'
 import AmbientParticles from './components/AmbientParticles'
 import Background from './components/Background'
+import IntroRainbow from './components/IntroRainbow'
 import GameHud from './components/GameHud'
 import { EffectComposer, Bloom, SMAA, ChromaticAberration, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
 import { BlendFunction } from 'postprocessing'
@@ -70,7 +71,7 @@ export default function App() {
 
   useEffect(() => {
     if (!musicRef.current) return
-    musicRef.current.volume = volume
+    musicRef.current.volume = volume * volume
   }, [volume])
 
   useEffect(() => {
@@ -186,6 +187,14 @@ export default function App() {
               0% { transform: scale(0.96); opacity: 0.7; }
               50% { transform: scale(1); opacity: 1; }
               100% { transform: scale(0.96); opacity: 0.7; }
+            }
+            @keyframes loadingBarShine {
+              0% { left: -40%; }
+              100% { left: 140%; }
+            }
+            @keyframes loadingSkateBob {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-3px); }
             }`}
           </style>
           <div
@@ -197,17 +206,55 @@ export default function App() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '0.9rem',
-              background: 'radial-gradient(circle at center, rgba(35, 44, 78, 0.85), rgba(8, 11, 20, 0.95))',
+              gap: '1.2rem',
+              background: 'radial-gradient(ellipse at 50% 40%, rgba(40, 50, 85, 0.92), rgba(8, 11, 20, 0.98))',
               color: 'white',
               fontFamily: 'Knewave',
               letterSpacing: '0.04em',
             }}
           >
-            <div style={{ fontSize: '3rem', animation: 'gameLoadingPulse 1s ease-in-out infinite' }}>
-              LOADING...
+            <div style={{
+              fontSize: 'clamp(2rem, 6vw, 3.2rem)',
+              animation: 'gameLoadingPulse 1.2s ease-in-out infinite',
+              textShadow: '0 0 30px rgba(255, 107, 53, 0.3), 2px 2px 0 rgba(255, 107, 53, 0.25)',
+            }}>
+              LOADING
             </div>
-            <div style={{ fontSize: '1.2rem', opacity: 0.92 }}>
+            <div style={{
+              position: 'relative',
+              width: 'clamp(180px, 50vw, 280px)',
+              height: '12px',
+              borderRadius: '999px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              border: '2px solid rgba(255, 255, 255, 0.12)',
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                position: 'absolute',
+                inset: '2px',
+                borderRadius: '999px',
+                background: 'linear-gradient(90deg, #FF6B35, #FF8F5C, #FFD166)',
+                width: `${Math.round(loadingProgress)}%`,
+                transition: 'width 0.3s ease-out',
+                boxShadow: '0 0 12px rgba(255, 107, 53, 0.6)',
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: 0,
+                  width: '40%',
+                  height: '100%',
+                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+                  animation: 'loadingBarShine 1.5s ease-in-out infinite',
+                }} />
+              </div>
+            </div>
+            <div style={{
+              fontSize: '0.85rem',
+              fontFamily: 'Nunito, sans-serif',
+              fontWeight: 800,
+              opacity: 0.6,
+              letterSpacing: '0.15em',
+            }}>
               {Math.round(loadingProgress)}%
             </div>
           </div>
@@ -217,39 +264,149 @@ export default function App() {
       <audio ref={jumpSfxRef} src="/jump.wav" preload="auto" />
       <audio ref={jump2SfxRef} src="/jump2.wav" preload="auto" />
       <audio ref={dieSfxRef} src="/die.wav" preload="auto" />
-      {!hasStartedGame && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'rgba(0,0,0,0.5)',
-          zIndex: 999,
-          fontFamily: 'Knewave',
-          color: 'white',
-          gap: '1rem',
-        }}>
-          <h1 style={{ margin: 0, fontSize: '6.5rem' }}>Skate Cat</h1>
-          <button
-            onClick={handleStart}
-            style={{
-              padding: '1rem 2.5rem',
-              fontSize: '1.1rem',
-              fontFamily: 'Knewave',
-              background: '#FF6B35',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              boxShadow: '0 4px 15px rgba(255,107,53,0.4)',
-            }}
-          >
-            Start Run
-          </button>
-        </div>
+      {!hasStartedGame && !isLoadingAssets && loadingProgress >= 100 && (
+        <>
+          <style>
+            {`@keyframes introTitleDrop {
+              0% { transform: translateY(-60px) rotate(-6deg) scale(0.7); opacity: 0; }
+              50% { transform: translateY(8px) rotate(-2.5deg) scale(1.05); opacity: 1; }
+              70% { transform: translateY(-3px) rotate(-3deg) scale(0.98); }
+              100% { transform: translateY(0) rotate(-3deg) scale(1); opacity: 1; }
+            }
+            @keyframes introSubSpring {
+              0% { transform: translateY(18px); opacity: 0; }
+              60% { transform: translateY(-2px); opacity: 1; }
+              100% { transform: translateY(0); opacity: 1; }
+            }
+            @keyframes introBtnPop {
+              0% { transform: scale(0); opacity: 0; }
+              60% { transform: scale(1.12); opacity: 1; }
+              100% { transform: scale(1); opacity: 1; }
+            }
+            @keyframes introBtnGlow {
+              0%, 100% { box-shadow: 0 6px 20px rgba(255, 107, 53, 0.5), 0 0 0 0 rgba(255, 107, 53, 0); }
+              50% { box-shadow: 0 8px 30px rgba(255, 107, 53, 0.7), 0 0 0 6px rgba(255, 107, 53, 0.12); }
+            }
+            @keyframes introHintFade {
+              0%, 100% { opacity: 0.4; }
+              50% { opacity: 0.8; }
+            }
+            .intro-start-btn {
+              transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1), background 0.18s ease;
+            }
+            .intro-start-btn:hover {
+              background: linear-gradient(135deg, #FF8F5C, #FF5722);
+              transform: scale(1.08);
+            }
+            .intro-start-btn:active {
+              transform: scale(0.96);
+            }
+            .intro-start-btn:focus-visible {
+              outline: 3px solid rgba(255, 255, 255, 0.8);
+              outline-offset: 3px;
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .intro-start-btn,
+              .intro-start-btn:hover,
+              .intro-start-btn:active { transition: none; transform: none; }
+              * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+            }`}
+          </style>
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+            zIndex: 999,
+            fontFamily: 'Knewave',
+            color: 'white',
+          }}>
+            <h1 style={{
+              margin: 0,
+              fontSize: 'clamp(3.5rem, 10vw, 7.5rem)',
+              lineHeight: 1,
+              letterSpacing: '0.04em',
+              transform: 'rotate(-3deg)',
+              textShadow: `
+                3px 3px 0 #FF6B35,
+                6px 6px 0 rgba(255, 107, 53, 0.4),
+                0 0 40px rgba(255, 107, 53, 0.3),
+                0 0 80px rgba(255, 175, 72, 0.15)
+              `,
+              animation: 'introTitleDrop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both',
+              pointerEvents: 'none',
+            }}>
+              Skate Cat
+            </h1>
+            <div style={{
+              marginTop: '0.4rem',
+              fontSize: 'clamp(0.9rem, 2.5vw, 1.3rem)',
+              letterSpacing: '0.25em',
+              textTransform: 'uppercase',
+              opacity: 0,
+              color: 'rgba(255, 255, 255, 0.75)',
+              textShadow: '0 2px 10px rgba(0, 0, 0, 0.4)',
+              animation: 'introSubSpring 0.55s cubic-bezier(0.33, 1, 0.68, 1) 0.4s both',
+              pointerEvents: 'none',
+            }}>
+              Kick &#x2022; Flip &#x2022; Repeat
+            </div>
+            <button
+              className="intro-start-btn"
+              onClick={handleStart}
+              style={{
+                marginTop: '2rem',
+                padding: '1rem 3rem',
+                fontSize: 'clamp(1rem, 2.5vw, 1.3rem)',
+                fontFamily: 'Knewave',
+                letterSpacing: '0.08em',
+                background: 'linear-gradient(135deg, #FF6B35, #FF8F5C)',
+                color: 'white',
+                border: '3px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: '60px',
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+                boxShadow: '0 6px 20px rgba(255, 107, 53, 0.5)',
+                animation: 'introBtnPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.6s both, introBtnGlow 3s ease-in-out 1.5s infinite',
+              }}
+            >
+              Start Run
+            </button>
+            <div style={{
+              marginTop: '1.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              fontSize: '0.75rem',
+              fontFamily: 'Nunito, sans-serif',
+              fontWeight: 800,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: 'rgba(255, 255, 255, 0.45)',
+              textShadow: '0 1px 6px rgba(0, 0, 0, 0.3)',
+              animation: 'introHintFade 3s ease-in-out 1.2s infinite both',
+              pointerEvents: 'none',
+            }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '1.6rem',
+                height: '1.6rem',
+                borderRadius: '5px',
+                border: '2px solid rgba(255, 255, 255, 0.3)',
+                background: 'rgba(255, 255, 255, 0.08)',
+                fontSize: '0.85rem',
+                fontFamily: 'Knewave',
+                color: 'rgba(255, 255, 255, 0.6)',
+              }}>&#x2191;</span>
+              to kickflip
+            </div>
+          </div>
+        </>
       )}
       {isCountdownActive && (
         <>
@@ -293,25 +450,32 @@ export default function App() {
             zIndex: 220,
             display: 'flex',
             alignItems: 'center',
-            gap: '0.6rem',
-            padding: '0.55rem 0.85rem',
+            gap: '0.5rem',
+            padding: '0.45rem 0.75rem',
             borderRadius: '999px',
-            border: '2px solid rgba(255, 255, 255, 0.65)',
-            background: 'rgba(0, 0, 0, 0.35)',
-            color: '#fff',
-            fontFamily: 'Knewave',
-            letterSpacing: '0.03em',
+            border: '2px solid rgba(255, 255, 255, 0.18)',
+            background: 'rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(8px)',
+            color: 'rgba(255, 255, 255, 0.7)',
+            fontFamily: 'Nunito, sans-serif',
+            fontWeight: 800,
+            fontSize: '0.65rem',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
           }}
         >
-          <span>VOLUME</span>
+          <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>
+            {volume > 0.6 ? '🔊' : volume > 0.3 ? '🔉' : '🔈'}
+          </span>
           <input
             type="range"
+            className="skate-slider"
             min="0.1"
             max="1"
             step="0.01"
             value={volume}
             onChange={(e) => setVolume(Number(e.target.value))}
-            style={{ width: '130px', cursor: 'pointer' }}
+            style={{ width: '100px' }}
           />
         </div>
       )}
@@ -322,7 +486,7 @@ export default function App() {
         gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
         shadows={{ type: THREE.PCFShadowMap }}
       >
-        <fog attach="fog" args={['#c8d8c0', 50, 140]} />
+        <fog attach="fog" args={['#c4d4b8', 55, 130]} />
 
         <CameraRig started={hasStartedGame} />
 
@@ -347,6 +511,7 @@ export default function App() {
 
         <Ground />
         <Background />
+        <IntroRainbow visible={!hasStartedGame} />
         <SkateCat
           trailTargetRef={trailTarget}
           controlsEnabled={hasStartedGame && !isGameOver && !isCountdownActive}

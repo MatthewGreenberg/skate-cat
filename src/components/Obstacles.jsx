@@ -85,7 +85,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         const ob = active.current[i]
         if (!ob.visible) continue
         // Log is near the cat (z ~ 0) and cat is not jumping
-        if (ob.z > -0.8 && ob.z < 0.8 && !ob.scored) {
+        if (ob.z > -1.2 && ob.z < 0.5 && !ob.scored) {
           if (!gameState.jumping && !isDebug) {
             // HIT — game over
             gameState.gameOver = true

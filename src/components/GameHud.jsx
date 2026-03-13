@@ -9,67 +9,96 @@ const hudStyle = {
   transform: 'translateX(-50%)',
   display: 'flex',
   alignItems: 'center',
-  gap: '1rem',
-  padding: '0.6rem 1rem',
+  gap: '0.9rem',
+  padding: '0.55rem 1.2rem',
   borderRadius: '999px',
-  background: 'linear-gradient(135deg, rgba(255, 116, 181, 0.92), rgba(255, 175, 72, 0.92))',
-  border: '2px solid rgba(255, 255, 255, 0.7)',
-  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
+  background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.88), rgba(255, 160, 72, 0.88))',
+  border: '3px solid rgba(255, 255, 255, 0.35)',
+  boxShadow: '0 6px 24px rgba(255, 107, 53, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
   fontFamily: 'Knewave',
   color: '#fff',
   zIndex: 60,
   pointerEvents: 'none',
+  letterSpacing: '0.04em',
 }
 
 const dotRowStyle = {
   display: 'flex',
   alignItems: 'center',
-  gap: '0.55rem',
+  gap: '0.45rem',
 }
 
-const scoreStyle = {
-  padding: '0.2rem 0.65rem',
+const scorePillStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.35rem',
+  padding: '0.2rem 0.75rem',
   borderRadius: '999px',
   background: 'rgba(0, 0, 0, 0.22)',
-  fontWeight: 900,
-  textTransform: 'uppercase',
+  border: '1px solid rgba(255, 255, 255, 0.12)',
   fontSize: '1rem',
+  letterSpacing: '0.06em',
+  textShadow: '0 1px 4px rgba(0, 0, 0, 0.3)',
+}
+
+const scoreLabelStyle = {
+  fontSize: '0.6rem',
+  fontFamily: 'Nunito, sans-serif',
+  fontWeight: 800,
+  letterSpacing: '0.12em',
+  opacity: 0.65,
+}
+
+const scoreNumStyle = {
+  fontSize: '1.05rem',
+  letterSpacing: '0.04em',
 }
 
 function getDotStyle(isActive) {
   return {
-    width: isActive ? '1.45rem' : '1.05rem',
-    height: isActive ? '1.45rem' : '1.05rem',
+    width: isActive ? '1.3rem' : '0.9rem',
+    height: isActive ? '1.3rem' : '0.9rem',
     borderRadius: '999px',
-    background: isActive ? '#55b8ff' : 'transparent',
-    border: '3px solid #9cdcff',
-    boxShadow: isActive ? '0 0 0 4px rgba(85, 184, 255, 0.28)' : 'none',
-    transition: 'all 120ms ease-out',
+    background: isActive ? '#fff' : 'rgba(255, 255, 255, 0.25)',
+    border: '2px solid rgba(255, 255, 255, 0.7)',
+    boxShadow: isActive
+      ? '0 0 8px rgba(255, 255, 255, 0.6), 0 0 0 3px rgba(255, 255, 255, 0.15)'
+      : 'none',
+    transition: 'all 100ms cubic-bezier(0.33, 1, 0.68, 1)',
   }
 }
 
+const JUDGEMENT_STYLES = {
+  EARLY: {
+    color: '#FFD166',
+    shadow: '2px 2px 0 rgba(200, 140, 0, 0.5), 0 0 20px rgba(255, 209, 102, 0.4), 0 0 40px rgba(255, 209, 102, 0.15)',
+  },
+  PERFECT: {
+    color: '#fff',
+    shadow: '2px 2px 0 #FF6B35, 4px 4px 0 rgba(255, 107, 53, 0.4), 0 0 30px rgba(255, 107, 53, 0.5), 0 0 60px rgba(255, 175, 72, 0.2)',
+  },
+  LATE: {
+    color: '#FF8BA5',
+    shadow: '2px 2px 0 rgba(180, 60, 80, 0.5), 0 0 20px rgba(255, 139, 165, 0.4), 0 0 40px rgba(255, 139, 165, 0.15)',
+  },
+}
+
 function getJudgementStyle(label, shouldAnimate) {
-  const colors = {
-    EARLY: '#ffc66b',
-    PERFECT: '#65ff9e',
-    LATE: '#ff8ba5',
-  }
   const normalizedLabel = label.replace('!', '')
+  const style = JUDGEMENT_STYLES[normalizedLabel] || { color: '#fff', shadow: 'none' }
   return {
     position: 'fixed',
     top: '5rem',
     left: '50%',
     transform: 'translateX(-50%) scale(0.85)',
     opacity: 0,
-    color: colors[normalizedLabel] || '#fff',
-    textShadow: '0 0 18px rgba(0, 0, 0, 0.5)',
+    color: style.color,
+    textShadow: style.shadow,
     fontFamily: 'Knewave',
-    fontWeight: 1000,
-    letterSpacing: '0.06em',
-    fontSize: '2.8rem',
+    letterSpacing: '0.08em',
+    fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
     textTransform: 'uppercase',
-    transition: 'opacity 160ms ease-out',
-    animation: shouldAnimate ? 'hudJudgementPop 420ms cubic-bezier(0.17, 0.9, 0.35, 1) both' : 'none',
+    animation: shouldAnimate ? 'hudJudgementPop 500ms cubic-bezier(0.17, 0.9, 0.35, 1) both' : 'none',
     pointerEvents: 'none',
     zIndex: 61,
   }
@@ -122,22 +151,22 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
     <>
       <style>
         {`@keyframes streakPop {
-          0% { transform: translateX(-50%) scale(0.3); opacity: 0; }
-          25% { transform: translateX(-50%) scale(1.25); opacity: 1; }
-          60% { transform: translateX(-50%) scale(0.95); opacity: 1; }
-          100% { transform: translateX(-50%) scale(1); opacity: 1; }
+          0% { transform: translateX(-50%) rotate(-3deg) scale(0.3); opacity: 0; }
+          25% { transform: translateX(-50%) rotate(-2deg) scale(1.2); opacity: 1; }
+          60% { transform: translateX(-50%) rotate(-1deg) scale(0.96); opacity: 1; }
+          100% { transform: translateX(-50%) rotate(0deg) scale(1); opacity: 1; }
         }
         @keyframes scorePopFloat {
           0% { transform: translateX(-50%) translateY(0) scale(0.5); opacity: 0; }
-          20% { transform: translateX(-50%) translateY(-10px) scale(1.2); opacity: 1; }
-          70% { transform: translateX(-50%) translateY(-40px) scale(1); opacity: 1; }
-          100% { transform: translateX(-50%) translateY(-60px) scale(0.8); opacity: 0; }
+          18% { transform: translateX(-50%) translateY(-12px) scale(1.3); opacity: 1; }
+          65% { transform: translateX(-50%) translateY(-36px) scale(1.05); opacity: 1; }
+          100% { transform: translateX(-50%) translateY(-56px) scale(0.85); opacity: 0; }
         }
         @keyframes hudJudgementPop {
-          0% { transform: translateX(-50%) translateY(14px) scale(0.62); opacity: 0; }
-          38% { transform: translateX(-50%) translateY(-3px) scale(1.16); opacity: 1; }
-          72% { transform: translateX(-50%) translateY(0px) scale(1.02); opacity: 1; }
-          100% { transform: translateX(-50%) translateY(-10px) scale(0.96); opacity: 0; }
+          0% { transform: translateX(-50%) translateY(16px) rotate(2deg) scale(0.5); opacity: 0; }
+          35% { transform: translateX(-50%) translateY(-4px) rotate(-1deg) scale(1.15); opacity: 1; }
+          70% { transform: translateX(-50%) translateY(0px) rotate(0deg) scale(1.02); opacity: 1; }
+          100% { transform: translateX(-50%) translateY(-12px) rotate(0deg) scale(0.94); opacity: 0; }
         }`}
       </style>
       <div
@@ -151,7 +180,16 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
           <span style={getDotStyle(activeDot === 0)} />
           <span style={getDotStyle(activeDot === 1)} />
         </div>
-        <div style={scoreStyle}>SCORE: {score}</div>
+        <div style={{
+          width: '1px',
+          height: '1.2rem',
+          background: 'rgba(255, 255, 255, 0.2)',
+          borderRadius: '999px',
+        }} />
+        <div style={scorePillStyle}>
+          <span style={scoreLabelStyle}>SCORE</span>
+          <span style={scoreNumStyle}>{score}</span>
+        </div>
       </div>
       {streak >= 2 && (
         <div
@@ -163,12 +201,17 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
             transform: 'translateX(-50%)',
             fontFamily: 'Knewave',
             fontSize: `${Math.min(2 + streak * 0.3, 5)}rem`,
-            color: streak >= 10 ? '#ff6bff' : streak >= 5 ? '#ffb865' : '#65d4ff',
-            textShadow: `0 0 ${Math.min(8 + streak * 3, 30)}px currentColor, 0 2px 8px rgba(0,0,0,0.4)`,
+            letterSpacing: '0.06em',
+            color: streak >= 10 ? '#FFD166' : streak >= 5 ? '#FF8F5C' : '#fff',
+            textShadow: `
+              2px 2px 0 #FF6B35,
+              4px 4px 0 rgba(255, 107, 53, ${Math.min(0.2 + streak * 0.04, 0.5)}),
+              0 0 ${Math.min(12 + streak * 4, 40)}px rgba(255, 107, 53, 0.5),
+              0 0 ${Math.min(20 + streak * 6, 60)}px rgba(255, 175, 72, 0.2)
+            `,
             pointerEvents: 'none',
             zIndex: 63,
             animation: 'streakPop 0.4s cubic-bezier(0.16, 0.88, 0.34, 1) both',
-            letterSpacing: '0.05em',
           }}
         >
           x{streak} STREAK
@@ -184,12 +227,13 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
             left: '50%',
             transform: 'translateX(-50%)',
             fontFamily: 'Knewave',
-            fontSize: '2rem',
-            color: '#65ff9e',
-            textShadow: '0 2px 12px rgba(0,0,0,0.4)',
+            fontSize: '1.8rem',
+            letterSpacing: '0.06em',
+            color: '#fff',
+            textShadow: '1px 1px 0 #FF6B35, 0 0 16px rgba(255, 107, 53, 0.5)',
             pointerEvents: 'none',
             zIndex: 62,
-            animation: 'scorePopFloat 600ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
+            animation: 'scorePopFloat 550ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
           }}
         >
           +1
