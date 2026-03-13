@@ -35,7 +35,7 @@ const fragmentShader = /* glsl */ `
     float density = uIntensity * 0.6;
     if (slotRand > density) discard;
 
-    float speed = uScrollSpeed + slotRand * 5.0;
+    float speed = uScrollSpeed + slotRand * 1.8;
     float scrollY = fract(vUv.y * (2.0 + slotRand * 3.0) + uTime * speed);
 
     float lw = uLineWidth + slotRand * uLineWidth;
@@ -54,13 +54,12 @@ const fragmentShader = /* glsl */ `
 export default function SpeedLines() {
   const meshRef = useRef()
 
-  const { color, slots, lineWidth, scrollSpeed, opacity, speedThreshold, height } = useControls('Speed Lines', {
+  const { color, slots, lineWidth, scrollSpeed, opacity, height } = useControls('Speed Lines', {
     color: '#ffffff',
     slots: { value: 38, min: 5, max: 100, step: 1 },
     lineWidth: { value: 0.11, min: 0.01, max: 0.3, step: 0.01 },
-    scrollSpeed: { value: 3.0, min: 0.5, max: 15, step: 0.5 },
+    scrollSpeed: { value: 1.4, min: 0.2, max: 8, step: 0.1 },
     opacity: { value: 0.10, min: 0, max: 1, step: 0.05 },
-    speedThreshold: { value: 18, min: 1, max: 30, step: 1 },
     height: { value: 0.56, min: 0, max: 1, step: 0.01 },
   })
 
@@ -69,7 +68,7 @@ export default function SpeedLines() {
     uIntensity: { value: 0 },
     uSlots: { value: 40 },
     uLineWidth: { value: 0.08 },
-    uScrollSpeed: { value: 3.0 },
+    uScrollSpeed: { value: 1.4 },
     uColor: { value: new THREE.Color('#ffffff') },
     uOpacity: { value: 0.7 },
   }), [])
@@ -91,8 +90,7 @@ export default function SpeedLines() {
     uniforms.uColor.value.set(color)
     uniforms.uOpacity.value = opacity
 
-    const speedExtra = Math.max(0, gameState.speed.current - gameState.baseSpeed)
-    const target = Math.min(speedExtra / speedThreshold, 1.0)
+    const target = gameState.speedLinesOn ? 1 : 0
     uniforms.uIntensity.value = THREE.MathUtils.lerp(uniforms.uIntensity.value, target, delta * 6)
   })
 

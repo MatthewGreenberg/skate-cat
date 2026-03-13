@@ -1,9 +1,9 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
 
-const MAX_BLADES = 8000
+const MAX_BLADES = 4000
 const SEGMENT_LENGTH = 20
 const SEGMENT_WIDTH = 12
 const ROAD_HALF = 1.5 // slight encroachment onto road edges
@@ -12,11 +12,11 @@ function createBladeGeometry() {
   const geo = new THREE.BufferGeometry()
   // Wider blade shape — quad-like with tapered tip
   const vertices = new Float32Array([
-    -0.5, 0,   0,
-     0.5, 0,   0,
-     0.3, 0.5, 0,
+    -0.5, 0, 0,
+    0.5, 0, 0,
+    0.3, 0.5, 0,
     -0.3, 0.5, 0,
-     0,   1,   0,
+    0, 1, 0,
   ])
   const uvs = new Float32Array([
     0, 0,
@@ -38,17 +38,45 @@ const grassVertexShader = /* glsl */ `
   uniform float uWindStrength;
   uniform float uThickness;
   uniform int uVisibleCount;
+  uniform float uCullDistance;
   varying vec2 vUv;
+  varying float vPatchNoise;
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
   flat varying int vInstanceId;
   void main() {
     vUv = uv;
     vInstanceId = gl_InstanceID;
     vec3 pos = position;
+
+    // Early world position for culling
+    vec4 earlyWorldPos = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    float distToCamera = length((viewMatrix * earlyWorldPos).xyz);
+
+    // Cull distant blades by collapsing to zero
+    if (distToCamera > uCullDistance) {
+      gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+      vPatchNoise = 0.0;
+      vWorldPos = vec3(0.0);
+      vWorldNormal = vec3(0.0, 1.0, 0.0);
+      return;
+    }
+
+    vPatchNoise = fract(sin(dot(vec2(instanceMatrix[3][0], instanceMatrix[3][2]), vec2(12.9898, 78.233))) * 43758.5453);
     // Scale X by thickness
     pos.x *= uThickness;
-    float sway = sin(uTime * uWindSpeed + instanceMatrix[3][0] * 0.5 + instanceMatrix[3][2] * 0.3) * uWindStrength * uv.y;
-    pos.x += sway;
-    vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(pos, 1.0);
+    // Multi-directional wind: sway in X and Z
+    float windPhase = uTime * uWindSpeed + instanceMatrix[3][0] * 0.5 + instanceMatrix[3][2] * 0.3;
+    float swayX = sin(windPhase) * uWindStrength * uv.y;
+    float swayZ = cos(windPhase * 0.7 + 1.3) * uWindStrength * 0.5 * uv.y;
+    pos.x += swayX;
+    pos.z += swayZ;
+    vec4 worldPos = modelMatrix * instanceMatrix * vec4(pos, 1.0);
+    vWorldPos = worldPos.xyz;
+    // Approximate normal: grass blade faces camera-ish, but tip bends with wind
+    vec3 bladeNormal = normalize(vec3(-swayX * 2.0, 1.0, -swayZ * 2.0));
+    vWorldNormal = normalize((modelMatrix * instanceMatrix * vec4(bladeNormal, 0.0)).xyz);
+    vec4 mvPosition = viewMatrix * worldPos;
     gl_Position = projectionMatrix * mvPosition;
   }
 `
@@ -58,16 +86,50 @@ const grassFragmentShader = /* glsl */ `
   uniform vec3 uColorTip;
   uniform vec3 uColorDry;
   uniform int uVisibleCount;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
+  uniform float uAmbientStrength;
+  uniform vec3 uFogColor;
+  uniform float uFogNear;
+  uniform float uFogFar;
+  uniform float uToonSteps;
+  uniform float uShadowBrightness;
   varying vec2 vUv;
+  varying float vPatchNoise;
+  varying vec3 vWorldPos;
+  varying vec3 vWorldNormal;
   flat varying int vInstanceId;
   void main() {
     if (vInstanceId >= uVisibleCount) discard;
-    // Mix some dry/yellow blades based on instance ID
+
+    // Mix some color variety based on instance ID
     float dryMix = fract(sin(float(vInstanceId) * 43758.5453) * 2.0);
-    dryMix = smoothstep(0.6, 1.0, dryMix); // ~40% of blades get some dry color
-    vec3 baseColor = mix(uColorBase, uColorDry, dryMix * 0.7);
-    vec3 tipColor = mix(uColorTip, uColorDry, dryMix * 0.4);
+    dryMix = smoothstep(0.6, 1.0, dryMix);
+    vec3 baseColor = mix(uColorBase, uColorDry, dryMix * 0.5);
+    vec3 tipColor = mix(uColorTip, uColorDry, dryMix * 0.3);
     vec3 color = mix(baseColor, tipColor, vUv.y);
+
+    // Toon-style stepped lighting (matches cat shader)
+    vec3 normal = normalize(vWorldNormal);
+    float NdotL = dot(normal, normalize(uSunDirection));
+    float lightVal = NdotL * 0.5 + 0.5;
+    float stepped = floor(lightVal * uToonSteps) / uToonSteps;
+    float lightIntensity = mix(uShadowBrightness, 1.0, stepped);
+
+    color *= lightIntensity;
+
+    // Slight color boost at tips for a vibrant anime look
+    float tip = smoothstep(0.6, 1.0, vUv.y);
+    color += tipColor * tip * 0.15;
+
+    // Patch variation for visual interest
+    color *= mix(0.92, 1.08, vPatchNoise);
+
+    // Fog
+    float depth = gl_FragCoord.z / gl_FragCoord.w;
+    float fogFactor = smoothstep(uFogNear, uFogFar, depth);
+    color = mix(color, uFogColor, fogFactor);
+
     gl_FragColor = vec4(color, 1.0);
   }
 `
@@ -76,10 +138,10 @@ export default function Grass() {
   const meshRef = useRef()
 
   const { colorBase, colorTip, colorDry, windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useControls('Grass', {
-    colorBase: '#3D8B37',
-    colorTip: '#7EC850',
-    colorDry: '#C4B454',
-    bladeCount: { value: 6000, min: 100, max: MAX_BLADES, step: 100 },
+    colorBase: '#2E9E3A',
+    colorTip: '#8EE85A',
+    colorDry: '#D4CC44',
+    bladeCount: { value: 4000, min: 100, max: MAX_BLADES, step: 100 },
     thickness: { value: 0.08, min: 0.005, max: 0.2, step: 0.005 },
     windSpeed: { value: 2.0, min: 0, max: 10, step: 0.1 },
     windStrength: { value: 0.12, min: 0, max: 0.5, step: 0.01 },
@@ -93,9 +155,18 @@ export default function Grass() {
     uWindStrength: { value: 0.12 },
     uThickness: { value: 0.08 },
     uVisibleCount: { value: 6000 },
-    uColorBase: { value: new THREE.Color('#3D8B37') },
-    uColorTip: { value: new THREE.Color('#7EC850') },
-    uColorDry: { value: new THREE.Color('#C4B454') },
+    uColorBase: { value: new THREE.Color('#2E9E3A') },
+    uColorTip: { value: new THREE.Color('#8EE85A') },
+    uColorDry: { value: new THREE.Color('#D4CC44') },
+    uSunDirection: { value: new THREE.Vector3(5, 10, 3).normalize() },
+    uSunColor: { value: new THREE.Color('#ffe6bf') },
+    uAmbientStrength: { value: 0.7 },
+    uFogColor: { value: new THREE.Color('#c8d8c0') },
+    uFogNear: { value: 40 },
+    uFogFar: { value: 140 },
+    uToonSteps: { value: 4.0 },
+    uShadowBrightness: { value: 0.55 },
+    uCullDistance: { value: 30.0 },
   })
 
   const geometry = useMemo(() => createBladeGeometry(), [])
@@ -124,11 +195,34 @@ export default function Grass() {
         x,
         z: (Math.random() - 0.5) * SEGMENT_LENGTH,
         heightRand: Math.random(),
+        widthRand: 0.8 + Math.random() * 0.4,
+        leanX: (Math.random() - 0.5) * 0.24,
+        leanZ: (Math.random() - 0.5) * 0.24,
         rotY: Math.random() * Math.PI,
       })
     }
     return data
   }, [])
+
+  const updateInstanceMatrices = useCallback((mesh, minHeight, maxHeight) => {
+    if (!mesh) return
+    for (let i = 0; i < MAX_BLADES; i++) {
+      const s = seedData[i]
+      const h = minHeight + s.heightRand * (maxHeight - minHeight)
+      dummy.position.set(s.x, 0, s.z)
+      dummy.rotation.set(s.leanX, s.rotY, s.leanZ)
+      dummy.scale.set(s.widthRand, h, 1)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.computeBoundingSphere()
+    mesh.computeBoundingBox()
+  }, [seedData, dummy])
+
+  useEffect(() => {
+    updateInstanceMatrices(meshRef.current, bladeMinHeight, bladeMaxHeight)
+  }, [bladeMinHeight, bladeMaxHeight, updateInstanceMatrices])
 
   useFrame((_, delta) => {
     const u = uniformsRef.current
@@ -140,19 +234,6 @@ export default function Grass() {
     u.uColorBase.value.set(colorBase)
     u.uColorTip.value.set(colorTip)
     u.uColorDry.value.set(colorDry)
-
-    if (meshRef.current) {
-      for (let i = 0; i < MAX_BLADES; i++) {
-        const s = seedData[i]
-        const h = bladeMinHeight + s.heightRand * (bladeMaxHeight - bladeMinHeight)
-        dummy.position.set(s.x, 0, s.z)
-        dummy.rotation.set(0, s.rotY, 0)
-        dummy.scale.set(1, h, 1)
-        dummy.updateMatrix()
-        meshRef.current.setMatrixAt(i, dummy.matrix)
-      }
-      meshRef.current.instanceMatrix.needsUpdate = true
-    }
   })
 
   return (
@@ -160,19 +241,10 @@ export default function Grass() {
       ref={(el) => {
         meshRef.current = el
         if (el) {
-          for (let i = 0; i < MAX_BLADES; i++) {
-            const s = seedData[i]
-            dummy.position.set(s.x, 0, s.z)
-            dummy.rotation.set(0, s.rotY, 0)
-            dummy.scale.set(1, 0.1 + s.heightRand * 0.2, 1)
-            dummy.updateMatrix()
-            el.setMatrixAt(i, dummy.matrix)
-          }
-          el.instanceMatrix.needsUpdate = true
+          updateInstanceMatrices(el, bladeMinHeight, bladeMaxHeight)
         }
       }}
       args={[geometry, material, MAX_BLADES]}
-      frustumCulled={false}
     />
   )
 }

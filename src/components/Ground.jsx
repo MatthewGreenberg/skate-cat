@@ -1,37 +1,167 @@
-import { useRef } from 'react'
+import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useControls } from 'leva'
+import * as THREE from 'three'
 import Grass from './Grass'
+import Pebbles from './Pebbles'
+import Wildflowers from './Wildflowers'
 import { gameState } from '../store'
 
 const SEGMENT_COUNT = 8
 const SEGMENT_LENGTH = 20
 const SEGMENT_WIDTH = 12
 
+const roadVertexShader = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    vUv = uv;
+    vec4 modelPosition = modelMatrix * vec4(position, 1.0);
+    vec4 viewPosition = viewMatrix * modelPosition;
+    vNormal = normalize(normalMatrix * normal);
+    vViewDir = normalize(-viewPosition.xyz);
+    gl_Position = projectionMatrix * viewPosition;
+  }
+`
+
+const roadFragmentShader = /* glsl */ `
+  uniform vec3 uBaseColor;
+  uniform vec3 uDetailColor;
+  uniform vec3 uLightDirection;
+  uniform float uToonSteps;
+  uniform float uShadowBrightness;
+  uniform vec3 uEdgeColor;
+  uniform float uGrainAmount;
+  uniform float uGrainScale;
+  uniform float uGradientStrength;
+  uniform float uEdgeLineWidth;
+  uniform float uCenterLineOpacity;
+  uniform float uVignetteStrength;
+
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+
+  // Simple hash for hand-painted noise
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  void main() {
+    vec2 uv = vUv;
+
+    // Warm-to-cool gradient across road width (anime BG style)
+    float xGrad = uv.x;
+    vec3 warmSide = uBaseColor * (1.0 + uGradientStrength);
+    vec3 coolSide = uBaseColor * (1.0 - uGradientStrength) + vec3(-0.02, 0.0, 0.03) * uGradientStrength;
+    vec3 color = mix(warmSide, coolSide, xGrad);
+
+    // Hand-painted noise — subtle color variation
+    float grain = hash(floor(uv * uGrainScale)) * uGrainAmount - uGrainAmount * 0.5;
+    color += grain;
+
+    // Toon lighting
+    vec3 normal = normalize(vNormal);
+    float NdotL = dot(normal, normalize(uLightDirection));
+    float lightVal = NdotL * 0.5 + 0.5;
+    float stepped = floor(lightVal * uToonSteps) / uToonSteps;
+    float lightIntensity = mix(uShadowBrightness, 1.0, stepped);
+    color *= lightIntensity;
+
+    // Bold edge stripes with inner shadow for depth
+    float edgeDist = abs(uv.x - 0.5) * 2.0;
+    float edgeStart = 1.0 - uEdgeLineWidth;
+    float edgeLine = smoothstep(edgeStart, edgeStart + 0.03, edgeDist);
+    color = mix(color, uEdgeColor, edgeLine * 0.9);
+
+    // Inner shadow just inside the edge lines
+    float innerShadow = smoothstep(edgeStart - 0.07, edgeStart, edgeDist);
+    color = mix(color, uBaseColor * 0.7, innerShadow * (1.0 - edgeLine) * 0.4);
+
+    // Subtle center dashed line
+    float centerLine = smoothstep(0.015, 0.01, abs(uv.x - 0.5));
+    float dash = step(0.5, fract(uv.y * 8.0));
+    color = mix(color, uEdgeColor, centerLine * dash * uCenterLineOpacity);
+
+    // Slight vignette darkening at road edges for depth
+    float vignette = smoothstep(0.0, 0.5, 1.0 - edgeDist);
+    color *= mix(1.0 - uVignetteStrength, 1.0, vignette);
+
+    gl_FragColor = vec4(color, 1.0);
+  }
+`
+
 export default function Ground() {
-  const { baseSpeed } = useControls('Road', {
+  const {
+    baseSpeed, roadColor, roadDetail, edgeColor,
+    toonSteps, shadowBrightness, grainAmount, grainScale,
+    gradientStrength, edgeLineWidth, centerLineOpacity, vignetteStrength,
+  } = useControls('Road', {
     baseSpeed: { value: 5, min: 0, max: 30, step: 0.5 },
+    roadColor: '#c49468',
+    roadDetail: '#8B6B4A',
+    edgeColor: '#F5E6D0',
+    toonSteps: { value: 2, min: 1, max: 6, step: 1 },
+    shadowBrightness: { value: 0.55, min: 0, max: 1, step: 0.05 },
+    grainAmount: { value: 0.03, min: 0, max: 0.15, step: 0.005 },
+    grainScale: { value: 400, min: 50, max: 1000, step: 10 },
+    gradientStrength: { value: 0.08, min: 0, max: 0.3, step: 0.01 },
+    edgeLineWidth: { value: 0.15, min: 0, max: 0.3, step: 0.01 },
+    centerLineOpacity: { value: 0.3, min: 0, max: 1, step: 0.05 },
+    vignetteStrength: { value: 0.27, min: 0, max: 0.3, step: 0.01 },
   })
+
+  const roadMaterial = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uBaseColor: { value: new THREE.Color('#c49468') },
+        uDetailColor: { value: new THREE.Color('#8B6B4A') },
+        uLightDirection: { value: new THREE.Vector3(5, 10, 3).normalize() },
+        uToonSteps: { value: 2.0 },
+        uShadowBrightness: { value: 0.55 },
+        uEdgeColor: { value: new THREE.Color('#F5E6D0') },
+        uGrainAmount: { value: 0.03 },
+        uGrainScale: { value: 400.0 },
+        uGradientStrength: { value: 0.08 },
+        uEdgeLineWidth: { value: 0.15 },
+        uCenterLineOpacity: { value: 0.3 },
+        uVignetteStrength: { value: 0.27 },
+      },
+      vertexShader: roadVertexShader,
+      fragmentShader: roadFragmentShader,
+    })
+  }, [])
   // Sync leva base speed to game state
   gameState.baseSpeed = baseSpeed
   if (gameState.speed.current < baseSpeed) gameState.speed.current = baseSpeed
   const groupRefs = useRef([])
-  const offsets = useRef(
-    Array.from({ length: SEGMENT_COUNT }, (_, i) => i * SEGMENT_LENGTH)
-  )
+  const totalLength = SEGMENT_COUNT * SEGMENT_LENGTH
+  const scrollOffset = useRef(0)
 
   useFrame((_, delta) => {
+    if (roadMaterial) {
+      roadMaterial.uniforms.uBaseColor.value.set(roadColor)
+      roadMaterial.uniforms.uDetailColor.value.set(roadDetail)
+      roadMaterial.uniforms.uEdgeColor.value.set(edgeColor)
+      roadMaterial.uniforms.uToonSteps.value = toonSteps
+      roadMaterial.uniforms.uShadowBrightness.value = shadowBrightness
+      roadMaterial.uniforms.uGrainAmount.value = grainAmount
+      roadMaterial.uniforms.uGrainScale.value = grainScale
+      roadMaterial.uniforms.uGradientStrength.value = gradientStrength
+      roadMaterial.uniforms.uEdgeLineWidth.value = edgeLineWidth
+      roadMaterial.uniforms.uCenterLineOpacity.value = centerLineOpacity
+      roadMaterial.uniforms.uVignetteStrength.value = vignetteStrength
+    }
     if (gameState.gameOver) return
+    scrollOffset.current += gameState.speed.current * delta
     for (let i = 0; i < SEGMENT_COUNT; i++) {
-      offsets.current[i] -= gameState.speed.current * delta
-
-      if (offsets.current[i] < -SEGMENT_LENGTH) {
-        const maxZ = Math.max(...offsets.current)
-        offsets.current[i] = maxZ + SEGMENT_LENGTH
-      }
-
+      // Each segment has a fixed slot; we wrap the scroll offset modularly
+      const pos = i * SEGMENT_LENGTH - (scrollOffset.current % totalLength)
+      // Wrap into range [-SEGMENT_LENGTH, totalLength - SEGMENT_LENGTH)
+      const wrapped = ((pos + SEGMENT_LENGTH) % totalLength + totalLength) % totalLength - SEGMENT_LENGTH
       if (groupRefs.current[i]) {
-        groupRefs.current[i].position.z = -offsets.current[i]
+        groupRefs.current[i].position.z = -wrapped
       }
     }
   })
@@ -42,19 +172,25 @@ export default function Ground() {
         <group
           key={i}
           ref={(el) => (groupRefs.current[i] = el)}
-          position={[0, 0, -offsets.current[i]]}
+          position={[0, 0, -(i * SEGMENT_LENGTH)]}
         >
-          {/* Green ground */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+          {/* Green ground — toon flat */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
             <planeGeometry args={[SEGMENT_WIDTH, SEGMENT_LENGTH]} />
-            <meshStandardMaterial color="#7EC850" />
+            <meshToonMaterial color="#4CB944" />
           </mesh>
-          {/* Tan road strip */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+          {/* Textured road strip */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} material={roadMaterial} receiveShadow>
             <planeGeometry args={[3, SEGMENT_LENGTH]} />
-            <meshStandardMaterial color="#D4A574" />
           </mesh>
+          {/* Shadow catcher for the shader road (ShaderMaterial can't receive built-in shadows) */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} receiveShadow renderOrder={10}>
+            <planeGeometry args={[3, SEGMENT_LENGTH]} />
+            <shadowMaterial transparent opacity={0.35} depthWrite={false} />
+          </mesh>
+          <Pebbles segmentSeed={i} />
           <Grass />
+          <Wildflowers />
         </group>
       ))}
     </group>

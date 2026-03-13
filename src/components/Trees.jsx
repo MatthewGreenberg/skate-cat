@@ -41,5 +41,5 @@ export default function Trees() {
     </group>
   )
 }
-
 useGLTF.preload('/low_poly_pine.glb')
+

@@ -1,26 +1,39 @@
-import { useThree } from '@react-three/fiber'
+import { useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
+import { Sky as DreiSky, Clouds, Cloud } from '@react-three/drei'
 import * as THREE from 'three'
-import { useEffect } from 'react'
 
 export default function Sky() {
-  const { scene } = useThree()
+  const cloudsRef = useRef()
 
-  useEffect(() => {
-    const canvas = document.createElement('canvas')
-    canvas.width = 1
-    canvas.height = 256
-    const ctx = canvas.getContext('2d')
-    const gradient = ctx.createLinearGradient(0, 0, 0, 256)
-    gradient.addColorStop(0, '#4A90D9')
-    gradient.addColorStop(0.6, '#87CEEB')
-    gradient.addColorStop(1, '#E8F4F8')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, 1, 256)
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.mapping = THREE.EquirectangularReflectionMapping
-    scene.background = texture
-    return () => { texture.dispose() }
-  }, [scene])
+  useFrame((_, delta) => {
+    if (cloudsRef.current) {
+      cloudsRef.current.rotation.y += delta * 0.02
+    }
+  })
 
-  return null
+  return (
+    <>
+      <DreiSky
+        sunPosition={[10, 20, -50]}
+        turbidity={0.8}
+        rayleigh={1.2}
+        mieCoefficient={0.005}
+        mieDirectionalG={0.8}
+      />
+
+      <group ref={cloudsRef}>
+        <Clouds material={THREE.MeshBasicMaterial}>
+          <Cloud
+            segments={40}
+            bounds={[50, 10, 50]}
+            volume={20}
+            color="#ffffff"
+            position={[0, 15, -40]}
+            opacity={0.5}
+          />
+        </Clouds>
+      </group>
+    </>
+  )
 }
