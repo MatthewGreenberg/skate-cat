@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useProgress } from '@react-three/drei'
@@ -15,17 +15,18 @@ import Background from './components/Background'
 import Sky from './components/Sky'
 import IntroRainbow from './components/IntroRainbow'
 import GameHud from './components/GameHud'
-import { EffectComposer, Bloom, SMAA, ChromaticAberration, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
-import { BlendFunction } from 'postprocessing'
+import { EffectComposer, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
+import { BloomEffect } from 'postprocessing'
 import { useControls } from 'leva'
 import { gameState, DAY_NIGHT_CYCLE_SPEED, getNightFactor, getNightContrastOffset, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from './store'
 import { BEAT_INTERVAL } from './rhythm'
 
 // Reusable temp color for DayNightController
 const _tmpColor = new THREE.Color()
+const NIGHT_BLOOM_INTENSITY = 4.3
 
 
-function DayNightController() {
+function DayNightController({ isRunning }) {
   const dirLightRef = useRef()
   const ambientRef = useRef()
   const hemiRef = useRef()
@@ -36,10 +37,10 @@ function DayNightController() {
   })
 
   useFrame((_, delta) => {
-    // Cycle timeOfDay (or use leva override when paused)
+    // Cycle timeOfDay only while the run is active (or use leva override when paused)
     if (paused) {
       gameState.timeOfDay.current = timeOfDay
-    } else {
+    } else if (isRunning) {
       gameState.timeOfDay.current = (gameState.timeOfDay.current + delta * DAY_NIGHT_CYCLE_SPEED) % 1
     }
 
@@ -100,6 +101,33 @@ function DayNightController() {
   )
 }
 
+function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightness, contrast, hue, saturation }) {
+  const bloom = useMemo(() => new BloomEffect({
+    intensity: bloomIntensity,
+    luminanceThreshold: bloomThreshold,
+    luminanceSmoothing: bloomSmoothing,
+    mipmapBlur: true,
+  }), [])
+
+  useEffect(() => {
+    bloom.luminanceMaterial.threshold = bloomThreshold
+    bloom.luminanceMaterial.smoothing = bloomSmoothing
+  }, [bloom, bloomThreshold, bloomSmoothing])
+
+  useFrame(() => {
+    const nightFactor = getNightFactor(gameState.timeOfDay.current)
+    bloom.intensity = THREE.MathUtils.lerp(bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
+  })
+
+  return (
+    <EffectComposer multisampling={0}>
+      <primitive object={bloom} />
+      <BrightnessContrast brightness={brightness} contrast={contrast} />
+      <HueSaturation hue={hue} saturation={saturation} />
+    </EffectComposer>
+  )
+}
+
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 
 export default function App() {
@@ -120,13 +148,11 @@ export default function App() {
 
   const {
     bloomIntensity, bloomThreshold, bloomSmoothing,
-    caOffset,
     brightness, contrast, hue, saturation,
   } = useControls('Post Processing', {
     bloomIntensity: { value: 2.1, min: 0, max: 10, step: 0.1 },
     bloomThreshold: { value: 0.35, min: 0, max: 1, step: 0.05 },
     bloomSmoothing: { value: 0.1, min: 0, max: 1, step: 0.05 },
-    caOffset: { value: 0.0005, min: 0, max: 0.01, step: 0.0001 },
     brightness: { value: 0.0, min: -0.3, max: 0.3, step: 0.01 },
     contrast: { value: 0.1, min: -0.5, max: 0.5, step: 0.01 },
     hue: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
@@ -193,6 +219,7 @@ export default function App() {
     gameState.speedLinesOn = true
     gameState.jumping = false
     gameState.streak.current = 0
+    gameState.timeOfDay.current = 0
     setIsGameOver(false)
     setHasStartedGame(true)
     setTimingFeedback({ label: '', id: 0 })
@@ -216,6 +243,7 @@ export default function App() {
     gameState.speedLinesOn = true
     gameState.jumping = false
     gameState.streak.current = 0
+    gameState.timeOfDay.current = 0
     if (musicRef.current) {
       musicRef.current.currentTime = 0
       musicRef.current.play().then(() => {
@@ -569,7 +597,7 @@ export default function App() {
         <fog attach="fog" args={['#c4d4b8', 55, 130]} />
 
         <CameraRig started={hasStartedGame} />
-        <DayNightController />
+        <DayNightController isRunning={hasStartedGame && !isGameOver} />
 
         <Ground />
         <Background />
@@ -593,20 +621,15 @@ export default function App() {
         <KickflipSparks />
         <DustTrail />
         <AmbientParticles />
-        <EffectComposer multisampling={0}>
-          {/* <ChromaticAberration
-            blendFunction={BlendFunction.NORMAL}
-            offset={[caOffset, caOffset]}
-          /> */}
-          <Bloom
-            intensity={bloomIntensity}
-            luminanceThreshold={bloomThreshold}
-            luminanceSmoothing={bloomSmoothing}
-            mipmapBlur
-          />
-          <BrightnessContrast brightness={brightness} contrast={contrast} />
-          <HueSaturation hue={hue} saturation={saturation} />
-        </EffectComposer>
+        <PostEffects
+          bloomIntensity={bloomIntensity}
+          bloomThreshold={bloomThreshold}
+          bloomSmoothing={bloomSmoothing}
+          brightness={brightness}
+          contrast={contrast}
+          hue={hue}
+          saturation={saturation}
+        />
       </Canvas>
     </>
   )

@@ -144,7 +144,7 @@ export default function Background() {
     horizon,
     belowHorizon,
   } = useControls('Background', {
-    brightness: { value: 0.65, min: 0.4, max: 1.4, step: 0.01 },
+    brightness: { value: 1.23, min: 0.4, max: 1.4, step: 0.01 },
     saturation: { value: 1.5, min: 0, max: 1.5, step: 0.01 },
     sunGlowStrength: { value: 0.45, min: 0, max: 1.5, step: 0.01 },
     cloudStrength: { value: 0.22, min: 0, max: 1.5, step: 0.01 },

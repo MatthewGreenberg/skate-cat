@@ -153,7 +153,7 @@ export default function Ground() {
       lerpDayNightColor(roadMaterial.uniforms.uEdgeColor.value, edgeColor, '#6a5a48', nightFactor, '#ffcc88', warmFactor)
       roadMaterial.uniforms.uToonSteps.value = toonSteps
       roadMaterial.uniforms.uShadowBrightness.value = THREE.MathUtils.lerp(shadowBrightness, 0.3, nightFactor)
-      roadMaterial.uniforms.uGrainAmount.value = grainAmount
+      roadMaterial.uniforms.uGrainAmount.value = THREE.MathUtils.lerp(grainAmount, 0.01, nightFactor)
       roadMaterial.uniforms.uGrainScale.value = grainScale
       roadMaterial.uniforms.uGradientStrength.value = gradientStrength
       roadMaterial.uniforms.uEdgeLineWidth.value = edgeLineWidth

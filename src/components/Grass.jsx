@@ -138,16 +138,47 @@ const grassFragmentShader = /* glsl */ `
 export default function Grass() {
   const meshRef = useRef()
 
-  const { colorBase, colorTip, colorDry, windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useControls('Grass', {
-    colorBase: '#2E9E3A',
-    colorTip: '#8EE85A',
-    colorDry: '#D4CC44',
+  const { windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useControls('Grass', {
     bladeCount: { value: 4000, min: 100, max: MAX_BLADES, step: 100 },
     thickness: { value: 0.08, min: 0.005, max: 0.2, step: 0.005 },
     windSpeed: { value: 2.0, min: 0, max: 10, step: 0.1 },
     windStrength: { value: 0.12, min: 0, max: 0.5, step: 0.01 },
     bladeMinHeight: { value: 0.3, min: 0.01, max: 1.0, step: 0.01 },
     bladeMaxHeight: { value: 0.8, min: 0.1, max: 2.0, step: 0.01 },
+  })
+  const {
+    dayColorBase,
+    dayColorTip,
+    dayColorDry,
+    dayAmbientStrength,
+    dayShadowBrightness,
+    sunsetColorBase,
+    sunsetColorTip,
+    sunsetColorDry,
+  } = useControls('Grass Day', {
+    dayColorBase: '#2E9E3A',
+    dayColorTip: '#8EE85A',
+    dayColorDry: '#D4CC44',
+    dayAmbientStrength: { value: 0.7, min: 0, max: 1.5, step: 0.01 },
+    dayShadowBrightness: { value: 1, min: 0, max: 1, step: 0.01 },
+    sunsetColorBase: '#4a5a30',
+    sunsetColorTip: '#7a8a50',
+    sunsetColorDry: '#8a7a44',
+  })
+  const {
+    nightColorBase,
+    nightColorTip,
+    nightColorDry,
+    nightAmbientStrength,
+    nightShadowBrightness,
+    nightLightColor,
+  } = useControls('Grass Night', {
+    nightColorBase: '#000000',
+    nightColorTip: '#1a3a15',
+    nightColorDry: '#3a3510',
+    nightAmbientStrength: { value: 0.25, min: 0, max: 1.5, step: 0.01 },
+    nightShadowBrightness: { value: 0.2, min: 0, max: 1, step: 0.01 },
+    nightLightColor: '#334466',
   })
 
   const uniformsRef = useRef({
@@ -240,14 +271,14 @@ export default function Grass() {
     u.uVisibleCount.value = bladeCount
 
     // Lerp grass colors — warm hazy tint during sunset/sunrise
-    lerpDayNightColor(u.uColorBase.value, colorBase, '#0f1f0d', nightFactor, '#4a5a30', warmFactor)
-    lerpDayNightColor(u.uColorTip.value, colorTip, '#1a3a15', nightFactor, '#7a8a50', warmFactor)
-    lerpDayNightColor(u.uColorDry.value, colorDry, '#3a3510', nightFactor, '#8a7a44', warmFactor)
+    lerpDayNightColor(u.uColorBase.value, dayColorBase, nightColorBase, nightFactor, sunsetColorBase, warmFactor)
+    lerpDayNightColor(u.uColorTip.value, dayColorTip, nightColorTip, nightFactor, sunsetColorTip, warmFactor)
+    lerpDayNightColor(u.uColorDry.value, dayColorDry, nightColorDry, nightFactor, sunsetColorDry, warmFactor)
 
     // Dim grass lighting at night to match scene
-    u.uAmbientStrength.value = THREE.MathUtils.lerp(0.7, 0.25, nightFactor)
-    u.uShadowBrightness.value = THREE.MathUtils.lerp(0.55, 0.2, nightFactor)
-    lerpDayNightColor(u.uSunColor.value, '#ffe6bf', '#334466', nightFactor)
+    u.uAmbientStrength.value = THREE.MathUtils.lerp(dayAmbientStrength, nightAmbientStrength, nightFactor)
+    u.uShadowBrightness.value = THREE.MathUtils.lerp(dayShadowBrightness, nightShadowBrightness, nightFactor)
+    lerpDayNightColor(u.uSunColor.value, '#ffe6bf', nightLightColor, nightFactor)
 
     // Match fog color to scene
     lerpDayNightColor(u.uFogColor.value, '#c8d8c0', '#1a2233', nightFactor, '#9a7a60', warmFactor)

@@ -123,9 +123,6 @@ export default function Sky() {
     }
 
     const speed = gameState.gameOver ? 0 : gameState.speed.current || 0
-    const speedFactor = Math.min(speed / gameState.baseSpeed, 1.35)
-    const targetOpacity = 0.32 + speedFactor * 0.28
-    const targetEmissive = 0.16 + speedFactor * 0.14
     const drift = (0.3 + speed * 0.1) * delta
 
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
@@ -134,9 +131,9 @@ export default function Sky() {
     cloudMaterial.color.copy(cloudColorDay).lerp(cloudColorNight, nightFactor)
     cloudMaterial.emissive.copy(cloudEmissiveDay).lerp(cloudEmissiveNight, nightFactor)
 
-    const nightOpacityTarget = targetOpacity * (1 - nightFactor * 0.75)
+    const nightOpacityTarget = 0.6 * (1 - nightFactor * 0.75)
     cloudMaterial.opacity = THREE.MathUtils.lerp(cloudMaterial.opacity, nightOpacityTarget, delta * 2)
-    const nightEmissiveTarget = targetEmissive * (1 - nightFactor * 0.85)
+    const nightEmissiveTarget = 0.3 * (1 - nightFactor * 0.85)
     cloudMaterial.emissiveIntensity = THREE.MathUtils.lerp(cloudMaterial.emissiveIntensity, nightEmissiveTarget, delta * 2)
 
     for (let i = 0; i < CLOUD_COUNT; i++) {

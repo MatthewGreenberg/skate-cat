@@ -59,7 +59,7 @@ export default function SpeedLines() {
     slots: { value: 38, min: 5, max: 100, step: 1 },
     lineWidth: { value: 0.11, min: 0.01, max: 0.3, step: 0.01 },
     scrollSpeed: { value: 1.4, min: 0.2, max: 8, step: 0.1 },
-    opacity: { value: 0.10, min: 0, max: 1, step: 0.05 },
+    opacity: { value: 0.2, min: 0, max: 1, step: 0.05 },
     height: { value: 0.56, min: 0, max: 1, step: 0.01 },
   })
 
