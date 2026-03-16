@@ -117,6 +117,7 @@ function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightnes
   useFrame(() => {
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
     bloom.intensity = THREE.MathUtils.lerp(bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
+    bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(bloomThreshold, 0, nightFactor)
   })
 
   return (

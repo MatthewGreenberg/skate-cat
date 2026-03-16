@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState } from '../store'
+import { gameState, getNightFactor } from '../store'
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -83,12 +83,14 @@ export default function SpeedLines() {
   }), [uniforms])
 
   useFrame((_, delta) => {
+    const nightFactor = getNightFactor(gameState.timeOfDay.current)
+
     uniforms.uTime.value += delta
     uniforms.uSlots.value = slots
     uniforms.uLineWidth.value = lineWidth
     uniforms.uScrollSpeed.value = scrollSpeed
     uniforms.uColor.value.set(color)
-    uniforms.uOpacity.value = opacity
+    uniforms.uOpacity.value = THREE.MathUtils.lerp(opacity, 0.05, nightFactor)
 
     const target = gameState.speedLinesOn ? 1 : 0
     uniforms.uIntensity.value = THREE.MathUtils.lerp(uniforms.uIntensity.value, target, delta * 6)
