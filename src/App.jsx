@@ -220,6 +220,10 @@ export default function App() {
     gameState.speedLinesOn = true
     gameState.jumping = false
     gameState.streak.current = 0
+    gameState.scoreMultiplier.current = 1
+    gameState.pendingJumpTiming.current = null
+    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
+    gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
     setIsGameOver(false)
     setHasStartedGame(true)
@@ -244,6 +248,10 @@ export default function App() {
     gameState.speedLinesOn = true
     gameState.jumping = false
     gameState.streak.current = 0
+    gameState.scoreMultiplier.current = 1
+    gameState.pendingJumpTiming.current = null
+    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
+    gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
     if (musicRef.current) {
       musicRef.current.currentTime = 0

@@ -3,15 +3,20 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState, isDebug } from '../store'
+import { gameState, getScoreMultiplier, isDebug } from '../store'
 import { BEAT_INTERVAL, OBSTACLE_BEAT_DIVISOR, OBSTACLE_PHASE } from '../rhythm'
 
 const POOL_SIZE = 16
 const LOOKAHEAD_BEATS = 4
 const DESPAWN_BEHIND_SECONDS = 0.6
 const POSITION_SMOOTHING = 0.35
-const SPEED_BOOST_SCORE_THRESHOLD = 5
-const SPEED_LINES_SCORE_THRESHOLD = 8
+const SPEED_BOOST_SCORE_THRESHOLD = 12
+const SPEED_LINES_SCORE_THRESHOLD = 24
+const TIMING_POINTS = {
+  Perfect: 3,
+  Good: 2,
+  Sloppy: 1,
+}
 
 const logToonVertexShader = /* glsl */ `
   varying vec3 vNormal;
@@ -186,12 +191,45 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
             gameState.speedLinesOn = false
             gameState.screenShake.current = 0.8
             gameState.streak.current = 0
+            gameState.scoreMultiplier.current = 1
+            gameState.comboEnergy.current = 0
+            gameState.pendingJumpTiming.current = null
             if (onLogHit) onLogHit()
             if (gameState.onGameOver) gameState.onGameOver()
             return
           }
+
+          const pendingTiming = gameState.pendingJumpTiming.current
+          const matchedTiming = pendingTiming && pendingTiming.targetBeat === ob.beatIndex
+            ? pendingTiming
+            : null
+          const timingGrade = matchedTiming?.grade || 'Sloppy'
+          let nextStreak = gameState.streak.current
+          if (timingGrade === 'Perfect') {
+            nextStreak += 1
+          } else if (timingGrade === 'Sloppy') {
+            nextStreak = 0
+          }
+
+          const multiplier = getScoreMultiplier(nextStreak)
+          const points = TIMING_POINTS[timingGrade] * multiplier
+
           ob.scored = true
-          gameState.score++
+          gameState.streak.current = nextStreak
+          gameState.scoreMultiplier.current = multiplier
+          gameState.score += points
+          gameState.comboEnergy.current = timingGrade === 'Sloppy'
+            ? 0
+            : timingGrade === 'Good'
+              ? Math.max(gameState.comboEnergy.current, 0.7)
+              : 1
+          gameState.lastScoringEvent.current = {
+            id: performance.now(),
+            points,
+            grade: timingGrade,
+            multiplier,
+          }
+          if (matchedTiming) gameState.pendingJumpTiming.current = null
           if (gameState.score >= SPEED_BOOST_SCORE_THRESHOLD && !gameState.speedBoostActive) {
             gameState.speedBoostActive = true
           }

@@ -54,6 +54,15 @@ const scoreNumStyle = {
   letterSpacing: '0.04em',
 }
 
+const multiplierBadgeStyle = {
+  padding: '0.12rem 0.45rem',
+  borderRadius: '999px',
+  background: 'rgba(255, 255, 255, 0.14)',
+  border: '1px solid rgba(255, 255, 255, 0.16)',
+  fontSize: '0.8rem',
+  letterSpacing: '0.08em',
+}
+
 function getDotStyle(isActive) {
   return {
     width: isActive ? '1.3rem' : '0.9rem',
@@ -69,22 +78,22 @@ function getDotStyle(isActive) {
 }
 
 const JUDGEMENT_STYLES = {
-  EARLY: {
-    color: '#FFD166',
-    shadow: '2px 2px 0 rgba(200, 140, 0, 0.5), 0 0 20px rgba(255, 209, 102, 0.4), 0 0 40px rgba(255, 209, 102, 0.15)',
-  },
   PERFECT: {
     color: '#fff',
     shadow: '2px 2px 0 #FF6B35, 4px 4px 0 rgba(255, 107, 53, 0.4), 0 0 30px rgba(255, 107, 53, 0.5), 0 0 60px rgba(255, 175, 72, 0.2)',
   },
-  LATE: {
+  GOOD: {
+    color: '#FFD166',
+    shadow: '2px 2px 0 rgba(200, 140, 0, 0.5), 0 0 20px rgba(255, 209, 102, 0.4), 0 0 40px rgba(255, 209, 102, 0.15)',
+  },
+  SLOPPY: {
     color: '#FF8BA5',
     shadow: '2px 2px 0 rgba(180, 60, 80, 0.5), 0 0 20px rgba(255, 139, 165, 0.4), 0 0 40px rgba(255, 139, 165, 0.15)',
   },
 }
 
 function getJudgementStyle(label, shouldAnimate) {
-  const normalizedLabel = label.replace('!', '')
+  const normalizedLabel = label.replace(/[!.]/g, '')
   const style = JUDGEMENT_STYLES[normalizedLabel] || { color: '#fff', shadow: 'none' }
   return {
     position: 'fixed',
@@ -106,14 +115,20 @@ function getJudgementStyle(label, shouldAnimate) {
 
 export default function GameHud({ musicRef, visible, timingFeedback }) {
   const [score, setScore] = useState(gameState.score)
+  const [multiplier, setMultiplier] = useState(gameState.scoreMultiplier.current)
   const [activeDot, setActiveDot] = useState(0)
   const [streak, setStreak] = useState(0)
   const [streakKey, setStreakKey] = useState(0)
   const [showPlus, setShowPlus] = useState(false)
   const [plusKey, setPlusKey] = useState(0)
+  const [plusText, setPlusText] = useState('+1')
+  const [plusGrade, setPlusGrade] = useState('Perfect')
   const lastScoredValue = useRef(gameState.score)
   const lastStreakValue = useRef(0)
-  const judgement = timingFeedback?.label ? `${timingFeedback.label.toUpperCase()}!` : ''
+  const lastScoringEventId = useRef(gameState.lastScoringEvent.current?.id || 0)
+  const judgement = timingFeedback?.label
+    ? `${timingFeedback.label.toUpperCase()}${timingFeedback.label === 'Sloppy' ? '...' : '!'}`
+    : ''
 
   useEffect(() => {
     if (!visible) return
@@ -125,13 +140,22 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
       if (nextScore !== lastScoredValue.current) {
         lastScoredValue.current = nextScore
         setScore(nextScore)
-        setPlusKey((k) => k + 1)
-        setShowPlus(true)
       }
       if (nextStreak !== lastStreakValue.current) {
         lastStreakValue.current = nextStreak
         if (nextStreak >= 2) setStreakKey(performance.now())
         setStreak(nextStreak)
+      }
+      const nextMultiplier = gameState.scoreMultiplier.current
+      setMultiplier((prev) => (prev === nextMultiplier ? prev : nextMultiplier))
+
+      const scoringEvent = gameState.lastScoringEvent.current
+      if (scoringEvent?.id && scoringEvent.id !== lastScoringEventId.current) {
+        lastScoringEventId.current = scoringEvent.id
+        setPlusText(`+${scoringEvent.points}`)
+        setPlusGrade(scoringEvent.grade)
+        setPlusKey((k) => k + 1)
+        setShowPlus(true)
       }
 
       const musicTime = musicRef?.current?.currentTime || 0
@@ -189,6 +213,7 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
         <div style={scorePillStyle}>
           <span style={scoreLabelStyle}>SCORE</span>
           <span style={scoreNumStyle}>{score}</span>
+          <span style={multiplierBadgeStyle}>x{multiplier}</span>
         </div>
       </div>
       {streak >= 2 && (
@@ -214,7 +239,7 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
             animation: 'streakPop 0.4s cubic-bezier(0.16, 0.88, 0.34, 1) both',
           }}
         >
-          x{streak} STREAK
+          {streak} STREAK
         </div>
       )}
       {showPlus && (
@@ -229,14 +254,18 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
             fontFamily: 'Knewave',
             fontSize: '1.8rem',
             letterSpacing: '0.06em',
-            color: '#fff',
-            textShadow: '1px 1px 0 #FF6B35, 0 0 16px rgba(255, 107, 53, 0.5)',
+            color: plusGrade === 'Sloppy' ? '#FF8BA5' : plusGrade === 'Good' ? '#FFD166' : '#fff',
+            textShadow: plusGrade === 'Sloppy'
+              ? '1px 1px 0 rgba(180, 60, 80, 0.5), 0 0 16px rgba(255, 139, 165, 0.35)'
+              : plusGrade === 'Good'
+                ? '1px 1px 0 rgba(200, 140, 0, 0.5), 0 0 16px rgba(255, 209, 102, 0.35)'
+                : '1px 1px 0 #FF6B35, 0 0 16px rgba(255, 107, 53, 0.5)',
             pointerEvents: 'none',
             zIndex: 62,
             animation: 'scorePopFloat 550ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
           }}
         >
-          +1
+          {plusText}
         </div>
       )}
     </>

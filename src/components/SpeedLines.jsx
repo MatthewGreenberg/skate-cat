@@ -53,6 +53,7 @@ const fragmentShader = /* glsl */ `
 
 export default function SpeedLines() {
   const meshRef = useRef()
+  const energyRef = useRef(1)
 
   const { color, slots, lineWidth, scrollSpeed, opacity, height } = useControls('Speed Lines', {
     color: '#ffffff',
@@ -84,13 +85,15 @@ export default function SpeedLines() {
 
   useFrame((_, delta) => {
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
+    gameState.comboEnergy.current = Math.min(1, gameState.comboEnergy.current + delta * 1.1)
+    energyRef.current = THREE.MathUtils.lerp(energyRef.current, gameState.comboEnergy.current, delta * 4)
 
     uniforms.uTime.value += delta
     uniforms.uSlots.value = slots
     uniforms.uLineWidth.value = lineWidth
     uniforms.uScrollSpeed.value = scrollSpeed
     uniforms.uColor.value.set(color)
-    uniforms.uOpacity.value = THREE.MathUtils.lerp(opacity, 0.05, nightFactor)
+    uniforms.uOpacity.value = THREE.MathUtils.lerp(opacity, 0.05, nightFactor) * THREE.MathUtils.lerp(0.35, 1, energyRef.current)
 
     const target = gameState.speedLinesOn ? 1 : 0
     uniforms.uIntensity.value = THREE.MathUtils.lerp(uniforms.uIntensity.value, target, delta * 6)

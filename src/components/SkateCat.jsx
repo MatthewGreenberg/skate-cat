@@ -4,7 +4,7 @@ import { useGLTF, useTexture } from '@react-three/drei'
 import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState } from '../store'
-import { getSignedOffsetFromTargetBeat } from '../rhythm'
+import { getNearestTargetBeat, getSignedOffsetFromTargetBeat, getTimingGradeFromOffset } from '../rhythm'
 
 const toonVertexShader = /* glsl */ `
   varying vec3 vNormal;
@@ -130,7 +130,6 @@ const JUMP_HEIGHT = 1.2
 const JUMP_DURATION = 0.34
 const KICKFLIP_ROTATIONS = 1
 const SPIN_DURATION = 0.32
-const PERFECT_WINDOW_SECONDS = 0.15
 const INPUT_TIMING_COMPENSATION_SECONDS = 0.08
 
 // Death animation params
@@ -385,18 +384,14 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
         const musicTime = musicRef?.current?.currentTime
         if (typeof musicTime === 'number' && Number.isFinite(musicTime)) {
-          const signedOffsetFromBeat = getSignedOffsetFromTargetBeat(
-            musicTime + INPUT_TIMING_COMPENSATION_SECONDS
-          )
-          const timingLabel = Math.abs(signedOffsetFromBeat) <= PERFECT_WINDOW_SECONDS
-            ? 'Perfect'
-            : signedOffsetFromBeat < 0
-              ? 'Early'
-              : 'Late'
-          if (timingLabel === 'Perfect') {
-            gameState.streak.current++
-          } else {
-            gameState.streak.current = 0
+          const adjustedMusicTime = musicTime + INPUT_TIMING_COMPENSATION_SECONDS
+          const signedOffsetFromBeat = getSignedOffsetFromTargetBeat(adjustedMusicTime)
+          const timingLabel = getTimingGradeFromOffset(signedOffsetFromBeat)
+          gameState.pendingJumpTiming.current = {
+            targetBeat: getNearestTargetBeat(adjustedMusicTime),
+            grade: timingLabel,
+            offset: signedOffsetFromBeat,
+            timestamp: musicTime,
           }
           if (onJumpTiming) onJumpTiming(timingLabel)
         }

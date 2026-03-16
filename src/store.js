@@ -19,6 +19,10 @@ export const gameState = {
   screenShake: createRef(),
   landed: createRef(),
   streak: createRef(),
+  scoreMultiplier: createRef(),
+  pendingJumpTiming: createRef(),
+  lastScoringEvent: createRef(),
+  comboEnergy: createRef(),
   timeOfDay: createRef(), // 0→1 cycling float
   nightContrast: createRef(), // contrast offset driven by day/night cycle
 }
@@ -27,8 +31,19 @@ gameState.kickflip.current = { triggered: false, position: [0, 0, 0] }
 gameState.screenShake.current = 0
 gameState.landed.current = { triggered: false, position: [0, 0, 0] }
 gameState.streak.current = 0
+gameState.scoreMultiplier.current = 1
+gameState.pendingJumpTiming.current = null
+gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
+gameState.comboEnergy.current = 1
 gameState.timeOfDay.current = 0
 gameState.nightContrast.current = 0
+
+export function getScoreMultiplier(streak) {
+  if (streak >= 20) return 4
+  if (streak >= 10) return 3
+  if (streak >= 5) return 2
+  return 1
+}
 
 // ~45 seconds per full day/night cycle
 export const DAY_NIGHT_CYCLE_SPEED = 1 / 45
