@@ -3,7 +3,7 @@ import { gameState } from './store'
 export const SONG_BPM = 150
 export const BEAT_INTERVAL = 60 / SONG_BPM
 export const AUDIO_VISUAL_SYNC_OFFSET_SECONDS = -0.049
-export const PERFECT_WINDOW_SECONDS = 0.09
+export const PERFECT_WINDOW_SECONDS = 0.11
 export const GOOD_WINDOW_SECONDS = 0.18
 export const MAX_TARGET_LOCK_WINDOW_SECONDS = BEAT_INTERVAL * 0.8
 

@@ -128,6 +128,7 @@ function createOutlineMaterial() {
 
 const JUMP_HEIGHT = 1.2
 const JUMP_DURATION = 0.34
+const JUMP_TAKEOFF_HEADSTART = 1 / 120
 const KICKFLIP_ROTATIONS = 1
 const SPIN_DURATION = 0.29
 const SPIN_INPUT_BUFFER_DURATION = 0.14
@@ -163,6 +164,9 @@ const POWERSLIDE_CAT_CROUCH = 0.045
 const BOARD_LANDING_RECOIL_DURATION = 0.26
 const BOARD_LANDING_DIP = 0.032
 const BOARD_LANDING_PITCH = 0.12
+const DEATH_IMPACT_RECOIL_Z = 0.28
+const DEATH_IMPACT_RECOIL_PITCH = -0.2
+const DEATH_IMPACT_RECOIL_ROLL = 0.06
 
 // Death animation params
 const DEATH_HOP_HEIGHT = 0.6
@@ -545,6 +549,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
     if (groupRef.current) {
       groupRef.current.position.y = 0.05
+      groupRef.current.position.z = DEATH_IMPACT_RECOIL_Z
       groupRef.current.rotation.set(0, 0, 0)
     }
     if (catRef.current) {
@@ -554,9 +559,9 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     }
     if (boardRef.current) {
       boardRef.current.position.y = 0
-      boardRef.current.rotation.x = 0
+      boardRef.current.rotation.x = DEATH_IMPACT_RECOIL_PITCH
       boardRef.current.rotation.y = 0
-      boardRef.current.rotation.z = 0
+      boardRef.current.rotation.z = DEATH_IMPACT_RECOIL_ROLL
     }
 
     gameState.catHeight.current = 0.05
@@ -621,6 +626,24 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     const wp = new THREE.Vector3()
     groupRef.current.getWorldPosition(wp)
     gameState.kickflip.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
+  }, [])
+  const primeJumpTakeoffPose = useCallback(() => {
+    if (!groupRef.current) return
+
+    const jump = jumpState.current
+    jump.time = JUMP_TAKEOFF_HEADSTART
+    const t = jump.time / JUMP_DURATION
+    const height = 4 * jump.arcHeight * t * (1 - t)
+    const travelT = THREE.MathUtils.smootherstep(t, 0, 1)
+    groupRef.current.position.y = THREE.MathUtils.lerp(jump.startY, jump.endY, travelT) + height
+    groupRef.current.position.x = THREE.MathUtils.lerp(jump.startX, jump.targetX, travelT)
+
+    if (boardRef.current) {
+      boardRef.current.rotation.y = THREE.MathUtils.lerp(boardRef.current.rotation.y, 0, t * 12)
+      boardRef.current.rotation.z = jump.doesFlip
+        ? t * Math.PI * 2 * KICKFLIP_ROTATIONS * jump.direction
+        : THREE.MathUtils.lerp(boardRef.current.rotation.z, 0, t * 12)
+    }
   }, [])
 
   const getJumpPlan = useCallback((musicTime, { fromGrind = false, blockedObstacleId = 0 } = {}) => {
@@ -696,6 +719,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       if (jumpPlan.shouldKickflip) {
         triggerKickflipEffect()
       }
+      primeJumpTakeoffPose()
       if (onJumpTiming) onJumpTiming(jumpPlan.timingLabel)
       return
     }
@@ -704,7 +728,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       jumpState.current.doesFlip = true
       triggerKickflipEffect()
     }
-  }, [getJumpPlan, musicRef, onJumpSfx, onJumpTiming, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
+    primeJumpTakeoffPose()
+  }, [getJumpPlan, musicRef, onJumpSfx, onJumpTiming, primeJumpTakeoffPose, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
 
   // Trigger hop-on when game starts
   const prevStarted = useRef(false)
@@ -933,6 +958,17 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
       deathState.current.time += delta
       const elapsed = deathState.current.time
+
+      if (groupRef.current) {
+        groupRef.current.position.y = 0.05
+        groupRef.current.position.z = DEATH_IMPACT_RECOIL_Z
+      }
+      if (boardRef.current) {
+        boardRef.current.position.y = 0
+        boardRef.current.rotation.x = DEATH_IMPACT_RECOIL_PITCH
+        boardRef.current.rotation.y = 0
+        boardRef.current.rotation.z = DEATH_IMPACT_RECOIL_ROLL
+      }
 
       if (elapsed < DEATH_HOP_DURATION) {
         // Phase 1: hop off the skateboard
