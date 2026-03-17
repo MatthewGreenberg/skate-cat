@@ -3,6 +3,14 @@ import * as THREE from 'three'
 
 export const isDebug = new URLSearchParams(window.location.search).has('debug')
 
+export function createIdleGrindState() {
+  return { active: false, obstacleId: 0, x: 0, z: 0 }
+}
+
+export function createIdleGrindSparkState() {
+  return { active: false, position: [0, 0, 0], direction: 1, intensity: 0, impactId: 0 }
+}
+
 // Shared mutable game state (refs avoid re-renders)
 export const gameState = {
   speed: createRef(),
@@ -21,6 +29,13 @@ export const gameState = {
   streak: createRef(),
   scoreMultiplier: createRef(),
   pendingJumpTiming: createRef(),
+  obstacleTargets: createRef(),
+  upArrowHeld: createRef(),
+  activeGrind: createRef(),
+  grindSpark: createRef(),
+  timeScale: createRef(),
+  grindCooldownObstacleId: createRef(),
+  catHeight: createRef(),
   lastScoringEvent: createRef(),
   comboEnergy: createRef(),
   timeOfDay: createRef(), // 0→1 cycling float
@@ -33,6 +48,13 @@ gameState.landed.current = { triggered: false, position: [0, 0, 0] }
 gameState.streak.current = 0
 gameState.scoreMultiplier.current = 1
 gameState.pendingJumpTiming.current = null
+gameState.obstacleTargets.current = []
+gameState.upArrowHeld.current = false
+gameState.activeGrind.current = createIdleGrindState()
+gameState.grindSpark.current = createIdleGrindSparkState()
+gameState.timeScale.current = 1
+gameState.grindCooldownObstacleId.current = 0
+gameState.catHeight.current = 0.05
 gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
 gameState.comboEnergy.current = 1
 gameState.timeOfDay.current = 0
@@ -43,6 +65,10 @@ export function getScoreMultiplier(streak) {
   if (streak >= 10) return 3
   if (streak >= 5) return 2
   return 1
+}
+
+export function getGameDelta(delta) {
+  return delta * (gameState.timeScale.current ?? 1)
 }
 
 // ~45 seconds per full day/night cycle

@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import Grass from './Grass'
 import Pebbles from './Pebbles'
 import Wildflowers from './Wildflowers'
-import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
+import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 
 const SEGMENT_COUNT = 8
 const SEGMENT_LENGTH = 20
@@ -141,6 +141,7 @@ export default function Ground() {
   const scrollOffset = useRef(0)
 
   useFrame((_, delta) => {
+    const gameDelta = getGameDelta(delta)
     const t = gameState.timeOfDay.current
     const nightFactor = getNightFactor(t)
     const sunsetFactor = getSunsetFactor(t)
@@ -165,7 +166,7 @@ export default function Ground() {
     lerpDayNightColor(groundMaterial.color, '#4CB944', '#1a3318', nightFactor, '#7a8a30', warmFactor)
 
     if (gameState.gameOver) return
-    scrollOffset.current += gameState.speed.current * delta
+    scrollOffset.current += gameState.speed.current * gameDelta
     for (let i = 0; i < SEGMENT_COUNT; i++) {
       // Each segment has a fixed slot; we wrap the scroll offset modularly
       const pos = i * SEGMENT_LENGTH - (scrollOffset.current % totalLength)

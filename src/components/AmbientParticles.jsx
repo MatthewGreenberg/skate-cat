@@ -1,13 +1,14 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { gameState, getNightFactor } from '../store'
+import { gameState, getGameDelta, getNightFactor } from '../store'
 
 const PARTICLE_COUNT = 40
 
 export default function AmbientParticles() {
   const meshRef = useRef()
   const matRef = useRef()
+  const motionTime = useRef(0)
 
   const particles = useMemo(() => {
     return Array.from({ length: PARTICLE_COUNT }, () => ({
@@ -26,10 +27,12 @@ export default function AmbientParticles() {
 
   const _dummy = useMemo(() => new THREE.Object3D(), [])
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     if (!meshRef.current) return
+    const gameDelta = getGameDelta(delta)
+    motionTime.current += gameDelta
 
-    const time = state.clock.elapsedTime
+    const time = motionTime.current
     const scrollSpeed = gameState.gameOver ? 0 : gameState.speed.current
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
 
@@ -46,10 +49,10 @@ export default function AmbientParticles() {
 
       // Float gently
       p.position.y = p.baseY + 0.8 + Math.sin(time * p.speed + p.phase) * 0.5
-      p.position.x += p.drift * delta
+      p.position.x += p.drift * gameDelta
 
       // Scroll with the world
-      p.position.z += scrollSpeed * delta
+      p.position.z += scrollSpeed * gameDelta
 
       // Wrap around when behind camera
       if (p.position.z > 5) {

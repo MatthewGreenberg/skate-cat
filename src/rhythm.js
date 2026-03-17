@@ -2,23 +2,25 @@ export const SONG_BPM = 150
 export const BEAT_INTERVAL = 60 / SONG_BPM
 export const PERFECT_WINDOW_SECONDS = 0.09
 export const GOOD_WINDOW_SECONDS = 0.18
+export const MAX_TARGET_LOCK_WINDOW_SECONDS = BEAT_INTERVAL * 0.8
 
-// Obstacles are scheduled every other beat on this phase.
-export const OBSTACLE_BEAT_DIVISOR = 2
-export const OBSTACLE_PHASE = 1
+export function getNearestScheduledTarget(currentTimeSeconds, targets, maxOffsetSeconds = MAX_TARGET_LOCK_WINDOW_SECONDS) {
+  if (!Array.isArray(targets) || targets.length === 0) return null
 
-export function getNearestTargetBeat(currentTimeSeconds) {
-  const beatFloat = currentTimeSeconds / BEAT_INTERVAL
-  return (
-    Math.round((beatFloat - OBSTACLE_PHASE) / OBSTACLE_BEAT_DIVISOR) * OBSTACLE_BEAT_DIVISOR +
-    OBSTACLE_PHASE
-  )
-}
+  let nearestTarget = null
+  let nearestAbsOffset = Infinity
 
-export function getSignedOffsetFromTargetBeat(currentTimeSeconds) {
-  const beatFloat = currentTimeSeconds / BEAT_INTERVAL
-  const nearestTargetBeat = getNearestTargetBeat(currentTimeSeconds)
-  return (beatFloat - nearestTargetBeat) * BEAT_INTERVAL
+  for (const target of targets) {
+    const offset = currentTimeSeconds - target.targetTime
+    const absOffset = Math.abs(offset)
+    if (absOffset < nearestAbsOffset) {
+      nearestAbsOffset = absOffset
+      nearestTarget = { ...target, offset }
+    }
+  }
+
+  if (!nearestTarget || nearestAbsOffset > maxOffsetSeconds) return null
+  return nearestTarget
 }
 
 export function getTimingGradeFromOffset(signedOffsetSeconds) {

@@ -1,7 +1,7 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { gameState } from '../store'
+import { gameState, getGameDelta } from '../store'
 
 const PARTICLE_COUNT = 60
 const PARTICLE_LIFETIME = 0.8
@@ -25,10 +25,14 @@ export default function DustTrail() {
 
   useFrame((_, delta) => {
     if (!meshRef.current) return
+    const gameDelta = getGameDelta(delta)
+    const isGrinding = Boolean(gameState.activeGrind.current?.active)
 
     // Spawn new particles while game is running
-    if (!gameState.gameOver && gameState.speed.current > 0.5) {
-      spawnTimer.current += delta
+    if (isGrinding) {
+      spawnTimer.current = 0
+    } else if (!gameState.gameOver && gameState.speed.current > 0.5) {
+      spawnTimer.current += gameDelta
       const spawnRate = 0.02 // spawn every 20ms
       while (spawnTimer.current >= spawnRate) {
         spawnTimer.current -= spawnRate
@@ -56,6 +60,9 @@ export default function DustTrail() {
     // Update particles
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const p = particles.current[i]
+      if (isGrinding && p.active) {
+        p.active = false
+      }
       if (!p.active) {
         _dummy.scale.setScalar(0)
         _dummy.updateMatrix()
@@ -63,7 +70,7 @@ export default function DustTrail() {
         continue
       }
 
-      p.life -= delta
+      p.life -= gameDelta
       if (p.life <= 0) {
         p.active = false
         _dummy.scale.setScalar(0)
@@ -73,9 +80,9 @@ export default function DustTrail() {
       }
 
       // Slow down and drift
-      p.velocity.y -= 0.5 * delta
-      p.velocity.multiplyScalar(1 - delta * 2)
-      p.position.addScaledVector(p.velocity, delta)
+      p.velocity.y -= 0.5 * gameDelta
+      p.velocity.multiplyScalar(1 - gameDelta * 2)
+      p.position.addScaledVector(p.velocity, gameDelta)
 
       const t = p.life / p.maxLife
       const scale = (1 - t) * 0.06 + 0.02 // grow as they age, then small

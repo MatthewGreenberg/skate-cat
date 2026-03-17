@@ -18,7 +18,17 @@ import GameHud from './components/GameHud'
 import { EffectComposer, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
 import { BloomEffect } from 'postprocessing'
 import { useControls } from 'leva'
-import { gameState, DAY_NIGHT_CYCLE_SPEED, getNightFactor, getNightContrastOffset, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from './store'
+import {
+  gameState,
+  DAY_NIGHT_CYCLE_SPEED,
+  createIdleGrindState,
+  createIdleGrindSparkState,
+  getNightFactor,
+  getNightContrastOffset,
+  getSunsetFactor,
+  getSunriseFactor,
+  lerpDayNightColor,
+} from './store'
 import { BEAT_INTERVAL } from './rhythm'
 
 // Reusable temp color for DayNightController
@@ -222,6 +232,13 @@ export default function App() {
     gameState.streak.current = 0
     gameState.scoreMultiplier.current = 1
     gameState.pendingJumpTiming.current = null
+    gameState.obstacleTargets.current = []
+    gameState.upArrowHeld.current = false
+    gameState.activeGrind.current = createIdleGrindState()
+    gameState.grindSpark.current = createIdleGrindSparkState()
+    gameState.timeScale.current = 1
+    gameState.grindCooldownObstacleId.current = 0
+    gameState.catHeight.current = 0.05
     gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
@@ -250,6 +267,13 @@ export default function App() {
     gameState.streak.current = 0
     gameState.scoreMultiplier.current = 1
     gameState.pendingJumpTiming.current = null
+    gameState.obstacleTargets.current = []
+    gameState.upArrowHeld.current = false
+    gameState.activeGrind.current = createIdleGrindState()
+    gameState.grindSpark.current = createIdleGrindSparkState()
+    gameState.timeScale.current = 1
+    gameState.grindCooldownObstacleId.current = 0
+    gameState.catHeight.current = 0.05
     gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
@@ -520,7 +544,21 @@ export default function App() {
                 fontFamily: 'Knewave',
                 color: 'rgba(255, 255, 255, 0.6)',
               }}>&#x2191;</span>
-              to kickflip
+              jump / grind
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '1.6rem',
+                height: '1.6rem',
+                borderRadius: '5px',
+                border: '2px solid rgba(255, 255, 255, 0.3)',
+                background: 'rgba(255, 255, 255, 0.08)',
+                fontSize: '0.85rem',
+                fontFamily: 'Knewave',
+                color: 'rgba(255, 255, 255, 0.6)',
+              }}>&#x2193;</span>
+              360 spin
             </div>
           </div>
         </>

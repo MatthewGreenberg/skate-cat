@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState } from '../store'
+import { gameState, getGameDelta } from '../store'
 
 // Tight intro camera (close-up on cat)
 const INTRO_CAM = { x: 1.0, y: 0.8, z: 1.2 }
@@ -31,19 +31,20 @@ export default function CameraRig({ started = false }) {
   })
 
   useFrame((_, delta) => {
+    const gameDelta = getGameDelta(delta)
     // Calculate zoom-out based on speed above base
     const speedExtra = Math.max(0, gameState.speed.current - gameState.baseSpeed)
     const targetZoom = speedExtra * 0.08
-    currentZoom.current = THREE.MathUtils.lerp(currentZoom.current, targetZoom, delta * 5)
+    currentZoom.current = THREE.MathUtils.lerp(currentZoom.current, targetZoom, gameDelta * 5)
 
     // Jump zoom-out
     const jumpTarget = gameState.jumping ? kickflipZoom : 0
-    jumpZoom.current = THREE.MathUtils.lerp(jumpZoom.current, jumpTarget, delta * kickflipLerp)
+    jumpZoom.current = THREE.MathUtils.lerp(jumpZoom.current, jumpTarget, gameDelta * kickflipLerp)
 
     // Screen shake
     if (gameState.screenShake.current > 0) {
-      gameState.screenShake.current = Math.max(0, gameState.screenShake.current - delta)
-      shakeTime.current += delta * 40
+      gameState.screenShake.current = Math.max(0, gameState.screenShake.current - gameDelta)
+      shakeTime.current += gameDelta * 40
     }
     const shakeIntensity = gameState.screenShake.current * 0.15
     const shakeX = Math.sin(shakeTime.current * 1.1) * shakeIntensity
@@ -64,8 +65,8 @@ export default function CameraRig({ started = false }) {
       : new THREE.Vector3(INTRO_LOOK.x, INTRO_LOOK.y, INTRO_LOOK.z)
 
     const lerpSpeed = started ? INTRO_LERP_SPEED : 10 // snap fast on intro, smooth transition out
-    camPos.current.lerp(targetPos, delta * lerpSpeed)
-    camLook.current.lerp(targetLook, delta * lerpSpeed)
+    camPos.current.lerp(targetPos, gameDelta * lerpSpeed)
+    camLook.current.lerp(targetLook, gameDelta * lerpSpeed)
 
     camera.position.copy(camPos.current)
     camera.lookAt(camLook.current)

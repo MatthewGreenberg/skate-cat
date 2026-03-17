@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
+import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 
 const BACKGROUND_DISTANCE = 145
 const BACKGROUND_HEIGHT = 28
@@ -181,6 +181,8 @@ const bgFragmentShader = /* glsl */ `
 
 export default function Background() {
   const meshRef = useRef()
+  const motionTime = useRef(0)
+  const scrollOffset = useRef(0)
   const { camera } = useThree()
   const dir = useMemo(() => new THREE.Vector3(), [])
 
@@ -276,9 +278,11 @@ export default function Background() {
     depthWrite: false,
   }), [uniforms])
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
+    const gameDelta = getGameDelta(delta)
+    motionTime.current += gameDelta
 
     const t = gameState.timeOfDay.current
     const nightFactor = getNightFactor(t)
@@ -288,12 +292,12 @@ export default function Background() {
     const isSunrise = sunriseFactor > 0
     const speed = gameState.gameOver ? 0 : gameState.speed.current || 0
     const speedFactor = Math.min(speed / Math.max(gameState.baseSpeed, 0.001), 1.45)
-    const runScroll = state.clock.elapsedTime * speed * 0.009
+    scrollOffset.current += speed * gameDelta * 0.009
     const lateralOffset = camera.position.x * 0.14
     const depthOffset = camera.position.z * 0.05
-    const sharedOffset = lateralOffset + depthOffset + runScroll
+    const sharedOffset = lateralOffset + depthOffset + scrollOffset.current
 
-    uniforms.uTime.value = state.clock.elapsedTime
+    uniforms.uTime.value = motionTime.current
     uniforms.uBrightness.value = THREE.MathUtils.lerp(brightness, 0.42, nightFactor)
     uniforms.uSaturation.value = THREE.MathUtils.lerp(saturation, saturation * 0.88, nightFactor)
     uniforms.uParallaxStrength.value = parallaxStrength

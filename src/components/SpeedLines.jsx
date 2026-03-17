@@ -2,7 +2,7 @@ import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState, getNightFactor } from '../store'
+import { gameState, getGameDelta, getNightFactor } from '../store'
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -84,11 +84,12 @@ export default function SpeedLines() {
   }), [uniforms])
 
   useFrame((_, delta) => {
+    const gameDelta = getGameDelta(delta)
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
-    gameState.comboEnergy.current = Math.min(1, gameState.comboEnergy.current + delta * 1.1)
-    energyRef.current = THREE.MathUtils.lerp(energyRef.current, gameState.comboEnergy.current, delta * 4)
+    gameState.comboEnergy.current = Math.min(1, gameState.comboEnergy.current + gameDelta * 1.1)
+    energyRef.current = THREE.MathUtils.lerp(energyRef.current, gameState.comboEnergy.current, gameDelta * 4)
 
-    uniforms.uTime.value += delta
+    uniforms.uTime.value += gameDelta
     uniforms.uSlots.value = slots
     uniforms.uLineWidth.value = lineWidth
     uniforms.uScrollSpeed.value = scrollSpeed
@@ -96,7 +97,7 @@ export default function SpeedLines() {
     uniforms.uOpacity.value = THREE.MathUtils.lerp(opacity, 0.05, nightFactor) * THREE.MathUtils.lerp(0.35, 1, energyRef.current)
 
     const target = gameState.speedLinesOn ? 1 : 0
-    uniforms.uIntensity.value = THREE.MathUtils.lerp(uniforms.uIntensity.value, target, delta * 6)
+    uniforms.uIntensity.value = THREE.MathUtils.lerp(uniforms.uIntensity.value, target, gameDelta * 6)
   })
 
   return (

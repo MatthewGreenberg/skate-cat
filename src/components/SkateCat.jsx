@@ -1,10 +1,10 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF, useTexture } from '@react-three/drei'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { gameState } from '../store'
-import { getNearestTargetBeat, getSignedOffsetFromTargetBeat, getTimingGradeFromOffset } from '../rhythm'
+import { createIdleGrindSparkState, createIdleGrindState, gameState, getGameDelta } from '../store'
+import { getNearestScheduledTarget, getTimingGradeFromOffset } from '../rhythm'
 
 const toonVertexShader = /* glsl */ `
   varying vec3 vNormal;
@@ -131,6 +131,33 @@ const JUMP_DURATION = 0.34
 const KICKFLIP_ROTATIONS = 1
 const SPIN_DURATION = 0.32
 const INPUT_TIMING_COMPENSATION_SECONDS = 0.08
+const CAT_LATERAL_TRACKING = 0.32
+const CAT_LATERAL_LIMIT = 0.14
+const CAT_GROUNDED_LERP = 4.5
+const RAIL_JUMP_HEIGHT = 1.65
+const GRIND_GROUP_HEIGHT = 0.44
+const GRIND_ALIGN_LERP = 10
+const GRIND_BOB_HEIGHT = 0.012
+const GRIND_LEAN_Z = -0.16
+const GRIND_PITCH_X = -0.02
+const GRIND_ENTRY_DURATION = 0.16
+const GRIND_ENTRY_FLOAT = 0.04
+const GRIND_CONTACT_FLASH_DECAY = 5.2
+const GRIND_BALANCE_SWAY_Z = 0.045
+const GRIND_BALANCE_PITCH_X = 0.018
+const GRIND_BALANCE_BOB_Y = 0.014
+const GRIND_CAT_BALANCE_X = 0.016
+const GRIND_CAT_BALANCE_Y = 0.012
+const GRIND_CAT_BALANCE_YAW = 0.05
+const GRIND_CAT_BALANCE_LEAN = 0.07
+const POWERSLIDE_ENTER_LERP = 9
+const POWERSLIDE_BOARD_YAW = 0.82
+const POWERSLIDE_GROUP_LEAN_Z = 0.18
+const POWERSLIDE_GROUP_PITCH_X = 0.02
+const POWERSLIDE_CAT_LEAN_Z = -0.22
+const POWERSLIDE_CAT_TURN_Y = 0.18
+const POWERSLIDE_CAT_OFFSET_X = 0.035
+const POWERSLIDE_CAT_CROUCH = 0.045
 
 // Death animation params
 const DEATH_HOP_HEIGHT = 0.6
@@ -138,6 +165,8 @@ const DEATH_HOP_DURATION = 0.4
 const DEATH_WALK_SPEED = 1.2
 const DEATH_WALK_BOB_SPEED = 8
 const DEATH_WALK_BOB_HEIGHT = 0.06
+const _grindSparkLocal = new THREE.Vector3()
+const _grindSparkWorld = new THREE.Vector3()
 
 export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasStartedGame = false, musicRef, onJumpTiming, onJumpSfx }) {
   const { catRotX, catRotY, catRotZ } = useControls('Cat', {
@@ -195,6 +224,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   const groupRef = useRef()
   const boardRef = useRef()
   const catRef = useRef()
+  const grindLightRef = useRef()
   const skateboard = useGLTF('/skateboard.glb')
   const { scene: catScene } = useGLTF('/maxwell_the_cat_dingus/scene.gltf')
   const { scene: boxScene } = useGLTF('/empty_cardboard_box/scene.gltf')
@@ -279,10 +309,13 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   }, [boxScene])
 
   // Cache mesh references to avoid traverse() every frame
-  const cachedMeshes = useMemo(() => {
+  const toonMeshesRef = useRef([])
+  const outlineMeshesRef = useRef([])
+  useEffect(() => {
     const toonMeshes = []
     const outlineMeshes = []
     const sources = [catWithToon, boxWithToon]
+
     for (const root of sources) {
       root.traverse((child) => {
         if (!child.isMesh || !child.material?.isShaderMaterial) return
@@ -293,13 +326,21 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
         }
       })
     }
-    return { toonMeshes, outlineMeshes }
+
+    toonMeshesRef.current = toonMeshes
+    outlineMeshesRef.current = outlineMeshes
   }, [catWithToon, boxWithToon])
 
   const jumpState = useRef({
     active: false,
     time: 0,
     direction: 1,
+    startX: 0,
+    targetX: 0,
+    startY: 0.05,
+    endY: 0.05,
+    arcHeight: JUMP_HEIGHT,
+    doesFlip: true,
   })
   const squashState = useRef({ active: false, time: 0 })
   const SQUASH_DURATION = 0.4
@@ -330,31 +371,230 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     active: false,
     time: 0,
   })
+  const powerslideState = useRef({
+    amount: 0,
+    direction: 1,
+  })
+  const grindContactState = useRef({
+    flash: 0,
+    motionTime: 0,
+  })
+  const grindEntryState = useRef({
+    active: false,
+    time: 0,
+    obstacleId: 0,
+    startX: 0,
+    startY: 0.05,
+    startRotX: 0,
+    startRotZ: 0,
+    startBoardYaw: 0,
+    startBoardRoll: 0,
+  })
 
   const wasGameOver = useRef(false)
+  const wasGrinding = useRef(false)
+
+  const getDesiredRoadOffset = (targetX = 0) => THREE.MathUtils.clamp(targetX * CAT_LATERAL_TRACKING, -CAT_LATERAL_LIMIT, CAT_LATERAL_LIMIT)
+  const setGrindSparkInactive = useCallback(() => {
+    if (!gameState.grindSpark.current) {
+      gameState.grindSpark.current = createIdleGrindSparkState()
+      return
+    }
+    gameState.grindSpark.current.active = false
+    gameState.grindSpark.current.intensity = 0
+  }, [])
+
+  const updateGrindSpark = useCallback((direction) => {
+    if (!boardRef.current) {
+      setGrindSparkInactive()
+      return
+    }
+
+    const grindSpark = gameState.grindSpark.current || createIdleGrindSparkState()
+    gameState.grindSpark.current = grindSpark
+    _grindSparkLocal.set(direction * 0.08, -0.06, 0.44)
+    boardRef.current.updateWorldMatrix(true, false)
+    _grindSparkWorld.copy(_grindSparkLocal)
+    boardRef.current.localToWorld(_grindSparkWorld)
+    grindSpark.active = true
+    grindSpark.position[0] = _grindSparkWorld.x
+    grindSpark.position[1] = _grindSparkWorld.y
+    grindSpark.position[2] = _grindSparkWorld.z
+    grindSpark.direction = direction
+    const speedRatio = Math.min(1.35, gameState.speed.current / Math.max(gameState.baseSpeed, 0.001))
+    grindSpark.intensity = 0.7 + speedRatio * 0.45
+  }, [setGrindSparkInactive])
+
+  const triggerGrindImpact = useCallback((direction) => {
+    updateGrindSpark(direction)
+    const grindSpark = gameState.grindSpark.current || createIdleGrindSparkState()
+    gameState.grindSpark.current = grindSpark
+    grindSpark.impactId += 1
+    grindSpark.intensity = Math.max(grindSpark.intensity, 1.15)
+    grindContactState.current.flash = 1
+    if (grindLightRef.current) {
+      grindLightRef.current.intensity = 6.2
+      grindLightRef.current.distance = 1.35
+    }
+    gameState.screenShake.current = Math.max(gameState.screenShake.current || 0, 0.24)
+  }, [updateGrindSpark])
+
+  const resetContactEffects = () => {
+    grindContactState.current.flash = 0
+    grindContactState.current.motionTime = 0
+  }
 
   const resetPoseToBoard = () => {
+    resetContactEffects()
     deathState.current.active = false
     deathState.current.time = 0
     jumpState.current.active = false
     jumpState.current.time = 0
     spinState.current.active = false
     spinState.current.time = 0
+    powerslideState.current.amount = 0
+    powerslideState.current.direction = 1
+    grindEntryState.current.active = false
+    grindEntryState.current.time = 0
+    grindEntryState.current.obstacleId = 0
     squashState.current.active = false
     squashState.current.time = 0
+    wasGrinding.current = false
     introState.current.phase = 'done'
     introState.current.time = 0
     if (groupRef.current) {
       groupRef.current.position.set(0, 0.05, 0)
       groupRef.current.rotation.set(0, 0, 0)
     }
+    gameState.grindSpark.current = createIdleGrindSparkState()
+    gameState.catHeight.current = 0.05
     if (catRef.current) {
       catRef.current.position.set(0, 0.2, 0)
       catRef.current.rotation.set(0, 0, 0)
       catRef.current.scale.set(1, 1, 1)
     }
-    if (boardRef.current) boardRef.current.rotation.z = 0
+    if (boardRef.current) {
+      boardRef.current.rotation.y = 0
+      boardRef.current.rotation.z = 0
+    }
   }
+
+  const beginGrindEntry = useCallback((activeGrind) => {
+    if (!groupRef.current) return
+
+    grindEntryState.current.active = true
+    grindEntryState.current.time = 0
+    grindEntryState.current.obstacleId = activeGrind.obstacleId
+    grindEntryState.current.startX = groupRef.current.position.x
+    grindEntryState.current.startY = groupRef.current.position.y
+    grindEntryState.current.startRotX = groupRef.current.rotation.x
+    grindEntryState.current.startRotZ = groupRef.current.rotation.z
+    grindEntryState.current.startBoardYaw = boardRef.current?.rotation.y || 0
+    grindEntryState.current.startBoardRoll = boardRef.current?.rotation.z || 0
+
+    gameState.screenShake.current = Math.max(gameState.screenShake.current || 0, 0.12)
+    triggerGrindImpact(activeGrind.x < 0 ? -1 : 1)
+  }, [triggerGrindImpact])
+
+  const triggerLandingEffects = () => {
+    if (!groupRef.current) return
+
+    gameState.screenShake.current = 0.3
+    const wp = new THREE.Vector3()
+    groupRef.current.getWorldPosition(wp)
+    gameState.landed.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
+    squashState.current.active = true
+    squashState.current.time = 0
+
+    const bs = blinkState.current
+    if (!bs.blinking) {
+      bs.blinking = true
+      bs.blinkTime = 0
+      bs.blinksLeft = 0
+    }
+  }
+
+  const triggerKickflipEffect = useCallback(() => {
+    if (!groupRef.current) return
+
+    const wp = new THREE.Vector3()
+    groupRef.current.getWorldPosition(wp)
+    gameState.kickflip.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
+  }, [])
+
+  const getJumpPlan = useCallback((musicTime, { fromGrind = false, blockedObstacleId = 0 } = {}) => {
+    const adjustedMusicTime = musicTime + INPUT_TIMING_COMPENSATION_SECONDS
+    const availableTargets = blockedObstacleId
+      ? gameState.obstacleTargets.current.filter((target) => target.id !== blockedObstacleId)
+      : gameState.obstacleTargets.current
+    const nearestTarget = getNearestScheduledTarget(adjustedMusicTime, availableTargets)
+    const timingLabel = nearestTarget ? getTimingGradeFromOffset(nearestTarget.offset) : 'Sloppy'
+    const coveredObstacleIds = nearestTarget
+      ? availableTargets
+        .filter((target) => target.clusterId === nearestTarget.clusterId)
+        .map((target) => target.id)
+      : []
+    const nextLandingTarget = nearestTarget
+      ? availableTargets.find((target) =>
+        target.clusterId !== nearestTarget.clusterId && target.targetTime > nearestTarget.targetTime + 0.01
+      ) || nearestTarget
+      : null
+    const landingTarget = nearestTarget?.isVertical ? nearestTarget : nextLandingTarget
+
+    return {
+      coveredObstacleIds,
+      nearestTarget,
+      targetX: getDesiredRoadOffset(landingTarget?.x || 0),
+      timingLabel,
+      isRailJump: fromGrind || Boolean(nearestTarget?.isVertical),
+      shouldKickflip: !fromGrind && !nearestTarget?.isVertical,
+    }
+  }, [])
+
+  const startJump = useCallback(({ fromGrind = false } = {}) => {
+    const releasedGrindId = fromGrind ? gameState.activeGrind.current.obstacleId : 0
+    if (fromGrind && releasedGrindId) {
+      gameState.grindCooldownObstacleId.current = releasedGrindId
+      gameState.activeGrind.current = createIdleGrindState()
+    }
+
+    jumpState.current.active = true
+    jumpState.current.time = 0
+    jumpState.current.direction = Math.random() < 0.5 ? 1 : -1
+    jumpState.current.startX = groupRef.current?.position.x || 0
+    jumpState.current.targetX = jumpState.current.startX
+    jumpState.current.startY = groupRef.current?.position.y || 0.05
+    jumpState.current.endY = 0.05
+    jumpState.current.arcHeight = fromGrind ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
+    jumpState.current.doesFlip = false
+
+    if (onJumpSfx) onJumpSfx()
+
+    const musicTime = musicRef?.current?.currentTime
+    if (typeof musicTime === 'number' && Number.isFinite(musicTime)) {
+      const jumpPlan = getJumpPlan(musicTime, { fromGrind, blockedObstacleId: releasedGrindId })
+      jumpState.current.targetX = jumpPlan.targetX
+      jumpState.current.arcHeight = jumpPlan.isRailJump ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
+      jumpState.current.doesFlip = jumpPlan.shouldKickflip
+      gameState.pendingJumpTiming.current = {
+        obstacleIds: jumpPlan.coveredObstacleIds,
+        primaryObstacleId: jumpPlan.nearestTarget?.id ?? null,
+        grade: jumpPlan.timingLabel,
+        offset: jumpPlan.nearestTarget?.offset ?? null,
+        timestamp: musicTime,
+      }
+      if (jumpPlan.shouldKickflip) {
+        triggerKickflipEffect()
+      }
+      if (onJumpTiming) onJumpTiming(jumpPlan.timingLabel)
+      return
+    }
+
+    if (!fromGrind) {
+      jumpState.current.doesFlip = true
+      triggerKickflipEffect()
+    }
+  }, [getJumpPlan, musicRef, onJumpSfx, onJumpTiming, triggerKickflipEffect])
 
   // Trigger hop-on when game starts
   const prevStarted = useRef(false)
@@ -369,47 +609,46 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   useEffect(() => {
     const onKeyDown = (e) => {
       if (!controlsEnabled) return
-      if (gameState.gameOver) return
-      if (e.key === 'ArrowUp' && !jumpState.current.active) {
-        jumpState.current.active = true
-        jumpState.current.time = 0
-        jumpState.current.direction = Math.random() < 0.5 ? 1 : -1
-        if (onJumpSfx) onJumpSfx()
 
-        const wp = new THREE.Vector3()
-        if (groupRef.current) {
-          groupRef.current.getWorldPosition(wp)
-        }
-        gameState.kickflip.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
-
-        const musicTime = musicRef?.current?.currentTime
-        if (typeof musicTime === 'number' && Number.isFinite(musicTime)) {
-          const adjustedMusicTime = musicTime + INPUT_TIMING_COMPENSATION_SECONDS
-          const signedOffsetFromBeat = getSignedOffsetFromTargetBeat(adjustedMusicTime)
-          const timingLabel = getTimingGradeFromOffset(signedOffsetFromBeat)
-          gameState.pendingJumpTiming.current = {
-            targetBeat: getNearestTargetBeat(adjustedMusicTime),
-            grade: timingLabel,
-            offset: signedOffsetFromBeat,
-            timestamp: musicTime,
-          }
-          if (onJumpTiming) onJumpTiming(timingLabel)
-        }
+      if (e.key === 'ArrowUp') {
+        gameState.upArrowHeld.current = true
+        if (e.repeat) return
       }
 
-      if (e.key === 'ArrowDown' && !spinState.current.active && !jumpState.current.active) {
+      if (gameState.gameOver) return
+      if (e.key === 'ArrowUp' && !jumpState.current.active) {
+        startJump({ fromGrind: Boolean(gameState.activeGrind.current.active) })
+      }
+      if (e.key === 'ArrowDown' && !e.repeat && !spinState.current.active && !jumpState.current.active && !gameState.activeGrind.current.active) {
         spinState.current.active = true
         spinState.current.time = 0
       }
     }
+
+    const onKeyUp = (e) => {
+      if (e.key === 'ArrowUp') {
+        gameState.upArrowHeld.current = false
+      }
+    }
+
+    const onBlur = () => {
+      gameState.upArrowHeld.current = false
+    }
+
     window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+      gameState.upArrowHeld.current = false
     }
-  }, [controlsEnabled, musicRef, onJumpTiming, onJumpSfx])
+  }, [controlsEnabled, startJump])
 
   // Sync toon controls + blink in one pass using cached mesh refs
   useFrame((_, delta) => {
+    const gameDelta = getGameDelta(delta)
     // Blink animation
     const BLINK_DURATION = 0.35
     const PAUSE_BETWEEN = 0.08
@@ -421,7 +660,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       s.amount = 1.0
     } else {
       if (!s.blinking) {
-        s.timer -= delta
+        s.timer -= gameDelta
         if (s.timer <= 0) {
           s.blinking = true
           s.blinkTime = 0
@@ -429,7 +668,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
           s.blinksLeft = r < 0.1 ? 2 : r < 0.4 ? 1 : 0
         }
       } else {
-        s.blinkTime += delta
+        s.blinkTime += gameDelta
         if (s.blinkTime >= BLINK_DURATION) {
           if (s.blinksLeft > 0) {
             s.blinksLeft--
@@ -449,12 +688,13 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
     // Lerp intro -> gameplay
     const targetLerp = introState.current.phase === 'idle' ? 0 : 1
-    introLerp.current = THREE.MathUtils.lerp(introLerp.current, targetLerp, delta * 3)
+    introLerp.current = THREE.MathUtils.lerp(introLerp.current, targetLerp, gameDelta * 3)
     const il = introLerp.current
     const mix = (intro, gameplay) => intro + (gameplay - intro) * il
 
     // Update toon + blink uniforms on cached meshes (no traverse)
-    for (const child of cachedMeshes.toonMeshes) {
+    /* eslint-disable react-hooks/immutability */
+    for (const child of toonMeshesRef.current) {
       const u = child.material.uniforms
       u.uLightDirection.value.set(
         mix(INTRO_TOON.lightX, toonControls.lightX),
@@ -474,18 +714,22 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       u.uLidColor.value.set(blinkControls.lidColor)
       u.uBlinkAmount.value = s.amount
     }
-    for (const child of cachedMeshes.outlineMeshes) {
+    for (const child of outlineMeshesRef.current) {
       child.material.uniforms.uThickness.value = mix(INTRO_TOON.outlineThickness, toonControls.outlineThickness)
       child.material.uniforms.uOutlineColor.value.set(toonControls.outlineColor)
     }
+    /* eslint-enable react-hooks/immutability */
   })
 
   useFrame((state, delta) => {
     if (!groupRef.current || !catRef.current) return
+    const gameDelta = getGameDelta(delta)
 
     // Intro: cat sits beside the board, then hops on
     const intro = introState.current
     if (intro.phase === 'idle') {
+      setGrindSparkInactive()
+      gameState.catHeight.current = introControls.introY
       // Cat on ground, facing camera, no board
       catRef.current.position.set(introControls.introX, introControls.introY, introControls.introZ)
       catRef.current.rotation.set(0, introControls.introRotY, 0)
@@ -501,6 +745,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       return
     }
     if (intro.phase === 'hopping') {
+      setGrindSparkInactive()
       if (boardRef.current) boardRef.current.visible = true
       if (boxRef.current) boxRef.current.visible = false
       intro.time += delta
@@ -517,6 +762,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       const x = introControls.introX * (1 - t)
       const z = introControls.introZ * (1 - t)
       const y = introControls.introY + hopHeight + 0.2 * t
+      gameState.catHeight.current = y
       catRef.current.position.set(x, y, z)
       // Rotate from facing camera to facing forward
       catRef.current.rotation.set(0, introControls.introRotY * (1 - t), 0)
@@ -546,6 +792,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     // Death animation — cat hops off board then walks away
     if (gameState.gameOver) {
       wasGameOver.current = true
+      resetContactEffects()
+      setGrindSparkInactive()
 
       if (!deathState.current.active) {
         deathState.current.active = true
@@ -575,75 +823,208 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
         catRef.current.rotation.y = Math.PI * 0.5
       }
 
+      gameState.catHeight.current = groupRef.current.position.y
       return
     }
 
     const targetSpeed = gameState.baseSpeed + (
       gameState.speedBoostActive ? gameState.postMilestoneSpeedBoost : 0
     )
-    gameState.speed.current = THREE.MathUtils.lerp(gameState.speed.current, targetSpeed, delta * 4)
+    gameState.speed.current = THREE.MathUtils.lerp(gameState.speed.current, targetSpeed, gameDelta * 4)
+    const musicTime = musicRef?.current?.currentTime || 0
+    const upcomingTarget = gameState.obstacleTargets.current.find((target) => target.targetTime >= musicTime - 0.02)
+    const groundedTargetX = getDesiredRoadOffset(upcomingTarget?.x || 0)
 
     const jump = jumpState.current
-    gameState.jumping = jump.active
+    const activeGrind = gameState.activeGrind.current
+    const isGrinding = Boolean(activeGrind?.active)
+    gameState.jumping = jump.active || isGrinding
     const spin = spinState.current
+    const powerslide = powerslideState.current
+    const grindEntry = grindEntryState.current
+    const speedRatio = Math.min(1.2, gameState.speed.current / Math.max(gameState.baseSpeed, 0.001))
 
-    if (spin.active) {
-      spin.time += delta
+    grindContactState.current.flash = Math.max(0, grindContactState.current.flash - gameDelta * GRIND_CONTACT_FLASH_DECAY)
+    if (isGrinding) {
+      grindContactState.current.motionTime += gameDelta * (2.6 + speedRatio * 1.8)
+    }
+    const grindMotion = grindContactState.current.motionTime
+    const grindBalanceWave = Math.sin(grindMotion * 1.4)
+    const grindCounterWave = Math.sin(grindMotion * 0.72 + 0.9)
+
+    if (isGrinding) {
+      if (!wasGrinding.current) {
+        powerslide.direction = activeGrind.x < 0 ? -1 : 1
+        beginGrindEntry(activeGrind)
+      }
+      if (jump.active) {
+        jump.active = false
+        jump.time = 0
+      }
+      if (spin.active) {
+        spin.active = false
+        spin.time = 0
+      }
+      powerslide.direction = activeGrind.x < 0 ? -1 : 1
+    } else if (wasGrinding.current && !jump.active) {
+      triggerLandingEffects()
+    }
+    if (!isGrinding && grindEntry.active) {
+      grindEntry.active = false
+      grindEntry.time = 0
+      grindEntry.obstacleId = 0
+    }
+
+    wasGrinding.current = isGrinding
+    powerslide.amount = THREE.MathUtils.lerp(powerslide.amount, isGrinding ? 1 : 0, gameDelta * POWERSLIDE_ENTER_LERP)
+    let catSpinRotationY = 0
+    let catSpinJustFinished = false
+
+    if (spin.active && !isGrinding) {
+      spin.time += gameDelta
       const spinT = Math.min(spin.time / SPIN_DURATION, 1)
-      catRef.current.rotation.y = spinT * Math.PI * 2
+      catSpinRotationY = spinT * Math.PI * 2
       if (spinT >= 1) {
         spin.active = false
         spin.time = 0
-        catRef.current.rotation.y = 0
+        catSpinRotationY = 0
+        catSpinJustFinished = true
       }
-    } else {
-      catRef.current.rotation.y = 0
     }
 
     if (jump.active) {
-      jump.time += delta
+      setGrindSparkInactive()
+      jump.time += gameDelta
       const t = jump.time / JUMP_DURATION
 
       if (t >= 1) {
         jump.active = false
         jump.time = 0
-        groupRef.current.position.y = 0.05
-        if (boardRef.current) boardRef.current.rotation.z = 0
-        // Trigger landing effects
-        gameState.screenShake.current = 0.3
-        const wp = new THREE.Vector3()
-        groupRef.current.getWorldPosition(wp)
-        gameState.landed.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
-        // Trigger squash on landing
-        squashState.current.active = true
-        squashState.current.time = 0
-        // Trigger a blink on landing
-        const bs = blinkState.current
-        if (!bs.blinking) {
-          bs.blinking = true
-          bs.blinkTime = 0
-          bs.blinksLeft = 0
+        groupRef.current.position.y = jump.endY
+        groupRef.current.position.x = jump.targetX
+        if (boardRef.current) {
+          boardRef.current.rotation.y = THREE.MathUtils.lerp(boardRef.current.rotation.y, 0, gameDelta * 12)
+          boardRef.current.rotation.z = 0
         }
+        triggerLandingEffects()
       } else {
-        const height = 4 * JUMP_HEIGHT * t * (1 - t)
-        groupRef.current.position.y = 0.05 + height
+        const height = 4 * jump.arcHeight * t * (1 - t)
+        const travelT = THREE.MathUtils.smootherstep(t, 0, 1)
+        groupRef.current.position.y = THREE.MathUtils.lerp(jump.startY, jump.endY, travelT) + height
+        groupRef.current.position.x = THREE.MathUtils.lerp(jump.startX, jump.targetX, THREE.MathUtils.smootherstep(t, 0, 1))
 
         if (boardRef.current) {
-          boardRef.current.rotation.z = t * Math.PI * 2 * KICKFLIP_ROTATIONS * jump.direction
+          boardRef.current.rotation.y = THREE.MathUtils.lerp(boardRef.current.rotation.y, 0, gameDelta * 12)
+          boardRef.current.rotation.z = jump.doesFlip
+            ? t * Math.PI * 2 * KICKFLIP_ROTATIONS * jump.direction
+            : THREE.MathUtils.lerp(boardRef.current.rotation.z, 0, gameDelta * 12)
         }
       }
-    } else {
-      groupRef.current.position.y = 0.05 + Math.sin(state.clock.elapsedTime * 4) * 0.04
-      groupRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 1.5) * 0.03
-      groupRef.current.rotation.x = -0.05 + Math.sin(state.clock.elapsedTime * 2.5) * 0.02
+    } else if (isGrinding) {
+      const grindTargetX = getDesiredRoadOffset(activeGrind.x || 0)
+      const grindBob = Math.sin(grindMotion * 3.2) * GRIND_BOB_HEIGHT + grindCounterWave * GRIND_BALANCE_BOB_Y * speedRatio
+      const grindTargetRotZ = powerslide.direction * POWERSLIDE_GROUP_LEAN_Z + grindBalanceWave * GRIND_BALANCE_SWAY_Z * speedRatio
+      const grindTargetRotX = GRIND_PITCH_X + POWERSLIDE_GROUP_PITCH_X + grindCounterWave * GRIND_BALANCE_PITCH_X * speedRatio
+      const grindTargetBoardYaw = powerslide.direction * POWERSLIDE_BOARD_YAW + grindBalanceWave * 0.08 * speedRatio
+      const grindTargetBoardRoll = -powerslide.direction * grindCounterWave * 0.045 * speedRatio
 
-      if (boardRef.current) boardRef.current.rotation.z = 0
+      if (grindEntry.active && grindEntry.obstacleId === activeGrind.obstacleId) {
+        grindEntry.time += gameDelta
+        const t = Math.min(grindEntry.time / GRIND_ENTRY_DURATION, 1)
+        const ease = THREE.MathUtils.smootherstep(t, 0, 1)
+        const float = Math.sin(t * Math.PI) * GRIND_ENTRY_FLOAT
+
+        groupRef.current.position.x = THREE.MathUtils.lerp(grindEntry.startX, grindTargetX, ease)
+        groupRef.current.position.y = THREE.MathUtils.lerp(grindEntry.startY, GRIND_GROUP_HEIGHT, ease) + float * (1 - ease * 0.5)
+        groupRef.current.rotation.z = THREE.MathUtils.lerp(grindEntry.startRotZ, grindTargetRotZ, ease)
+        groupRef.current.rotation.x = THREE.MathUtils.lerp(grindEntry.startRotX, grindTargetRotX, ease)
+
+        if (boardRef.current) {
+          boardRef.current.rotation.y = THREE.MathUtils.lerp(grindEntry.startBoardYaw, grindTargetBoardYaw, ease)
+          boardRef.current.rotation.z = THREE.MathUtils.lerp(grindEntry.startBoardRoll, grindTargetBoardRoll, ease)
+        }
+
+        if (t >= 1) {
+          grindEntry.active = false
+          grindEntry.time = 0
+          grindEntry.obstacleId = 0
+        }
+      } else {
+        groupRef.current.position.x = THREE.MathUtils.lerp(groupRef.current.position.x, grindTargetX, gameDelta * GRIND_ALIGN_LERP)
+        groupRef.current.position.y = THREE.MathUtils.lerp(
+          groupRef.current.position.y,
+          GRIND_GROUP_HEIGHT + grindBob,
+          gameDelta * GRIND_ALIGN_LERP
+        )
+        groupRef.current.rotation.z = THREE.MathUtils.lerp(
+          groupRef.current.rotation.z,
+          grindTargetRotZ,
+          gameDelta * 8
+        )
+        groupRef.current.rotation.x = THREE.MathUtils.lerp(
+          groupRef.current.rotation.x,
+          grindTargetRotX,
+          gameDelta * 8
+        )
+
+        if (boardRef.current) {
+          boardRef.current.rotation.y = THREE.MathUtils.lerp(
+            boardRef.current.rotation.y,
+            grindTargetBoardYaw,
+            gameDelta * 10
+          )
+          boardRef.current.rotation.z = THREE.MathUtils.lerp(boardRef.current.rotation.z, grindTargetBoardRoll, gameDelta * 10)
+        }
+      }
+      updateGrindSpark(powerslide.direction)
+    } else {
+      setGrindSparkInactive()
+      const baseRideY = 0.05 + Math.sin(state.clock.elapsedTime * 4) * 0.04
+      const baseRideRoll = Math.sin(state.clock.elapsedTime * 1.5) * 0.03
+      const baseRidePitch = -0.05 + Math.sin(state.clock.elapsedTime * 2.5) * 0.02
+
+      groupRef.current.position.x = THREE.MathUtils.lerp(groupRef.current.position.x, groundedTargetX, gameDelta * CAT_GROUNDED_LERP)
+      groupRef.current.position.y = baseRideY
+      groupRef.current.rotation.z = baseRideRoll
+      groupRef.current.rotation.x = baseRidePitch
+
+      if (boardRef.current) {
+        boardRef.current.rotation.y = THREE.MathUtils.lerp(boardRef.current.rotation.y, 0, gameDelta * 12)
+        boardRef.current.rotation.z = 0
+      }
+    }
+
+    gameState.catHeight.current = groupRef.current.position.y
+
+    const grindBodyShiftX = isGrinding ? grindBalanceWave * GRIND_CAT_BALANCE_X * speedRatio : 0
+    const grindBodyBob = isGrinding ? grindCounterWave * GRIND_CAT_BALANCE_Y * speedRatio : 0
+    const grindBodyYaw = isGrinding ? grindCounterWave * GRIND_CAT_BALANCE_YAW * speedRatio : 0
+    const grindBodyLean = isGrinding ? grindBalanceWave * GRIND_CAT_BALANCE_LEAN * speedRatio : 0
+    const catPoseAmount = jump.active ? 0 : powerslide.amount
+    const catTargetX = POWERSLIDE_CAT_OFFSET_X * powerslide.direction * catPoseAmount + grindBodyShiftX * powerslide.direction
+    const catTargetY = 0.2 - POWERSLIDE_CAT_CROUCH * catPoseAmount + grindBodyBob
+    catRef.current.position.x = THREE.MathUtils.lerp(catRef.current.position.x, catTargetX, gameDelta * 12)
+    catRef.current.position.y = THREE.MathUtils.lerp(catRef.current.position.y, catTargetY, gameDelta * 12)
+    catRef.current.rotation.y = catSpinJustFinished
+      ? 0
+      : spin.active
+      ? catSpinRotationY
+      : THREE.MathUtils.lerp(catRef.current.rotation.y, POWERSLIDE_CAT_TURN_Y * powerslide.direction * catPoseAmount + grindBodyYaw * powerslide.direction, gameDelta * 10)
+    catRef.current.rotation.z = THREE.MathUtils.lerp(catRef.current.rotation.z, POWERSLIDE_CAT_LEAN_Z * powerslide.direction * catPoseAmount + grindBodyLean * powerslide.direction, gameDelta * 10)
+
+    if (grindLightRef.current) {
+      grindLightRef.current.position.x = powerslide.direction * 0.14
+      const contactBase = isGrinding ? 1.2 + speedRatio * 1.8 : 0
+      const targetIntensity = contactBase + grindContactState.current.flash * 5.2
+      const targetDistance = isGrinding ? 0.75 + speedRatio * 0.45 + grindContactState.current.flash * 0.18 : 0.01
+      grindLightRef.current.intensity = THREE.MathUtils.lerp(grindLightRef.current.intensity, targetIntensity, gameDelta * 14)
+      grindLightRef.current.distance = THREE.MathUtils.lerp(grindLightRef.current.distance, targetDistance, gameDelta * 10)
     }
 
     // Squash-and-stretch on landing
     const sq = squashState.current
     if (sq.active) {
-      sq.time += delta
+      sq.time += gameDelta
       const t = Math.min(sq.time / SQUASH_DURATION, 1)
       // Bouncy spring with overshoot
       const bounce = Math.sin(t * Math.PI * 2.5) * Math.exp(-t * 3)
@@ -668,6 +1049,14 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
           scale={2}
           rotation={[0, Math.PI / 2, 0]}
           position={[0, 0, 0]}
+        />
+        <pointLight
+          ref={grindLightRef}
+          position={[0.14, 0.04, 0.38]}
+          intensity={0}
+          distance={0.01}
+          decay={2}
+          color="#ffb764"
         />
       </group>
       <group ref={catRef} position={[0, 0.2, 0]}>

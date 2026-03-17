@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { gameState } from '../store'
-import { BEAT_INTERVAL, OBSTACLE_PHASE } from '../rhythm'
+import { BEAT_INTERVAL } from '../rhythm'
 
 const hudStyle = {
   position: 'fixed',
@@ -63,13 +63,13 @@ const multiplierBadgeStyle = {
   letterSpacing: '0.08em',
 }
 
-function getDotStyle(isActive) {
+function getDotStyle(isActive, isAnchorBeat) {
   return {
     width: isActive ? '1.3rem' : '0.9rem',
     height: isActive ? '1.3rem' : '0.9rem',
     borderRadius: '999px',
-    background: isActive ? '#fff' : 'rgba(255, 255, 255, 0.25)',
-    border: '2px solid rgba(255, 255, 255, 0.7)',
+    background: isActive ? '#fff' : isAnchorBeat ? 'rgba(255, 255, 255, 0.38)' : 'rgba(255, 255, 255, 0.2)',
+    border: `2px solid ${isAnchorBeat ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.55)'}`,
     boxShadow: isActive
       ? '0 0 8px rgba(255, 255, 255, 0.6), 0 0 0 3px rgba(255, 255, 255, 0.15)'
       : 'none',
@@ -116,7 +116,7 @@ function getJudgementStyle(label, shouldAnimate) {
 export default function GameHud({ musicRef, visible, timingFeedback }) {
   const [score, setScore] = useState(gameState.score)
   const [multiplier, setMultiplier] = useState(gameState.scoreMultiplier.current)
-  const [activeDot, setActiveDot] = useState(0)
+  const [activeBeat, setActiveBeat] = useState(0)
   const [streak, setStreak] = useState(0)
   const [streakKey, setStreakKey] = useState(0)
   const [showPlus, setShowPlus] = useState(false)
@@ -160,8 +160,8 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
 
       const musicTime = musicRef?.current?.currentTime || 0
       const beatIndex = Math.floor(musicTime / BEAT_INTERVAL)
-      const nextDot = beatIndex % 2 === OBSTACLE_PHASE ? 1 : 0
-      setActiveDot((prev) => (prev === nextDot ? prev : nextDot))
+      const nextBeat = ((beatIndex % 4) + 4) % 4
+      setActiveBeat((prev) => (prev === nextBeat ? prev : nextBeat))
       animationFrameId = window.requestAnimationFrame(tick)
     }
     animationFrameId = window.requestAnimationFrame(tick)
@@ -201,8 +201,9 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
       </div>
       <div style={hudStyle}>
         <div style={dotRowStyle}>
-          <span style={getDotStyle(activeDot === 0)} />
-          <span style={getDotStyle(activeDot === 1)} />
+          {[0, 1, 2, 3].map((beat) => (
+            <span key={beat} style={getDotStyle(activeBeat === beat, beat === 1 || beat === 3)} />
+          ))}
         </div>
         <div style={{
           width: '1px',
