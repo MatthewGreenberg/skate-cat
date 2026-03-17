@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { gameState } from '../store'
-import { BEAT_INTERVAL } from '../rhythm'
+import { BEAT_INTERVAL, getPerceivedMusicTime } from '../rhythm'
 
 const hudStyle = {
   position: 'fixed',
@@ -158,7 +158,7 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
         setShowPlus(true)
       }
 
-      const musicTime = musicRef?.current?.currentTime || 0
+      const musicTime = getPerceivedMusicTime(musicRef?.current?.currentTime || 0)
       const beatIndex = Math.floor(musicTime / BEAT_INTERVAL)
       const nextBeat = ((beatIndex % 4) + 4) % 4
       setActiveBeat((prev) => (prev === nextBeat ? prev : nextBeat))

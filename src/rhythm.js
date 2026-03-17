@@ -1,8 +1,19 @@
+import { gameState } from './store'
+
 export const SONG_BPM = 150
 export const BEAT_INTERVAL = 60 / SONG_BPM
+export const AUDIO_VISUAL_SYNC_OFFSET_SECONDS = -0.049
 export const PERFECT_WINDOW_SECONDS = 0.09
 export const GOOD_WINDOW_SECONDS = 0.18
 export const MAX_TARGET_LOCK_WINDOW_SECONDS = BEAT_INTERVAL * 0.8
+
+export function getPerceivedMusicTime(
+  currentTimeSeconds,
+  syncOffsetSeconds = gameState.timingOffsetSeconds.current ?? AUDIO_VISUAL_SYNC_OFFSET_SECONDS
+) {
+  if (!Number.isFinite(currentTimeSeconds)) return 0
+  return Math.max(0, currentTimeSeconds - syncOffsetSeconds)
+}
 
 export function getNearestScheduledTarget(currentTimeSeconds, targets, maxOffsetSeconds = MAX_TARGET_LOCK_WINDOW_SECONDS) {
   if (!Array.isArray(targets) || targets.length === 0) return null

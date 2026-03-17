@@ -4,7 +4,7 @@ import { useGLTF, useTexture } from '@react-three/drei'
 import { useControls } from 'leva'
 import * as THREE from 'three'
 import { createIdleGrindSparkState, createIdleGrindState, gameState, getGameDelta } from '../store'
-import { getNearestScheduledTarget, getTimingGradeFromOffset } from '../rhythm'
+import { getNearestScheduledTarget, getPerceivedMusicTime, getTimingGradeFromOffset } from '../rhythm'
 
 const toonVertexShader = /* glsl */ `
   varying vec3 vNormal;
@@ -158,6 +158,9 @@ const POWERSLIDE_CAT_LEAN_Z = -0.22
 const POWERSLIDE_CAT_TURN_Y = 0.18
 const POWERSLIDE_CAT_OFFSET_X = 0.035
 const POWERSLIDE_CAT_CROUCH = 0.045
+const BOARD_LANDING_RECOIL_DURATION = 0.26
+const BOARD_LANDING_DIP = 0.032
+const BOARD_LANDING_PITCH = 0.12
 
 // Death animation params
 const DEATH_HOP_HEIGHT = 0.6
@@ -343,6 +346,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     doesFlip: true,
   })
   const squashState = useRef({ active: false, time: 0 })
+  const boardLandingState = useRef({ active: false, time: 0, roll: 0, strength: 1 })
   const SQUASH_DURATION = 0.4
 
   // Intro toon shader overrides (lerp to gameplay values on start)
@@ -459,6 +463,10 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     grindEntryState.current.obstacleId = 0
     squashState.current.active = false
     squashState.current.time = 0
+    boardLandingState.current.active = false
+    boardLandingState.current.time = 0
+    boardLandingState.current.roll = 0
+    boardLandingState.current.strength = 1
     wasGrinding.current = false
     introState.current.phase = 'done'
     introState.current.time = 0
@@ -474,6 +482,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       catRef.current.scale.set(1, 1, 1)
     }
     if (boardRef.current) {
+      boardRef.current.position.y = 0
+      boardRef.current.rotation.x = 0
       boardRef.current.rotation.y = 0
       boardRef.current.rotation.z = 0
     }
@@ -496,15 +506,33 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     triggerGrindImpact(activeGrind.x < 0 ? -1 : 1)
   }, [triggerGrindImpact])
 
-  const triggerLandingEffects = () => {
+  const triggerBoardLandingRecoil = useCallback(({ fromGrind = false, direction = 1 } = {}) => {
+    const currentBoardRoll = boardRef.current?.rotation.z || 0
+    const grindExitRoll = fromGrind ? direction * 0.035 : 0
+    boardLandingState.current.active = true
+    boardLandingState.current.time = 0
+    boardLandingState.current.roll = THREE.MathUtils.clamp(
+      Math.abs(currentBoardRoll) > Math.abs(grindExitRoll) ? currentBoardRoll * 0.45 : grindExitRoll,
+      -0.05,
+      0.05
+    )
+    boardLandingState.current.strength = fromGrind ? 1.15 : 1
+  }, [])
+
+  const triggerCatLandingJiggle = useCallback(() => {
+    squashState.current.active = true
+    squashState.current.time = 0
+  }, [])
+
+  const triggerLandingEffects = useCallback(({ fromGrind = false, direction = 1 } = {}) => {
     if (!groupRef.current) return
 
     gameState.screenShake.current = 0.3
     const wp = new THREE.Vector3()
     groupRef.current.getWorldPosition(wp)
     gameState.landed.current = { triggered: true, position: [wp.x, wp.y, wp.z] }
-    squashState.current.active = true
-    squashState.current.time = 0
+    triggerCatLandingJiggle()
+    triggerBoardLandingRecoil({ fromGrind, direction })
 
     const bs = blinkState.current
     if (!bs.blinking) {
@@ -512,7 +540,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       bs.blinkTime = 0
       bs.blinksLeft = 0
     }
-  }
+  }, [triggerBoardLandingRecoil, triggerCatLandingJiggle])
 
   const triggerKickflipEffect = useCallback(() => {
     if (!groupRef.current) return
@@ -523,7 +551,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   }, [])
 
   const getJumpPlan = useCallback((musicTime, { fromGrind = false, blockedObstacleId = 0 } = {}) => {
-    const adjustedMusicTime = musicTime + INPUT_TIMING_COMPENSATION_SECONDS
+    const adjustedMusicTime = getPerceivedMusicTime(musicTime) + INPUT_TIMING_COMPENSATION_SECONDS
     const availableTargets = blockedObstacleId
       ? gameState.obstacleTargets.current.filter((target) => target.id !== blockedObstacleId)
       : gameState.obstacleTargets.current
@@ -553,8 +581,11 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
   const startJump = useCallback(({ fromGrind = false } = {}) => {
     const releasedGrindId = fromGrind ? gameState.activeGrind.current.obstacleId : 0
+    const grindDirection = gameState.activeGrind.current?.x < 0 ? -1 : 1
     if (fromGrind && releasedGrindId) {
       gameState.grindCooldownObstacleId.current = releasedGrindId
+      triggerCatLandingJiggle()
+      triggerBoardLandingRecoil({ fromGrind: true, direction: grindDirection })
       gameState.activeGrind.current = createIdleGrindState()
     }
 
@@ -581,7 +612,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
         primaryObstacleId: jumpPlan.nearestTarget?.id ?? null,
         grade: jumpPlan.timingLabel,
         offset: jumpPlan.nearestTarget?.offset ?? null,
-        timestamp: musicTime,
+        timestamp: getPerceivedMusicTime(musicTime),
       }
       if (jumpPlan.shouldKickflip) {
         triggerKickflipEffect()
@@ -594,7 +625,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       jumpState.current.doesFlip = true
       triggerKickflipEffect()
     }
-  }, [getJumpPlan, musicRef, onJumpSfx, onJumpTiming, triggerKickflipEffect])
+  }, [getJumpPlan, musicRef, onJumpSfx, onJumpTiming, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
 
   // Trigger hop-on when game starts
   const prevStarted = useRef(false)
@@ -831,7 +862,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       gameState.speedBoostActive ? gameState.postMilestoneSpeedBoost : 0
     )
     gameState.speed.current = THREE.MathUtils.lerp(gameState.speed.current, targetSpeed, gameDelta * 4)
-    const musicTime = musicRef?.current?.currentTime || 0
+    const musicTime = getPerceivedMusicTime(musicRef?.current?.currentTime || 0)
     const upcomingTarget = gameState.obstacleTargets.current.find((target) => target.targetTime >= musicTime - 0.02)
     const groundedTargetX = getDesiredRoadOffset(upcomingTarget?.x || 0)
 
@@ -867,7 +898,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       }
       powerslide.direction = activeGrind.x < 0 ? -1 : 1
     } else if (wasGrinding.current && !jump.active) {
-      triggerLandingEffects()
+      triggerLandingEffects({ fromGrind: true, direction: powerslide.direction })
     }
     if (!isGrinding && grindEntry.active) {
       grindEntry.active = false
@@ -1037,6 +1068,32 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       }
     } else if (!deathState.current.active) {
       catRef.current.scale.set(1, 1, 1)
+    }
+
+    if (boardRef.current) {
+      const landingBoard = boardLandingState.current
+      let recoilPitch = 0
+      let recoilRoll = 0
+      let recoilDrop = 0
+
+      if (landingBoard.active) {
+        landingBoard.time += gameDelta
+        const t = Math.min(landingBoard.time / BOARD_LANDING_RECOIL_DURATION, 1)
+        const bounce = Math.sin(t * Math.PI * 2.2) * Math.exp(-t * 3.4)
+        recoilPitch = -bounce * BOARD_LANDING_PITCH
+        recoilRoll = bounce * landingBoard.roll
+        recoilDrop = -Math.sin(t * Math.PI) * BOARD_LANDING_DIP
+        if (t >= 1) {
+          landingBoard.active = false
+          landingBoard.time = 0
+          landingBoard.roll = 0
+          landingBoard.strength = 1
+        }
+      }
+
+      boardRef.current.position.y = recoilDrop * landingBoard.strength
+      boardRef.current.rotation.x = recoilPitch * landingBoard.strength
+      boardRef.current.rotation.z += recoilRoll
     }
 
   })

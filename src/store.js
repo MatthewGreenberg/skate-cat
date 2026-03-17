@@ -1,7 +1,12 @@
 import { createRef } from 'react'
 import * as THREE from 'three'
 
-export const isDebug = new URLSearchParams(window.location.search).has('debug')
+const DEFAULT_TIMING_OFFSET_SECONDS = -0.049
+const debugParams = new URLSearchParams(window.location.search)
+export const debugMode = debugParams.get('debug') || ''
+export const isDebug = debugParams.has('debug')
+export const isTimingDebug = debugMode === 'timing'
+export const isObstacleSpacingDebug = debugMode === 'spacing' || debugParams.get('spacingDebug') === '1'
 
 export function createIdleGrindState() {
   return { active: false, obstacleId: 0, x: 0, z: 0 }
@@ -30,6 +35,7 @@ export const gameState = {
   scoreMultiplier: createRef(),
   pendingJumpTiming: createRef(),
   obstacleTargets: createRef(),
+  obstacleDebug: createRef(),
   upArrowHeld: createRef(),
   activeGrind: createRef(),
   grindSpark: createRef(),
@@ -40,6 +46,7 @@ export const gameState = {
   comboEnergy: createRef(),
   timeOfDay: createRef(), // 0→1 cycling float
   nightContrast: createRef(), // contrast offset driven by day/night cycle
+  timingOffsetSeconds: createRef(),
 }
 gameState.speed.current = 0
 gameState.kickflip.current = { triggered: false, position: [0, 0, 0] }
@@ -49,6 +56,7 @@ gameState.streak.current = 0
 gameState.scoreMultiplier.current = 1
 gameState.pendingJumpTiming.current = null
 gameState.obstacleTargets.current = []
+gameState.obstacleDebug.current = []
 gameState.upArrowHeld.current = false
 gameState.activeGrind.current = createIdleGrindState()
 gameState.grindSpark.current = createIdleGrindSparkState()
@@ -59,6 +67,7 @@ gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multi
 gameState.comboEnergy.current = 1
 gameState.timeOfDay.current = 0
 gameState.nightContrast.current = 0
+gameState.timingOffsetSeconds.current = DEFAULT_TIMING_OFFSET_SECONDS
 
 export function getScoreMultiplier(streak) {
   if (streak >= 20) return 4
