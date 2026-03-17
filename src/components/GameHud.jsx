@@ -123,6 +123,9 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
   const [plusKey, setPlusKey] = useState(0)
   const [plusText, setPlusText] = useState('+1')
   const [plusGrade, setPlusGrade] = useState('Perfect')
+  const [showTrick, setShowTrick] = useState(false)
+  const [trickKey, setTrickKey] = useState(0)
+  const [trickText, setTrickText] = useState('360!')
   const lastScoredValue = useRef(gameState.score)
   const lastStreakValue = useRef(0)
   const lastScoringEventId = useRef(gameState.lastScoringEvent.current?.id || 0)
@@ -156,6 +159,11 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
         setPlusGrade(scoringEvent.grade)
         setPlusKey((k) => k + 1)
         setShowPlus(true)
+        if (scoringEvent.trickName) {
+          setTrickText(`${scoringEvent.trickName}!`)
+          setTrickKey((k) => k + 1)
+          setShowTrick(true)
+        }
       }
 
       const musicTime = getPerceivedMusicTime(musicRef?.current?.currentTime || 0)
@@ -191,6 +199,12 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
           35% { transform: translateX(-50%) translateY(-4px) rotate(-1deg) scale(1.15); opacity: 1; }
           70% { transform: translateX(-50%) translateY(0px) rotate(0deg) scale(1.02); opacity: 1; }
           100% { transform: translateX(-50%) translateY(-12px) rotate(0deg) scale(0.94); opacity: 0; }
+        }
+        @keyframes trickPop {
+          0% { transform: translateX(-50%) translateY(18px) rotate(-8deg) scale(0.45); opacity: 0; }
+          22% { transform: translateX(-50%) translateY(0px) rotate(-4deg) scale(1.22); opacity: 1; }
+          58% { transform: translateX(-50%) translateY(-2px) rotate(-2deg) scale(0.98); opacity: 1; }
+          100% { transform: translateX(-50%) translateY(-12px) rotate(0deg) scale(0.9); opacity: 0; }
         }`}
       </style>
       <div
@@ -241,6 +255,38 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
           }}
         >
           {streak} STREAK
+        </div>
+      )}
+      {showTrick && (
+        <div
+          key={trickKey}
+          onAnimationEnd={() => setShowTrick(false)}
+          style={{
+            position: 'fixed',
+            bottom: '3rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontFamily: 'Knewave',
+            fontSize: '1.9rem',
+            letterSpacing: '0.1em',
+            color: '#fff6a8',
+            WebkitTextStroke: '1.5px #10283b',
+            textShadow: `
+              2px 2px 0 #10283b,
+              4px 4px 0 #2f6d92,
+              -3px -3px 0 rgba(255, 255, 255, 0.75),
+              0 0 18px rgba(138, 228, 255, 0.45),
+              0 0 34px rgba(255, 245, 168, 0.3)
+            `,
+            padding: '0.08rem 0.45rem',
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.18) 0%, rgba(138,228,255,0.12) 45%, rgba(138,228,255,0) 78%)',
+            borderRadius: '999px',
+            pointerEvents: 'none',
+            zIndex: 62,
+            animation: 'trickPop 480ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
+          }}
+        >
+          {trickText}
         </div>
       )}
       {showPlus && (

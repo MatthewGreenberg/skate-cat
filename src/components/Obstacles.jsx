@@ -24,14 +24,20 @@ const VERTICAL_LOG_ROTATION = 0
 const LANE_JITTER = 0.035
 const INITIAL_MEASURES_SINCE_RAIL = 3
 const MIN_SCORE_FOR_RAILS = 8
-const MIN_MEASURES_BETWEEN_RAILS = 2
-const FORCE_RAIL_AFTER_MEASURES = 5
+const MIN_MEASURES_BETWEEN_RAILS = 1
+const FORCE_RAIL_AFTER_MEASURES = 4
 const MIN_RAIL_SETUP_GAP_BEATS = 1.5
 const HOLD_SIGN_WORLD_X = -1.04
 const GRIND_RAIL_WIDTH = 0.18
 const GRIND_RAIL_HEIGHT = 0.11
 const GRIND_RAIL_LENGTH_MIN = 6.5
 const GRIND_RAIL_LENGTH_MAX = 8.5
+const GRIND_RAIL_SUPPORT_WIDTH = 0.07
+const GRIND_RAIL_SUPPORT_DEPTH = 0.07
+const GRIND_RAIL_SUPPORT_SPAN = 0.34
+const GRIND_RAIL_SUPPORT_CROSSBAR_HEIGHT = 0.06
+const GRIND_RAIL_SUPPORT_INSET = 0.78
+const GRIND_RAIL_SUPPORT_GROUND_Y = 0.03
 const GRIND_ENTRY_MAX_Z = 0.9
 const GRIND_RISE_START_Z = -26
 const GRIND_RISE_END_Z = -6.5
@@ -42,9 +48,12 @@ const GRIND_MAGNET_ENTRY_BACK_BUFFER = 0.55
 const GRIND_MAGNET_ENTRY_FRONT_BUFFER = 0.28
 const GRIND_MAGNET_HEIGHT_BUFFER = 0.16
 const GRIND_RAIL_COLOR = '#56b8ff'
+const GRIND_RAIL_SUPPORT_COLOR = '#7b8fa8'
+const GRIND_RAIL_FOOT_COLOR = '#415163'
 const GRIND_RAIL_REST_Y = GRIND_RAIL_HEIGHT * 0.2
 const GRIND_RAIL_ACTIVE_Y = 0.36
 const GRIND_REQUIRED_CAT_HEIGHT = 0.92
+const LOG_CLEARANCE_HEIGHT = 0.88
 const LOG_COLLISION_ENTRY_DISTANCE = 1.2
 const LOG_COLLISION_EXIT_DISTANCE = 0.5
 const DEBUG_RECENT_OBSTACLE_RETENTION_BEATS = 6
@@ -53,6 +62,7 @@ const TIMING_POINTS = {
   Good: 2,
   Sloppy: 1,
 }
+const SPIN_TRICK_BONUS_POINTS = 2
 const MAX_RAMP_SCORE = 80
 const TIMING_DEBUG_PATTERN_LIBRARY = [
   { name: 'centerSingle', offsets: [1], lanes: ['center'] },
@@ -82,7 +92,16 @@ const PATTERN_LIBRARY = {
   lateTriple: { offsets: [2, 3, 4], chain: true, dense: true },
 }
 
-const MEASURE_BEAT_OFFSETS = [1, 2, 3, 4]
+const RAIL_PATTERN_LIBRARY = [
+  { name: 'railLeftSetup', offsets: [1, 3], lanes: ['center', 'left'], railIndex: 1, weight: 1.2, chain: false, dense: false },
+  { name: 'railRightSetup', offsets: [1, 3], lanes: ['center', 'right'], railIndex: 1, weight: 1.2, chain: false, dense: false },
+  { name: 'lateRailCenter', offsets: [2, 4], lanes: ['left', 'center'], railIndex: 1, weight: 0.95, chain: false, dense: true },
+  { name: 'lateRailLeft', offsets: [2, 4], lanes: ['right', 'left'], railIndex: 1, weight: 0.85, minScore: 16, chain: false, dense: true },
+  { name: 'lateRailRight', offsets: [2, 4], lanes: ['left', 'right'], railIndex: 1, weight: 0.85, minScore: 16, chain: false, dense: true },
+  { name: 'soloRailCenter', offsets: [3], lanes: ['center'], railIndex: 0, weight: 0.7, minScore: 18, chain: false, dense: false },
+  { name: 'soloRailLeft', offsets: [3], lanes: ['left'], railIndex: 0, weight: 0.55, minScore: 12, chain: false, dense: false },
+  { name: 'soloRailRight', offsets: [3], lanes: ['right'], railIndex: 0, weight: 0.55, minScore: 12, chain: false, dense: false },
+]
 
 const LANE_POSITIONS = {
   farLeft: -0.34,
@@ -132,19 +151,19 @@ function rampWeight(score, startScore, fullScore, maxWeight) {
   return clamp01((score - startScore) / (fullScore - startScore)) * maxWeight
 }
 
-function getWeightedPatternPool(score) {
+function getWeightedPatternPool(score, minOffset = 0) {
   const pool = [
-    { name: 'anchor', weight: Math.max(0.55, 4.2 - score * 0.075) },
-    { name: 'push', weight: 1.1 + rampWeight(score, 0, 14, 1.4) - rampWeight(score, 52, 80, 0.7) },
-    { name: 'doubleQuarter', weight: 0.35 + rampWeight(score, 8, 24, 2.1) - rampWeight(score, 60, 80, 0.45) },
-    { name: 'latePush', weight: rampWeight(score, 16, 30, 1.8) },
-    { name: 'staircase', weight: rampWeight(score, 24, 42, 1.85) },
-    { name: 'splitTriple', weight: rampWeight(score, 28, 46, 1.75) },
-    { name: 'lateDouble', weight: rampWeight(score, 40, 60, 1.7) },
-    { name: 'lateTriple', weight: rampWeight(score, 62, 80, 1.05) },
+    { name: 'anchor', weight: Math.max(0.35, 3.3 - score * 0.09) },
+    { name: 'push', weight: 1.35 + rampWeight(score, 0, 12, 1.6) - rampWeight(score, 56, 80, 0.55) },
+    { name: 'doubleQuarter', weight: 0.7 + rampWeight(score, 5, 18, 2.3) - rampWeight(score, 64, 80, 0.35) },
+    { name: 'latePush', weight: 0.2 + rampWeight(score, 12, 24, 2.0) },
+    { name: 'staircase', weight: rampWeight(score, 18, 34, 2.1) },
+    { name: 'splitTriple', weight: rampWeight(score, 22, 38, 2.0) },
+    { name: 'lateDouble', weight: rampWeight(score, 30, 48, 1.95) },
+    { name: 'lateTriple', weight: rampWeight(score, 48, 68, 1.3) },
   ]
 
-  return pool.filter((entry) => entry.weight > 0.05)
+  return pool.filter((entry) => entry.weight > 0.05 && PATTERN_LIBRARY[entry.name]?.offsets.every((offset) => offset > minOffset))
 }
 
 function pickWeightedPattern(pool) {
@@ -187,26 +206,32 @@ function getLanePreferenceOrder(preferredLane) {
   })
 }
 
-function getRailEntryIndex(offsets, score) {
-  if (score < MIN_SCORE_FOR_RAILS || offsets.length === 0) return -1
-  if (offsets.length === 1) return 0
-
-  const lastIndex = offsets.length - 1
-  const lastGap = offsets[lastIndex] - offsets[lastIndex - 1]
-  return lastGap >= MIN_RAIL_SETUP_GAP_BEATS ? lastIndex : -1
-}
-
-function shouldUseRail(score, measuresSinceRail, railEntryIndex) {
-  if (railEntryIndex === -1) return false
+function shouldUseRail(score, measuresSinceRail) {
+  if (score < MIN_SCORE_FOR_RAILS) return false
   if (measuresSinceRail < MIN_MEASURES_BETWEEN_RAILS) return false
   if (measuresSinceRail >= FORCE_RAIL_AFTER_MEASURES) return true
 
-  const baseChance = score < 18 ? 0.18 : score < 36 ? 0.28 : 0.4
-  const urgencyBonus = measuresSinceRail >= 4 ? 0.18 : measuresSinceRail >= 3 ? 0.08 : 0
+  const baseChance = score < 18 ? 0.24 : score < 36 ? 0.34 : 0.46
+  const urgencyBonus = measuresSinceRail >= 3 ? 0.16 : measuresSinceRail >= 2 ? 0.08 : 0
   return Math.random() < baseChance + urgencyBonus
 }
 
-function getPlacementPool({ count, dense, score, preferSideRailExit, preferClearRailLane, recentPlacementName }) {
+function getWeightedRailPatternPool(score, recentPatternName = '') {
+  let pool = RAIL_PATTERN_LIBRARY.filter((entry) => {
+    if (typeof entry.minScore === 'number' && score < entry.minScore) return false
+    if (typeof entry.maxScore === 'number' && score > entry.maxScore) return false
+    return entry.weight > 0.05
+  })
+
+  if (recentPatternName && pool.length > 1) {
+    const dedupedPool = pool.filter((entry) => entry.name !== recentPatternName)
+    if (dedupedPool.length > 0) pool = dedupedPool
+  }
+
+  return pool
+}
+
+function getPlacementPool({ count, dense, score, recentPlacementName }) {
   let pool = (PLACEMENT_LIBRARY[count] || PLACEMENT_LIBRARY[1]).filter((entry) => {
     if (typeof entry.minScore === 'number' && score < entry.minScore) return false
     if (typeof entry.maxScore === 'number' && score > entry.maxScore) return false
@@ -214,19 +239,6 @@ function getPlacementPool({ count, dense, score, preferSideRailExit, preferClear
     if (entry.sparseOnly && dense) return false
     return true
   })
-
-  if (preferSideRailExit && count > 1) {
-    const sideExitPool = pool.filter((entry) => entry.lanes[entry.lanes.length - 1] !== 'center')
-    if (sideExitPool.length > 0) pool = sideExitPool
-  }
-
-  if (preferClearRailLane && count > 1) {
-    const clearRailLanePool = pool.filter((entry) => {
-      const railLane = entry.lanes[entry.lanes.length - 1]
-      return !entry.lanes.slice(0, -1).includes(railLane)
-    })
-    if (clearRailLanePool.length > 0) pool = clearRailLanePool
-  }
 
   if (recentPlacementName && pool.length > 1) {
     const dedupedPool = pool.filter((entry) => entry.name !== recentPlacementName)
@@ -430,6 +442,9 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
   const refs = useRef([])
   const logRefs = useRef([])
   const railRefs = useRef([])
+  const railTopRefs = useRef([])
+  const railFrontSupportRefs = useRef([])
+  const railBackSupportRefs = useRef([])
   const signRefs = useRef([])
   const shadowRefs = useRef([])
   const timingMarkerRefs = useRef([])
@@ -458,7 +473,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
   const consecutiveDensePatterns = useRef(0)
   const consecutiveChainPatterns = useRef(0)
   const measuresSinceRail = useRef(INITIAL_MEASURES_SINCE_RAIL)
-  const pendingDensityRecovery = useRef(0)
+  const logBlockedUntilBeat = useRef(0)
   const hasAssignedHoldTutorial = useRef(false)
   const nextObstacleId = useRef(1)
   const timingDebugPatternIndex = useRef(0)
@@ -596,11 +611,11 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     }
   }
 
-  const choosePatternType = () => {
+  const choosePatternType = (minOffset = 0) => {
     const score = gameState.score
     const rampProgress = Math.min(score / MAX_RAMP_SCORE, 1)
     const recent = patternHistory.current
-    let pool = getWeightedPatternPool(score)
+    let pool = getWeightedPatternPool(score, minOffset)
 
     if (consecutiveDensePatterns.current >= 2) {
       pool = pool.filter(({ name }) => !PATTERN_LIBRARY[name].dense)
@@ -632,7 +647,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       }))
     }
 
-    if (pool.length === 0) pool = [{ name: 'anchor', weight: 1 }]
+    if (pool.length === 0) return null
     return pickWeightedPattern(pool)
   }
 
@@ -659,17 +674,70 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     }
 
     const score = gameState.score
-    const patternType = choosePatternType()
-    const patternMeta = PATTERN_LIBRARY[patternType] || PATTERN_LIBRARY.anchor
+    const recentPatternName = patternHistory.current[patternHistory.current.length - 1] || ''
+    const useRail = shouldUseRail(score, measuresSinceRail.current)
+
+    if (useRail) {
+      const railPattern = pickWeightedEntry(getWeightedRailPatternPool(score, recentPatternName))
+      if (railPattern) {
+        let clusterId = 0
+        let previousBeatOffset = null
+        let railBlockEndBeat = logBlockedUntilBeat.current
+        const scheduledPattern = railPattern.offsets.map((beatOffset, index) => ({
+          beatOffset,
+          beatIndex: measureStartBeat + beatOffset,
+          lane: railPattern.lanes[index] || railPattern.lanes[railPattern.lanes.length - 1] || 'center',
+          isVertical: railPattern.railIndex === index,
+          railLength: getRailLength(railPattern.railIndex === index),
+        }))
+
+        scheduledPattern.forEach(({ beatOffset, beatIndex, lane, isVertical, railLength }, index) => {
+          if (previousBeatOffset === null || beatOffset - previousBeatOffset > BURST_CLUSTER_GAP_BEATS) {
+            clusterId += 1
+          }
+          const didSpawn = spawnObstacleForBeat({
+            beatIndex,
+            clusterId: `${measureStartBeat}:rail:${clusterId}`,
+            lane,
+            isVertical,
+            railLength,
+            pendingObstacles: scheduledPattern.slice(index + 1),
+          })
+          if (didSpawn && isVertical) {
+            railBlockEndBeat = Math.max(
+              railBlockEndBeat,
+              getObstacleLaneWindow({ beatIndex, isVertical: true, railLength }, Math.max(gameState.speed.current || 0, gameState.baseSpeed || 0, 0.001)).endBeat
+            )
+          }
+          previousBeatOffset = beatOffset
+        })
+
+        logBlockedUntilBeat.current = railBlockEndBeat
+        patternHistory.current.push(railPattern.name)
+        if (patternHistory.current.length > 2) patternHistory.current.shift()
+        consecutiveDensePatterns.current = railPattern.dense ? consecutiveDensePatterns.current + 1 : 0
+        consecutiveChainPatterns.current = railPattern.chain ? consecutiveChainPatterns.current + 1 : 0
+        measuresSinceRail.current = 0
+        return
+      }
+    }
+
+    const blockedOffset = Math.max(0, logBlockedUntilBeat.current - measureStartBeat)
+    const patternType = choosePatternType(blockedOffset)
+    const patternMeta = patternType ? (PATTERN_LIBRARY[patternType] || null) : null
+
+    if (!patternMeta) {
+      consecutiveDensePatterns.current = 0
+      consecutiveChainPatterns.current = 0
+      measuresSinceRail.current += 1
+      return
+    }
+
     const pattern = [...patternMeta.offsets].sort((a, b) => a - b)
-    const railEntryIndex = getRailEntryIndex(pattern, score)
-    const useRail = shouldUseRail(score, measuresSinceRail.current, railEntryIndex)
     const placementPool = getPlacementPool({
       count: pattern.length,
       dense: patternMeta.dense,
       score,
-      preferSideRailExit: useRail,
-      preferClearRailLane: useRail && railEntryIndex > 0,
       recentPlacementName: placementHistory.current[placementHistory.current.length - 1] || '',
     })
     const placement = pickWeightedEntry(placementPool) || { name: 'fallback', lanes: Array(pattern.length).fill('center') }
@@ -680,8 +748,8 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       beatOffset,
       beatIndex: measureStartBeat + beatOffset,
       lane: placement.lanes[index] || placement.lanes[placement.lanes.length - 1] || 'center',
-      isVertical: useRail && index === railEntryIndex,
-      railLength: getRailLength(useRail && index === railEntryIndex),
+      isVertical: false,
+      railLength: GRIND_RAIL_LENGTH_MIN,
     }))
 
     scheduledPattern.forEach(({ beatOffset, beatIndex, lane, isVertical, railLength }, index) => {
@@ -699,29 +767,6 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       previousBeatOffset = beatOffset
     })
 
-    if (!useRail && pendingDensityRecovery.current > 0) {
-      const usedOffsets = new Set(pattern)
-      const recoveryOffset = [...MEASURE_BEAT_OFFSETS]
-        .reverse()
-        .find((beatOffset) => !usedOffsets.has(beatOffset))
-
-      if (typeof recoveryOffset === 'number') {
-        const recoveryPlaced = spawnObstacleForBeat({
-          beatIndex: measureStartBeat + recoveryOffset,
-          clusterId: `${measureStartBeat}:recovery`,
-          lane: 'center',
-          isVertical: false,
-          railLength: GRIND_RAIL_LENGTH_MIN,
-          pendingObstacles: [],
-          countAsRecoveryDebt: false,
-        })
-
-        if (recoveryPlaced) {
-          pendingDensityRecovery.current = Math.max(0, pendingDensityRecovery.current - 1)
-        }
-      }
-    }
-
     patternHistory.current.push(patternType)
     if (patternHistory.current.length > 2) patternHistory.current.shift()
     placementHistory.current.push(placement.name)
@@ -729,7 +774,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
 
     consecutiveDensePatterns.current = patternMeta.dense ? consecutiveDensePatterns.current + 1 : 0
     consecutiveChainPatterns.current = patternMeta.chain ? consecutiveChainPatterns.current + 1 : 0
-    measuresSinceRail.current = useRail ? 0 : measuresSinceRail.current + 1
+    measuresSinceRail.current += 1
   }
 
   const spawnObstacleForBeat = ({
@@ -739,7 +784,6 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     isVertical,
     railLength,
     pendingObstacles = [],
-    countAsRecoveryDebt = true,
   }) => {
     const slot = active.current.find(o => !o.visible)
     if (!slot) return false
@@ -747,7 +791,6 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
 
     // Rails and logs should not share the same time window, even in different lanes.
     if (!isVertical && hasMixedObstacleTimeConflict({ beatIndex, isVertical, railLength: resolvedRailLength, pendingObstacles })) {
-      if (countAsRecoveryDebt) pendingDensityRecovery.current += 1
       return false
     }
 
@@ -787,7 +830,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       consecutiveDensePatterns.current = 0
       consecutiveChainPatterns.current = 0
       measuresSinceRail.current = INITIAL_MEASURES_SINCE_RAIL
-      pendingDensityRecovery.current = 0
+      logBlockedUntilBeat.current = 0
       hasAssignedHoldTutorial.current = false
       timingDebugPatternIndex.current = 0
       recentDebugObstacles.current.clear()
@@ -858,9 +901,12 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         if (canStartGrind) {
           startGrinding(ob)
         }
-        // Log is near the cat (z ~ 0) and cat is not jumping
+        const hasLogClearance = !ob.isVertical &&
+          gameState.jumping &&
+          gameState.catHeight.current >= LOG_CLEARANCE_HEIGHT
+
         if (ob.z > obstacleWindowMinZ && ob.z < obstacleWindowMaxZ && !ob.scored) {
-          if (!gameState.jumping && !isGrindingThisObstacle && !isDebug) {
+          if (((!ob.isVertical && !hasLogClearance) || (ob.isVertical && !isGrindingThisObstacle)) && !isDebug) {
             // HIT — game over
             gameState.gameOver = true
             gameState.speed.current = 0
@@ -882,15 +928,19 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
             ? pendingTiming
             : null
           const timingGrade = matchedTiming?.grade || 'Sloppy'
-          let nextStreak = gameState.streak.current
-          if (timingGrade === 'Perfect') {
-            nextStreak += 1
-          } else if (timingGrade === 'Sloppy') {
-            nextStreak = 0
-          }
+          const nextStreak = timingGrade === 'Perfect'
+            ? gameState.streak.current + 1
+            : 0
 
           const multiplier = getScoreMultiplier(nextStreak)
-          const points = TIMING_POINTS[timingGrade] * multiplier
+          const landedSpinTrick = (
+            timingGrade === 'Perfect' &&
+            matchedTiming?.trickName === '360' &&
+            !matchedTiming?.trickAwarded &&
+            !ob.isVertical
+          )
+          const trickBonusPoints = landedSpinTrick ? SPIN_TRICK_BONUS_POINTS * multiplier : 0
+          const points = TIMING_POINTS[timingGrade] * multiplier + trickBonusPoints
 
           ob.scored = true
           gameState.streak.current = nextStreak
@@ -906,11 +956,17 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
             points,
             grade: timingGrade,
             multiplier,
+            isRail: Boolean(ob.isVertical),
+            trickName: landedSpinTrick ? '360' : '',
           }
           if (matchedTiming) {
             const remainingObstacleIds = matchedTiming.obstacleIds.filter((id) => id !== ob.id)
             gameState.pendingJumpTiming.current = remainingObstacleIds.length > 0
-              ? { ...matchedTiming, obstacleIds: remainingObstacleIds }
+              ? {
+                ...matchedTiming,
+                obstacleIds: remainingObstacleIds,
+                trickAwarded: matchedTiming.trickAwarded || landedSpinTrick,
+              }
               : null
           }
           if (gameState.score >= SPEED_BOOST_SCORE_THRESHOLD && !gameState.speedBoostActive) {
@@ -985,13 +1041,39 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         ob.railLift = ob.isVertical
           ? THREE.MathUtils.smootherstep(ob.z, GRIND_RISE_START_Z, GRIND_RISE_END_Z)
           : 0
-        railRefs.current[i].visible = ob.visible && ob.isVertical
-        railRefs.current[i].scale.set(GRIND_RAIL_WIDTH, GRIND_RAIL_HEIGHT, ob.railLength || GRIND_RAIL_LENGTH_MIN)
-        railRefs.current[i].position.y = THREE.MathUtils.lerp(
+        const railLength = ob.railLength || GRIND_RAIL_LENGTH_MIN
+        const railY = THREE.MathUtils.lerp(
           GRIND_RAIL_REST_Y,
           GRIND_RAIL_ACTIVE_Y,
           ob.railLift
         )
+        const supportHeight = Math.max(railY - GRIND_RAIL_SUPPORT_GROUND_Y, 0.12)
+        const supportZ = Math.max(railLength * 0.5 - GRIND_RAIL_SUPPORT_INSET, 0)
+
+        railRefs.current[i].visible = ob.visible && ob.isVertical
+        railRefs.current[i].position.y = railY
+
+        if (railTopRefs.current[i]) {
+          railTopRefs.current[i].scale.set(GRIND_RAIL_WIDTH, GRIND_RAIL_HEIGHT, railLength)
+        }
+        if (railFrontSupportRefs.current[i]) {
+          railFrontSupportRefs.current[i].position.set(0, -supportHeight * 0.5, supportZ)
+          const [leftLeg, rightLeg, crossbar, leftFoot, rightFoot] = railFrontSupportRefs.current[i].children
+          if (leftLeg) leftLeg.scale.y = supportHeight
+          if (rightLeg) rightLeg.scale.y = supportHeight
+          if (crossbar) crossbar.position.y = -supportHeight * 0.18
+          if (leftFoot) leftFoot.position.y = -supportHeight * 0.5 + 0.025
+          if (rightFoot) rightFoot.position.y = -supportHeight * 0.5 + 0.025
+        }
+        if (railBackSupportRefs.current[i]) {
+          railBackSupportRefs.current[i].position.set(0, -supportHeight * 0.5, -supportZ)
+          const [leftLeg, rightLeg, crossbar, leftFoot, rightFoot] = railBackSupportRefs.current[i].children
+          if (leftLeg) leftLeg.scale.y = supportHeight
+          if (rightLeg) rightLeg.scale.y = supportHeight
+          if (crossbar) crossbar.position.y = -supportHeight * 0.18
+          if (leftFoot) leftFoot.position.y = -supportHeight * 0.5 + 0.025
+          if (rightFoot) rightFoot.position.y = -supportHeight * 0.5 + 0.025
+        }
       }
       if (signRefs.current[i]) {
         signRefs.current[i].visible = ob.visible && ob.isVertical && ob.showHoldSign
@@ -1156,15 +1238,63 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
               scale={logScale}
               rotation={[0, Math.PI / 2, 0]}
             />
-            <mesh
+            <group
               ref={(el) => (railRefs.current[i] = el)}
               visible={false}
-              castShadow
-              receiveShadow
             >
-              <boxGeometry args={[1, 1, 1]} />
-              <meshToonMaterial color={GRIND_RAIL_COLOR} />
-            </mesh>
+              <mesh
+                ref={(el) => (railTopRefs.current[i] = el)}
+                castShadow
+                receiveShadow
+              >
+                <boxGeometry args={[1, 1, 1]} />
+                <meshToonMaterial color={GRIND_RAIL_COLOR} />
+              </mesh>
+              <group ref={(el) => (railFrontSupportRefs.current[i] = el)}>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
+                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
+                </mesh>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
+                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
+                </mesh>
+                <mesh position={[0, -0.28, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_SPAN + 0.06, GRIND_RAIL_SUPPORT_CROSSBAR_HEIGHT, GRIND_RAIL_SUPPORT_DEPTH]} />
+                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
+                </mesh>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
+                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
+                </mesh>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
+                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
+                </mesh>
+              </group>
+              <group ref={(el) => (railBackSupportRefs.current[i] = el)}>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
+                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
+                </mesh>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
+                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
+                </mesh>
+                <mesh position={[0, -0.28, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_SPAN + 0.06, GRIND_RAIL_SUPPORT_CROSSBAR_HEIGHT, GRIND_RAIL_SUPPORT_DEPTH]} />
+                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
+                </mesh>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
+                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
+                </mesh>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                  <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
+                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
+                </mesh>
+              </group>
+            </group>
             <group
               ref={(el) => (signRefs.current[i] = el)}
               visible={false}

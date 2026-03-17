@@ -494,7 +494,7 @@ export default function App() {
     gameState.timeScale.current = 1
     gameState.grindCooldownObstacleId.current = 0
     gameState.catHeight.current = 0.05
-    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
+    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
     setIsGameOver(false)
@@ -529,7 +529,7 @@ export default function App() {
     gameState.timeScale.current = 1
     gameState.grindCooldownObstacleId.current = 0
     gameState.catHeight.current = 0.05
-    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1 }
+    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
     if (musicRef.current) {
@@ -804,7 +804,7 @@ export default function App() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '1.6rem',
+                width: '3rem',
                 height: '1.6rem',
                 borderRadius: '5px',
                 border: '2px solid rgba(255, 255, 255, 0.3)',
@@ -812,8 +812,8 @@ export default function App() {
                 fontSize: '0.85rem',
                 fontFamily: 'Knewave',
                 color: 'rgba(255, 255, 255, 0.6)',
-              }}>&#x2193;</span>
-              360 spin
+              }}>&#x2190; / &#x2193;</span>
+              airborne 360
             </div>
           </div>
         </>

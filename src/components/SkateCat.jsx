@@ -129,7 +129,9 @@ function createOutlineMaterial() {
 const JUMP_HEIGHT = 1.2
 const JUMP_DURATION = 0.34
 const KICKFLIP_ROTATIONS = 1
-const SPIN_DURATION = 0.32
+const SPIN_DURATION = 0.29
+const SPIN_INPUT_BUFFER_DURATION = 0.14
+const GROUND_SPIN_POINTS = 1
 const INPUT_TIMING_COMPENSATION_SECONDS = 0.08
 const CAT_LATERAL_TRACKING = 0.32
 const CAT_LATERAL_LIMIT = 0.14
@@ -344,6 +346,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     endY: 0.05,
     arcHeight: JUMP_HEIGHT,
     doesFlip: true,
+    canSpinTrick: false,
+    didSpinTrick: false,
   })
   const squashState = useRef({ active: false, time: 0 })
   const boardLandingState = useRef({ active: false, time: 0, roll: 0, strength: 1 })
@@ -375,6 +379,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     active: false,
     time: 0,
   })
+  const spinInputBuffer = useRef(0)
   const powerslideState = useRef({
     amount: 0,
     direction: 1,
@@ -399,6 +404,36 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   const wasGrinding = useRef(false)
 
   const getDesiredRoadOffset = (targetX = 0) => THREE.MathUtils.clamp(targetX * CAT_LATERAL_TRACKING, -CAT_LATERAL_LIMIT, CAT_LATERAL_LIMIT)
+  const triggerCatSpin = useCallback(() => {
+    spinState.current.active = true
+    spinState.current.time = 0
+  }, [])
+  const triggerSpinTrick = useCallback(() => {
+    if (jumpState.current.didSpinTrick) return false
+
+    jumpState.current.didSpinTrick = true
+    if (gameState.pendingJumpTiming.current) {
+      gameState.pendingJumpTiming.current = {
+        ...gameState.pendingJumpTiming.current,
+        trickName: '360',
+      }
+    }
+    triggerCatSpin()
+    return true
+  }, [triggerCatSpin])
+  const triggerGroundSpin = useCallback(() => {
+    gameState.score += GROUND_SPIN_POINTS
+    gameState.lastScoringEvent.current = {
+      id: performance.now(),
+      points: GROUND_SPIN_POINTS,
+      grade: 'Spin',
+      multiplier: gameState.scoreMultiplier.current,
+      isRail: false,
+      trickName: '360',
+    }
+    triggerCatSpin()
+  }, [triggerCatSpin])
+
   const setGrindSparkInactive = useCallback(() => {
     if (!gameState.grindSpark.current) {
       gameState.grindSpark.current = createIdleGrindSparkState()
@@ -467,6 +502,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     boardLandingState.current.time = 0
     boardLandingState.current.roll = 0
     boardLandingState.current.strength = 1
+    spinInputBuffer.current = 0
     wasGrinding.current = false
     introState.current.phase = 'done'
     introState.current.time = 0
@@ -487,6 +523,43 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       boardRef.current.rotation.y = 0
       boardRef.current.rotation.z = 0
     }
+  }
+
+  const preparePoseForDeath = () => {
+    resetContactEffects()
+    jumpState.current.active = false
+    jumpState.current.time = 0
+    spinState.current.active = false
+    spinState.current.time = 0
+    powerslideState.current.amount = 0
+    powerslideState.current.direction = 1
+    grindEntryState.current.active = false
+    grindEntryState.current.time = 0
+    grindEntryState.current.obstacleId = 0
+    boardLandingState.current.active = false
+    boardLandingState.current.time = 0
+    boardLandingState.current.roll = 0
+    boardLandingState.current.strength = 1
+    spinInputBuffer.current = 0
+    wasGrinding.current = false
+
+    if (groupRef.current) {
+      groupRef.current.position.y = 0.05
+      groupRef.current.rotation.set(0, 0, 0)
+    }
+    if (catRef.current) {
+      catRef.current.position.set(0, 0.2, 0)
+      catRef.current.rotation.set(0, 0, 0)
+      catRef.current.scale.set(1, 1, 1)
+    }
+    if (boardRef.current) {
+      boardRef.current.position.y = 0
+      boardRef.current.rotation.x = 0
+      boardRef.current.rotation.y = 0
+      boardRef.current.rotation.z = 0
+    }
+
+    gameState.catHeight.current = 0.05
   }
 
   const beginGrindEntry = useCallback((activeGrind) => {
@@ -598,6 +671,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     jumpState.current.endY = 0.05
     jumpState.current.arcHeight = fromGrind ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
     jumpState.current.doesFlip = false
+    jumpState.current.canSpinTrick = !fromGrind
+    jumpState.current.didSpinTrick = false
 
     if (onJumpSfx) onJumpSfx()
 
@@ -607,12 +682,16 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       jumpState.current.targetX = jumpPlan.targetX
       jumpState.current.arcHeight = jumpPlan.isRailJump ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
       jumpState.current.doesFlip = jumpPlan.shouldKickflip
+      jumpState.current.canSpinTrick = !jumpPlan.isRailJump
       gameState.pendingJumpTiming.current = {
         obstacleIds: jumpPlan.coveredObstacleIds,
         primaryObstacleId: jumpPlan.nearestTarget?.id ?? null,
         grade: jumpPlan.timingLabel,
         offset: jumpPlan.nearestTarget?.offset ?? null,
         timestamp: getPerceivedMusicTime(musicTime),
+        trickName: '',
+        trickAwarded: false,
+        isRailTarget: jumpPlan.isRailJump,
       }
       if (jumpPlan.shouldKickflip) {
         triggerKickflipEffect()
@@ -650,9 +729,29 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       if (e.key === 'ArrowUp' && !jumpState.current.active) {
         startJump({ fromGrind: Boolean(gameState.activeGrind.current.active) })
       }
-      if (e.key === 'ArrowDown' && !e.repeat && !spinState.current.active && !jumpState.current.active && !gameState.activeGrind.current.active) {
-        spinState.current.active = true
-        spinState.current.time = 0
+      if (
+        (e.key === 'ArrowLeft' || e.key === 'ArrowDown') &&
+        !e.repeat
+      ) {
+        const canTriggerGroundSpin = (
+          !jumpState.current.active &&
+          !gameState.activeGrind.current.active &&
+          !spinState.current.active
+        )
+        const canTriggerSpinTrick = (
+          jumpState.current.active &&
+          jumpState.current.canSpinTrick &&
+          !jumpState.current.didSpinTrick &&
+          !spinState.current.active
+        )
+
+        if (canTriggerGroundSpin) {
+          triggerGroundSpin()
+        } else if (canTriggerSpinTrick) {
+          triggerSpinTrick()
+        } else {
+          spinInputBuffer.current = SPIN_INPUT_BUFFER_DURATION
+        }
       }
     }
 
@@ -675,7 +774,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       window.removeEventListener('blur', onBlur)
       gameState.upArrowHeld.current = false
     }
-  }, [controlsEnabled, startJump])
+  }, [controlsEnabled, startJump, triggerGroundSpin, triggerSpinTrick])
 
   // Sync toon controls + blink in one pass using cached mesh refs
   useFrame((_, delta) => {
@@ -827,6 +926,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       setGrindSparkInactive()
 
       if (!deathState.current.active) {
+        preparePoseForDeath()
         deathState.current.active = true
         deathState.current.time = 0
       }
@@ -874,6 +974,21 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     const powerslide = powerslideState.current
     const grindEntry = grindEntryState.current
     const speedRatio = Math.min(1.2, gameState.speed.current / Math.max(gameState.baseSpeed, 0.001))
+
+    if (spinInputBuffer.current > 0) {
+      spinInputBuffer.current = Math.max(0, spinInputBuffer.current - gameDelta)
+      if (
+        jump.active &&
+        jump.canSpinTrick &&
+        !jump.didSpinTrick &&
+        !spin.active &&
+        !isGrinding &&
+        !deathState.current.active
+      ) {
+        triggerSpinTrick()
+        spinInputBuffer.current = 0
+      }
+    }
 
     grindContactState.current.flash = Math.max(0, grindContactState.current.flash - gameDelta * GRIND_CONTACT_FLASH_DECAY)
     if (isGrinding) {
