@@ -1,7 +1,7 @@
 import { createRef } from 'react'
 import * as THREE from 'three'
 
-const DEFAULT_TIMING_OFFSET_SECONDS = -0.049
+const DEFAULT_TIMING_OFFSET_SECONDS = -0.160
 const debugParams = new URLSearchParams(window.location.search)
 export const debugMode = debugParams.get('debug') || ''
 export const isDebug = debugParams.has('debug')

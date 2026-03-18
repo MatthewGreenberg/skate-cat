@@ -406,7 +406,7 @@ export default function App() {
     saturation: { value: 0.15, min: -1, max: 1, step: 0.01 },
   })
   const { timingOffsetMs, debugPlaybackRate } = useControls('Timing Debug', {
-    timingOffsetMs: { value: -49, min: -180, max: 180, step: 1 },
+    timingOffsetMs: { value: -160, min: -300, max: 180, step: 1 },
     debugPlaybackRate: {
       value: 1,
       options: { '1x': 1, '0.75x': 0.75, '0.5x': 0.5, '0.25x': 0.25 },
@@ -656,7 +656,7 @@ export default function App() {
           </div>
         </>
       )}
-      <audio ref={musicRef} src="/song.m4a" preload="auto" />
+      <audio ref={musicRef} src="/skate-cat.mp3" preload="auto" />
       <audio ref={jumpSfxRef} src="/jump.wav" preload="auto" />
       <audio ref={jump2SfxRef} src="/jump2.wav" preload="auto" />
       <audio ref={dieSfxRef} src="/die.wav" preload="auto" />
