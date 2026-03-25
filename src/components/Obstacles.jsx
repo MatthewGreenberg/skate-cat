@@ -51,7 +51,7 @@ const GRIND_EXIT_RECOVERY_PADDING = 1.15
 const GRIND_MAGNET_ENTRY_BACK_BUFFER = 0.55
 const GRIND_MAGNET_ENTRY_FRONT_BUFFER = 0.28
 const GRIND_MAGNET_HEIGHT_BUFFER = 0.16
-const GRIND_RAIL_LOG_DIAMETER = 0.16
+const GRIND_RAIL_LOG_DIAMETER = 0.2
 const GRIND_RAIL_LOG_FACET_ROTATION = Math.PI / 8
 const GRIND_RAIL_SUPPORT_COLOR = '#7d5431'
 const GRIND_RAIL_FOOT_COLOR = '#4f321c'
@@ -888,10 +888,14 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
   const recentDebugObstacles = useRef(new Map())
   const worldScrollDistance = useRef(0)
   const trackAnalysisLookups = useRef(buildTrackAnalysisLookups(null))
-  const railLogGeometry = useMemo(
-    () => new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, false),
-    []
-  )
+  const railLogGeometry = useMemo(() => {
+    const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, false)
+    // Bake the octagon so it uses the same local axes as the old rail box:
+    // width on X, height on Y, length on Z.
+    geometry.rotateX(Math.PI / 2)
+    geometry.rotateZ(GRIND_RAIL_LOG_FACET_ROTATION)
+    return geometry
+  }, [])
 
   const {
     useTrackAnalysis,
@@ -1604,7 +1608,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         railRefs.current[i].position.y = railY
 
         if (railTopRefs.current[i]) {
-          railTopRefs.current[i].scale.set(GRIND_RAIL_LOG_DIAMETER, railLength, GRIND_RAIL_LOG_DIAMETER)
+          railTopRefs.current[i].scale.set(GRIND_RAIL_LOG_DIAMETER, GRIND_RAIL_LOG_DIAMETER, railLength)
         }
         if (railFrontSupportRefs.current[i]) {
           railFrontSupportRefs.current[i].position.set(0, -supportHeight * 0.5, supportZ)
@@ -1796,7 +1800,6 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
                 ref={(el) => (railTopRefs.current[i] = el)}
                 geometry={railLogGeometry}
                 material={railWoodMaterial}
-                rotation={[Math.PI / 2, 0, GRIND_RAIL_LOG_FACET_ROTATION]}
                 castShadow
                 receiveShadow
               />
