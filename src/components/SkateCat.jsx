@@ -3,8 +3,13 @@ import { useFrame } from '@react-three/fiber'
 import { useGLTF, useTexture } from '@react-three/drei'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { createIdleGrindSparkState, createIdleGrindState, gameState, getGameDelta } from '../store'
-import { getNearestScheduledTarget, getPerceivedMusicTime, getTimingGradeFromOffset } from '../rhythm'
+import { createIdleGrindSparkState, createIdleGrindState, gameState, getGameDelta, getTargetRunSpeed, SPEED_RESPONSE } from '../store'
+import {
+  getNearestScheduledTarget,
+  getPerceivedMusicTime,
+  getTimingGradeFromOffset,
+  INPUT_TIMING_COMPENSATION_SECONDS,
+} from '../rhythm'
 
 const toonVertexShader = /* glsl */ `
   varying vec3 vNormal;
@@ -133,7 +138,6 @@ const KICKFLIP_ROTATIONS = 1
 const SPIN_DURATION = 0.29
 const SPIN_INPUT_BUFFER_DURATION = 0.14
 const GROUND_SPIN_POINTS = 1
-const INPUT_TIMING_COMPENSATION_SECONDS = 0.08
 const CAT_LATERAL_TRACKING = 0.32
 const CAT_LATERAL_LIMIT = 0.14
 const CAT_GROUNDED_LERP = 4.5
@@ -994,10 +998,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       return
     }
 
-    const targetSpeed = gameState.baseSpeed + (
-      gameState.speedBoostActive ? gameState.postMilestoneSpeedBoost : 0
-    )
-    gameState.speed.current = THREE.MathUtils.lerp(gameState.speed.current, targetSpeed, gameDelta * 4)
+    const targetSpeed = getTargetRunSpeed()
+    gameState.speed.current = THREE.MathUtils.lerp(gameState.speed.current, targetSpeed, gameDelta * SPEED_RESPONSE)
     const musicTime = getPerceivedMusicTime(musicRef?.current?.currentTime || 0)
     const upcomingTarget = gameState.obstacleTargets.current.find((target) => target.targetTime >= musicTime - 0.02)
     const groundedTargetX = getDesiredRoadOffset(upcomingTarget?.x || 0)

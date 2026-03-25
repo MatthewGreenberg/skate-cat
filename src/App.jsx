@@ -18,6 +18,7 @@ import GameHud from './components/GameHud'
 import { EffectComposer, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
 import { BloomEffect } from 'postprocessing'
 import { useControls } from 'leva'
+import { createBufferedMusicTransport } from './audioTransport'
 import {
   gameState,
   DAY_NIGHT_CYCLE_SPEED,
@@ -31,11 +32,26 @@ import {
   getSunriseFactor,
   lerpDayNightColor,
 } from './store'
-import { AUDIO_VISUAL_SYNC_OFFSET_SECONDS, BEAT_INTERVAL, getPerceivedMusicTime } from './rhythm'
+import {
+  AUDIO_VISUAL_SYNC_OFFSET_SECONDS,
+  BEAT_INTERVAL,
+  GOOD_EARLY_WINDOW_SECONDS,
+  GOOD_LATE_WINDOW_SECONDS,
+  getPerceivedMusicTime,
+  getTimingGradeFromOffset,
+  INPUT_TIMING_COMPENSATION_SECONDS,
+  PERFECT_EARLY_WINDOW_SECONDS,
+  PERFECT_LATE_WINDOW_SECONDS,
+  TRACK_BEAT_PHASE_OFFSET_SECONDS,
+} from './rhythm'
 
 // Reusable temp color for DayNightController
 const _tmpColor = new THREE.Color()
 const NIGHT_BLOOM_INTENSITY = 4.3
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
 
 
 function DayNightController({ isRunning }) {
@@ -143,7 +159,7 @@ function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightnes
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 
-function TimingDebugHud({ musicRef, visible, playbackRate }) {
+function TimingDebugHud({ musicRef, visible, playbackRate, manualOffsetMs, obstacleHitDelayMs }) {
   const [metrics, setMetrics] = useState({
     currentTime: 0,
     nextTargetTime: null,
@@ -189,8 +205,24 @@ function TimingDebugHud({ musicRef, visible, playbackRate }) {
 
   const formatTime = (value) => (typeof value === 'number' ? value.toFixed(3) : '---')
   const offsetLabel = `${metrics.offsetMs > 0 ? '+' : ''}${metrics.offsetMs}ms`
-  const offsetColor =
-    Math.abs(metrics.offsetMs) <= 45 ? '#9fffb2' : Math.abs(metrics.offsetMs) <= 90 ? '#ffe08a' : '#ff9c9c'
+  const judgedOffsetMs = metrics.offsetMs + Math.round(INPUT_TIMING_COMPENSATION_SECONDS * 1000)
+  const judgedOffsetLabel = `${judgedOffsetMs > 0 ? '+' : ''}${judgedOffsetMs}ms`
+  const previewGrade = getTimingGradeFromOffset(judgedOffsetMs / 1000)
+  const previewGradeColor =
+    previewGrade === 'Perfect' ? '#9fffb2' : previewGrade === 'Good' ? '#ffe08a' : '#ff9c9c'
+  const perfectWindowStartMs = Math.round((-PERFECT_EARLY_WINDOW_SECONDS - INPUT_TIMING_COMPENSATION_SECONDS) * 1000)
+  const perfectWindowEndMs = Math.round((PERFECT_LATE_WINDOW_SECONDS - INPUT_TIMING_COMPENSATION_SECONDS) * 1000)
+  const goodWindowStartMs = Math.round((-GOOD_EARLY_WINDOW_SECONDS - INPUT_TIMING_COMPENSATION_SECONDS) * 1000)
+  const goodWindowEndMs = Math.round((GOOD_LATE_WINDOW_SECONDS - INPUT_TIMING_COMPENSATION_SECONDS) * 1000)
+  const windowMinMs = goodWindowStartMs - 50
+  const windowMaxMs = Math.max(goodWindowEndMs + 50, 50)
+  const windowSpanMs = Math.max(1, windowMaxMs - windowMinMs)
+  const toPercent = (value) => `${clamp(((value - windowMinMs) / windowSpanMs) * 100, 0, 100)}%`
+  const goodWindowLeft = toPercent(goodWindowStartMs)
+  const goodWindowWidth = `${clamp(((goodWindowEndMs - goodWindowStartMs) / windowSpanMs) * 100, 0, 100)}%`
+  const perfectWindowLeft = toPercent(perfectWindowStartMs)
+  const perfectWindowWidth = `${clamp(((perfectWindowEndMs - perfectWindowStartMs) / windowSpanMs) * 100, 0, 100)}%`
+  const markerLeft = toPercent(metrics.offsetMs)
 
   return (
     <div
@@ -219,17 +251,81 @@ function TimingDebugHud({ musicRef, visible, playbackRate }) {
         <span>{formatTime(metrics.currentTime)}s</span>
         <span style={{ opacity: 0.68 }}>next target</span>
         <span>{formatTime(metrics.nextTargetTime)}s</span>
-        <span style={{ opacity: 0.68 }}>offset</span>
-        <span style={{ color: offsetColor, fontWeight: 900 }}>{offsetLabel}</span>
+        <span style={{ opacity: 0.68 }}>visual offset</span>
+        <span>{offsetLabel}</span>
+        <span style={{ opacity: 0.68 }}>press preview</span>
+        <span style={{ color: previewGradeColor, fontWeight: 900 }}>{previewGrade} ({judgedOffsetLabel})</span>
         <span style={{ opacity: 0.68 }}>upcoming</span>
         <span>{metrics.upcomingCount}</span>
-        <span style={{ opacity: 0.68 }}>timing offset</span>
+        <span style={{ opacity: 0.68 }}>track phase</span>
+        <span>{Math.round(TRACK_BEAT_PHASE_OFFSET_SECONDS * 1000)}ms</span>
+        <span style={{ opacity: 0.68 }}>manual offset</span>
+        <span>{manualOffsetMs}ms</span>
+        <span style={{ opacity: 0.68 }}>obstacle delay</span>
+        <span>{obstacleHitDelayMs}ms</span>
+        <span style={{ opacity: 0.68 }}>total offset</span>
         <span>{Math.round((gameState.timingOffsetSeconds.current || 0) * 1000)}ms</span>
         <span style={{ opacity: 0.68 }}>playback</span>
         <span>{playbackRate}x</span>
       </div>
+      <div style={{ marginTop: '0.7rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', opacity: 0.8 }}>
+          <span>Press Window</span>
+          <span style={{ color: previewGradeColor, fontWeight: 900 }}>{previewGrade}</span>
+        </div>
+        <div
+          style={{
+            position: 'relative',
+            height: '18px',
+            marginTop: '0.35rem',
+            borderRadius: '999px',
+            overflow: 'hidden',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            background: 'linear-gradient(180deg, rgba(15, 22, 34, 0.95), rgba(7, 11, 18, 0.95))',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              left: goodWindowLeft,
+              width: goodWindowWidth,
+              top: 0,
+              bottom: 0,
+              background: 'rgba(255, 224, 138, 0.38)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: perfectWindowLeft,
+              width: perfectWindowWidth,
+              top: 0,
+              bottom: 0,
+              background: 'rgba(159, 255, 178, 0.75)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              left: markerLeft,
+              top: 0,
+              bottom: 0,
+              width: '2px',
+              background: previewGradeColor,
+              boxShadow: `0 0 8px ${previewGradeColor}`,
+              transform: 'translateX(-1px)',
+            }}
+          />
+        </div>
+        <div style={{ marginTop: '0.28rem', display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.25rem 0.8rem', fontSize: '0.72rem', opacity: 0.78 }}>
+          <span>perfect press zone</span>
+          <span>{perfectWindowStartMs}ms to {perfectWindowEndMs}ms</span>
+          <span>good press zone</span>
+          <span>{goodWindowStartMs}ms to {goodWindowEndMs}ms</span>
+        </div>
+      </div>
       <div style={{ marginTop: '0.6rem', fontSize: '0.72rem', lineHeight: 1.45, opacity: 0.7 }}>
-        Cyan line is the hit plane. Ghost markers at `z=0` show where upcoming obstacles should line up.
+        Marker is your live visual offset. Green band is where a press right now scores `Perfect` after the jump lead is applied.
       </div>
     </div>
   )
@@ -383,6 +479,7 @@ export default function App() {
   const [hasStartedGame, setHasStartedGame] = useState(false)
   const [isGameOver, setIsGameOver] = useState(false)
   const [timingFeedback, setTimingFeedback] = useState({ label: '', id: 0 })
+  const [hasConfirmedMusicStart, setHasConfirmedMusicStart] = useState(false)
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownText, setCountdownText] = useState('')
   const [countdownAnimationKey, setCountdownAnimationKey] = useState(0)
@@ -405,8 +502,9 @@ export default function App() {
     hue: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
     saturation: { value: 0.15, min: -1, max: 1, step: 0.01 },
   })
-  const { timingOffsetMs, debugPlaybackRate } = useControls('Timing Debug', {
-    timingOffsetMs: { value: -160, min: -300, max: 180, step: 1 },
+  const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useControls('Timing Debug', {
+    timingOffsetMs: { value: 0, min: -300, max: 180, step: 1 },
+    obstacleHitDelayMs: { value: 0, min: -180, max: 180, step: 1 },
     debugPlaybackRate: {
       value: 1,
       options: { '1x': 1, '0.75x': 0.75, '0.5x': 0.5, '0.25x': 0.25 },
@@ -414,12 +512,32 @@ export default function App() {
   })
 
   useEffect(() => {
+    const music = createBufferedMusicTransport('/skate-cat-2.mp3')
+    musicRef.current = music
+    void music.preload().catch(() => { })
+
+    return () => {
+      hasStartedMusicRef.current = false
+      if (musicRef.current === music) {
+        musicRef.current = null
+      }
+      music.dispose()
+    }
+  }, [])
+
+  useEffect(() => {
     gameState.onGameOver = () => setIsGameOver(true)
   }, [])
 
   useEffect(() => {
-    gameState.timingOffsetSeconds.current = isTimingDebug ? timingOffsetMs / 1000 : AUDIO_VISUAL_SYNC_OFFSET_SECONDS
-  }, [timingOffsetMs])
+    gameState.timingOffsetSeconds.current = isTimingDebug
+      ? TRACK_BEAT_PHASE_OFFSET_SECONDS + timingOffsetMs / 1000
+      : AUDIO_VISUAL_SYNC_OFFSET_SECONDS
+  }, [timingOffsetMs, isTimingDebug])
+
+  useEffect(() => {
+    gameState.obstacleHitDelaySeconds.current = obstacleHitDelayMs / 1000
+  }, [obstacleHitDelayMs])
 
   useEffect(() => {
     const playbackRate = isTimingDebug ? Number(debugPlaybackRate) : 1
@@ -427,12 +545,16 @@ export default function App() {
     if (musicRef.current) {
       musicRef.current.playbackRate = playbackRate
     }
-  }, [debugPlaybackRate, hasStartedGame])
+  }, [debugPlaybackRate, hasStartedGame, isTimingDebug])
 
   useEffect(() => {
     if (!musicRef.current) return
     if (!hasStartedGame || isGameOver) {
       musicRef.current.pause()
+      hasStartedMusicRef.current = false
+      setHasConfirmedMusicStart(false)
+      setIsCountdownActive(false)
+      setCountdownText('')
       return
     }
 
@@ -447,7 +569,7 @@ export default function App() {
   }, [volume])
 
   useEffect(() => {
-    if (!hasStartedGame || isGameOver) {
+    if (!hasStartedGame || isGameOver || !hasConfirmedMusicStart) {
       return
     }
 
@@ -475,7 +597,29 @@ export default function App() {
 
     animationFrameId = window.requestAnimationFrame(syncCountdownToMusic)
     return () => window.cancelAnimationFrame(animationFrameId)
-  }, [hasStartedGame, isGameOver])
+  }, [hasConfirmedMusicStart, hasStartedGame, isGameOver])
+
+  const startMusicPlayback = useCallback(async () => {
+    const music = musicRef.current
+    if (!music) return
+
+    hasStartedMusicRef.current = false
+    setHasConfirmedMusicStart(false)
+    setIsCountdownActive(false)
+    setCountdownText('')
+
+    music.pause()
+    music.currentTime = 0
+    try {
+      await music.play()
+      hasStartedMusicRef.current = true
+      setHasConfirmedMusicStart(true)
+      setIsCountdownActive(true)
+      setCountdownText(COUNTDOWN_STEPS[0])
+    } catch {
+      hasStartedMusicRef.current = false
+    }
+  }, [])
 
   const handleStart = useCallback(() => {
     gameState.gameOver = false
@@ -497,20 +641,12 @@ export default function App() {
     gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
+    gameState.runDifficultyProgress.current = 0
     setIsGameOver(false)
     setHasStartedGame(true)
     setTimingFeedback({ label: '', id: 0 })
-    setIsCountdownActive(true)
-    setCountdownText(COUNTDOWN_STEPS[0])
-    setCountdownAnimationKey((prev) => prev + 1)
-
-    if (musicRef.current) {
-      musicRef.current.currentTime = 0
-      musicRef.current.play().then(() => {
-        hasStartedMusicRef.current = true
-      }).catch(() => { })
-    }
-  }, [])
+    startMusicPlayback()
+  }, [startMusicPlayback])
 
   const handleRestart = useCallback(() => {
     gameState.gameOver = false
@@ -532,18 +668,11 @@ export default function App() {
     gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
-    if (musicRef.current) {
-      musicRef.current.currentTime = 0
-      musicRef.current.play().then(() => {
-        hasStartedMusicRef.current = true
-      }).catch(() => { })
-    }
+    gameState.runDifficultyProgress.current = 0
     setIsGameOver(false)
     setTimingFeedback({ label: '', id: 0 })
-    setIsCountdownActive(true)
-    setCountdownText(COUNTDOWN_STEPS[0])
-    setCountdownAnimationKey((prev) => prev + 1)
-  }, [])
+    startMusicPlayback()
+  }, [startMusicPlayback])
 
   const handleJumpTiming = useCallback((label) => {
     setTimingFeedback({ label, id: performance.now() })
@@ -656,7 +785,6 @@ export default function App() {
           </div>
         </>
       )}
-      <audio ref={musicRef} src="/skate-cat.mp3" preload="auto" />
       <audio ref={jumpSfxRef} src="/jump.wav" preload="auto" />
       <audio ref={jump2SfxRef} src="/jump2.wav" preload="auto" />
       <audio ref={dieSfxRef} src="/die.wav" preload="auto" />
@@ -855,6 +983,8 @@ export default function App() {
         musicRef={musicRef}
         visible={hasStartedGame && !isGameOver}
         playbackRate={isTimingDebug ? Number(debugPlaybackRate) : 1}
+        manualOffsetMs={isTimingDebug ? timingOffsetMs : 0}
+        obstacleHitDelayMs={isTimingDebug ? obstacleHitDelayMs : 0}
       />
       <ObstacleSpacingDebugHud
         musicRef={musicRef}

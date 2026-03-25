@@ -1,20 +1,24 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Text, useGLTF } from '@react-three/drei'
 import { useControls } from 'leva'
 import * as THREE from 'three'
-import { createIdleGrindState, gameState, getScoreMultiplier, isDebug, isObstacleSpacingDebug, isTimingDebug } from '../store'
-import { BEAT_INTERVAL, getPerceivedMusicTime } from '../rhythm'
+import { createIdleGrindState, gameState, getGameDelta, getScoreMultiplier, getTargetRunSpeed, isDebug, isDownbeatTest, isObstacleSpacingDebug, isTimingDebug, SPEED_RESPONSE } from '../store'
+import { BEAT_INTERVAL, getObstacleHitTime, getPerceivedMusicTime } from '../rhythm'
 
 const POOL_SIZE = 20
 const LOOKAHEAD_BEATS = 10
 const DESPAWN_BEHIND_SECONDS = 0.6
-const POSITION_SMOOTHING = 0.35
 const SPEED_BOOST_SCORE_THRESHOLD = 12
 const SPEED_LINES_SCORE_THRESHOLD = 24
 const MEASURE_LENGTH_BEATS = 4
 const COUNTDOWN_BEATS = 4
-const STARTUP_SAFE_BEATS = 8
+// Leave a full extra measure after the countdown so the first live pattern
+// doesn't land almost immediately.
+const STARTUP_SAFE_BEATS = COUNTDOWN_BEATS + MEASURE_LENGTH_BEATS
+// Keep gameplay measures on the canonical downbeat so pattern offsets line up
+// with both the scheduler and the analysis sidecar.
+const MEASURE_PHASE_OFFSET_BEATS = 0
 const BURST_CLUSTER_GAP_BEATS = 0.75
 const CONTACT_SHADOW_Y = 0.018
 const CONTACT_SHADOW_LOG_OPACITY = 0.62
@@ -47,9 +51,10 @@ const GRIND_EXIT_RECOVERY_PADDING = 1.15
 const GRIND_MAGNET_ENTRY_BACK_BUFFER = 0.55
 const GRIND_MAGNET_ENTRY_FRONT_BUFFER = 0.28
 const GRIND_MAGNET_HEIGHT_BUFFER = 0.16
-const GRIND_RAIL_COLOR = '#56b8ff'
-const GRIND_RAIL_SUPPORT_COLOR = '#7b8fa8'
-const GRIND_RAIL_FOOT_COLOR = '#415163'
+const GRIND_RAIL_LOG_DIAMETER = 0.16
+const GRIND_RAIL_LOG_FACET_ROTATION = Math.PI / 8
+const GRIND_RAIL_SUPPORT_COLOR = '#7d5431'
+const GRIND_RAIL_FOOT_COLOR = '#4f321c'
 const GRIND_RAIL_REST_Y = GRIND_RAIL_HEIGHT * 0.2
 const GRIND_RAIL_ACTIVE_Y = 0.36
 const GRIND_REQUIRED_CAT_HEIGHT = 0.92
@@ -57,6 +62,9 @@ const LOG_CLEARANCE_HEIGHT = 0.88
 const LOG_COLLISION_ENTRY_DISTANCE = 0.85
 const LOG_COLLISION_EXIT_DISTANCE = 0.35
 const DEBUG_RECENT_OBSTACLE_RETENTION_BEATS = 6
+const OBSTACLE_HIT_DISTANCE_CORRECTION_FAR = 4.5
+const OBSTACLE_HIT_DISTANCE_CORRECTION_MID = 2.25
+const OBSTACLE_HIT_DISTANCE_CORRECTION_NEAR = 0.8
 const TIMING_POINTS = {
   Perfect: 3,
   Good: 2,
@@ -64,40 +72,47 @@ const TIMING_POINTS = {
 }
 const SPIN_TRICK_BONUS_POINTS = 2
 const MAX_RAMP_SCORE = 80
+const MAX_RUN_DIFFICULTY_MEASURES = 18
+const MAX_DIFFICULTY_SCORE_EQUIVALENT = 72
+const TRACK_ANALYSIS_URL = '/skate-cat-2.analysis.json'
+const ACCENT_MATCH_TOLERANCE_BEATS = 0.65
 const TIMING_DEBUG_PATTERN_LIBRARY = [
   { name: 'centerSingle', offsets: [1], lanes: ['center'] },
   { name: 'leftSingle', offsets: [1], lanes: ['left'] },
   { name: 'rightSingle', offsets: [1], lanes: ['right'] },
+  { name: 'centerLateSingle', offsets: [3], lanes: ['center'] },
   { name: 'leftRight', offsets: [1, 3], lanes: ['left', 'right'] },
   { name: 'railLeft', offsets: [1, 3], lanes: ['center', 'left'], railIndex: 1 },
   { name: 'railRight', offsets: [1, 3], lanes: ['center', 'right'], railIndex: 1 },
   { name: 'centerDouble', offsets: [1, 3], lanes: ['center', 'center'] },
-  { name: 'lateRailCenter', offsets: [2, 4], lanes: ['left', 'center'], railIndex: 1 },
-  { name: 'staircase', offsets: [1, 2, 3], lanes: ['left', 'center', 'right'] },
+  { name: 'lateRailCenter', offsets: [1, 3], lanes: ['left', 'center'], railIndex: 1 },
 ]
 
 function getStartupMeasureCursor(musicTimeSeconds = 0) {
-  const clampedBeat = Math.max(STARTUP_SAFE_BEATS, Math.floor(musicTimeSeconds / BEAT_INTERVAL), 0)
-  return Math.ceil(clampedBeat / MEASURE_LENGTH_BEATS) * MEASURE_LENGTH_BEATS
+  const currentBeat = Math.floor(musicTimeSeconds / BEAT_INTERVAL)
+  const desiredPhase = (STARTUP_SAFE_BEATS + MEASURE_PHASE_OFFSET_BEATS) % MEASURE_LENGTH_BEATS
+  const minBeat = Math.max(STARTUP_SAFE_BEATS + MEASURE_PHASE_OFFSET_BEATS, currentBeat, 0)
+  const phaseDelta = (desiredPhase - (minBeat % MEASURE_LENGTH_BEATS) + MEASURE_LENGTH_BEATS) % MEASURE_LENGTH_BEATS
+  return minBeat + phaseDelta
 }
 
 const PATTERN_LIBRARY = {
   anchor: { offsets: [1], chain: false, dense: false },
   push: { offsets: [1, 3], chain: false, dense: false },
-  doubleQuarter: { offsets: [1, 2], chain: true, dense: false },
-  latePush: { offsets: [2, 4], chain: false, dense: true },
-  staircase: { offsets: [1, 2, 4], chain: true, dense: true },
-  splitTriple: { offsets: [1, 3, 4], chain: false, dense: true },
+  doubleQuarter: { offsets: [2, 3], chain: true, dense: false },
+  latePush: { offsets: [3], chain: false, dense: true },
+  staircase: { offsets: [1, 3], chain: true, dense: true },
+  splitTriple: { offsets: [1, 2, 3], chain: false, dense: true },
   lateDouble: { offsets: [2, 3], chain: true, dense: true },
-  lateTriple: { offsets: [2, 3, 4], chain: true, dense: true },
+  lateTriple: { offsets: [1, 2, 3], chain: true, dense: true },
 }
 
 const RAIL_PATTERN_LIBRARY = [
   { name: 'railLeftSetup', offsets: [1, 3], lanes: ['center', 'left'], railIndex: 1, weight: 1.2, chain: false, dense: false },
   { name: 'railRightSetup', offsets: [1, 3], lanes: ['center', 'right'], railIndex: 1, weight: 1.2, chain: false, dense: false },
-  { name: 'lateRailCenter', offsets: [2, 4], lanes: ['left', 'center'], railIndex: 1, weight: 0.95, chain: false, dense: true },
-  { name: 'lateRailLeft', offsets: [2, 4], lanes: ['right', 'left'], railIndex: 1, weight: 0.85, minScore: 16, chain: false, dense: true },
-  { name: 'lateRailRight', offsets: [2, 4], lanes: ['left', 'right'], railIndex: 1, weight: 0.85, minScore: 16, chain: false, dense: true },
+  { name: 'lateRailCenter', offsets: [1, 3], lanes: ['left', 'center'], railIndex: 1, weight: 0.95, chain: false, dense: true },
+  { name: 'lateRailLeft', offsets: [1, 3], lanes: ['right', 'left'], railIndex: 1, weight: 0.85, minScore: 16, chain: false, dense: true },
+  { name: 'lateRailRight', offsets: [1, 3], lanes: ['left', 'right'], railIndex: 1, weight: 0.85, minScore: 16, chain: false, dense: true },
   { name: 'soloRailCenter', offsets: [3], lanes: ['center'], railIndex: 0, weight: 0.7, minScore: 18, chain: false, dense: false },
   { name: 'soloRailLeft', offsets: [3], lanes: ['left'], railIndex: 0, weight: 0.55, minScore: 12, chain: false, dense: false },
   { name: 'soloRailRight', offsets: [3], lanes: ['right'], railIndex: 0, weight: 0.55, minScore: 12, chain: false, dense: false },
@@ -145,25 +160,64 @@ function clamp01(value) {
   return Math.min(Math.max(value, 0), 1)
 }
 
+function roundNumber(value, digits = 6) {
+  const factor = 10 ** digits
+  return Math.round(value * factor) / factor
+}
+
+function clampRange(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getBlendedWeightMultiplier(multiplier, blend) {
+  return 1 + (multiplier - 1) * clampRange(blend, 0, 1.5)
+}
+
 function rampWeight(score, startScore, fullScore, maxWeight) {
   if (score <= startScore) return 0
   if (fullScore <= startScore) return maxWeight
   return clamp01((score - startScore) / (fullScore - startScore)) * maxWeight
 }
 
-function getWeightedPatternPool(score, minOffset = 0) {
+function getRunDifficultyProgress(score, referenceBeat = MEASURE_PHASE_OFFSET_BEATS) {
+  const scoreProgress = clamp01(score / MAX_RAMP_SCORE)
+  const beatProgress = clamp01(
+    Math.max(0, referenceBeat - getStartupMeasureCursor(0)) / (MAX_RUN_DIFFICULTY_MEASURES * MEASURE_LENGTH_BEATS)
+  )
+  return clamp01(Math.max(scoreProgress, beatProgress))
+}
+
+function getWeightedPatternPool(score, minOffset = 0, difficultyProgress = 0) {
+  const normalizedDifficulty = clamp01(difficultyProgress)
+  const effectiveScore = Math.max(score, normalizedDifficulty * MAX_DIFFICULTY_SCORE_EQUIVALENT)
   const pool = [
-    { name: 'anchor', weight: Math.max(0.35, 3.3 - score * 0.09) },
-    { name: 'push', weight: 1.35 + rampWeight(score, 0, 12, 1.6) - rampWeight(score, 56, 80, 0.55) },
-    { name: 'doubleQuarter', weight: 0.7 + rampWeight(score, 5, 18, 2.3) - rampWeight(score, 64, 80, 0.35) },
-    { name: 'latePush', weight: 0.2 + rampWeight(score, 12, 24, 2.0) },
-    { name: 'staircase', weight: rampWeight(score, 18, 34, 2.1) },
-    { name: 'splitTriple', weight: rampWeight(score, 22, 38, 2.0) },
-    { name: 'lateDouble', weight: rampWeight(score, 30, 48, 1.95) },
-    { name: 'lateTriple', weight: rampWeight(score, 48, 68, 1.3) },
+    { name: 'anchor', weight: Math.max(0.2, 3.15 - effectiveScore * 0.1) },
+    { name: 'push', weight: 1.1 + rampWeight(effectiveScore, 0, 10, 1.45) - rampWeight(effectiveScore, 42, 70, 0.8) },
+    { name: 'doubleQuarter', weight: 0.55 + rampWeight(effectiveScore, 4, 14, 2.35) - rampWeight(effectiveScore, 58, 72, 0.25) },
+    { name: 'latePush', weight: 0.15 + rampWeight(effectiveScore, 10, 20, 2.15) },
+    { name: 'staircase', weight: rampWeight(effectiveScore, 14, 28, 2.35) },
+    { name: 'splitTriple', weight: rampWeight(effectiveScore, 18, 32, 2.75) },
+    { name: 'lateDouble', weight: rampWeight(effectiveScore, 24, 40, 2.2) },
+    { name: 'lateTriple', weight: rampWeight(effectiveScore, 30, 50, 2.45) },
   ]
 
-  return pool.filter((entry) => entry.weight > 0.05 && PATTERN_LIBRARY[entry.name]?.offsets.every((offset) => offset > minOffset))
+  return pool
+    .map((entry) => {
+      const patternMeta = PATTERN_LIBRARY[entry.name]
+      let weight = entry.weight
+
+      if (entry.name === 'anchor') weight *= 1 - normalizedDifficulty * 0.72
+      if (entry.name === 'push') weight *= 1 - normalizedDifficulty * 0.24
+      if (patternMeta?.dense) weight *= 1 + normalizedDifficulty * 0.72
+      if (patternMeta?.chain) weight *= 1 + normalizedDifficulty * 0.25
+      if (entry.name.toLowerCase().includes('late')) weight *= 1 + normalizedDifficulty * 0.42
+
+      return {
+        ...entry,
+        weight,
+      }
+    })
+    .filter((entry) => entry.weight > 0.05 && PATTERN_LIBRARY[entry.name]?.offsets.every((offset) => offset > minOffset))
 }
 
 function pickWeightedPattern(pool) {
@@ -192,6 +246,296 @@ function pickWeightedEntry(pool) {
   return pool[pool.length - 1] || null
 }
 
+function getGameplayMeasureStartBeat(beat) {
+  return Math.floor((beat - MEASURE_PHASE_OFFSET_BEATS) / MEASURE_LENGTH_BEATS) * MEASURE_LENGTH_BEATS + MEASURE_PHASE_OFFSET_BEATS
+}
+
+function getEmptyBandStrengths() {
+  return {
+    low: 0,
+    mid: 0,
+    high: 0,
+  }
+}
+
+function getWeightedBandStrengths(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return getEmptyBandStrengths()
+
+  const strengthSum = entries.reduce((sum, entry) => sum + (entry.strength || 0), 0)
+  if (strengthSum <= 0) return getEmptyBandStrengths()
+
+  return {
+    low: roundNumber(
+      entries.reduce((sum, entry) => sum + (entry.strength || 0) * (entry.bandStrengths?.low || 0), 0) / strengthSum
+    ),
+    mid: roundNumber(
+      entries.reduce((sum, entry) => sum + (entry.strength || 0) * (entry.bandStrengths?.mid || 0), 0) / strengthSum
+    ),
+    high: roundNumber(
+      entries.reduce((sum, entry) => sum + (entry.strength || 0) * (entry.bandStrengths?.high || 0), 0) / strengthSum
+    ),
+  }
+}
+
+function buildTrackAnalysisLookups(analysis) {
+  const measuresByStartBeat = new Map()
+  const accentsByStartBeat = new Map()
+  const canonicalMeasureSummaries = analysis?.measureSummaries || []
+  const gridStepBeats = analysis?.timing?.gridStepBeats || 0.5
+  const slotsPerMeasure = Math.max(1, Math.round(MEASURE_LENGTH_BEATS / gridStepBeats))
+
+  for (const accent of analysis?.accents || []) {
+    const measureStartBeat = getGameplayMeasureStartBeat(accent.beat ?? 0)
+    if (measureStartBeat < 0) continue
+    const measureAccents = accentsByStartBeat.get(measureStartBeat) || []
+    measureAccents.push({
+      ...accent,
+      measureStartBeat,
+      beatInMeasure: (accent.beat ?? 0) - measureStartBeat,
+    })
+    accentsByStartBeat.set(measureStartBeat, measureAccents)
+  }
+
+  for (const summary of canonicalMeasureSummaries) {
+    const startBeat = summary.startBeat ?? 0
+    if (startBeat < 0) continue
+
+    const measureAccents = accentsByStartBeat.get(startBeat) || []
+    const derivedBandStrengths = getWeightedBandStrengths(measureAccents)
+
+    measuresByStartBeat.set(startBeat, {
+      measureIndex: summary.measureIndex ?? Math.floor((startBeat - MEASURE_PHASE_OFFSET_BEATS) / MEASURE_LENGTH_BEATS),
+      startBeat,
+      endBeat: summary.endBeat ?? (startBeat + MEASURE_LENGTH_BEATS),
+      accentOffsets: Array.isArray(summary.accentOffsets)
+        ? summary.accentOffsets.map((offset) => roundNumber(offset))
+        : measureAccents.map((accent) => roundNumber(accent.beatInMeasure ?? 0)),
+      accentCount: summary.accentCount ?? measureAccents.length,
+      onsetCount: summary.onsetCount ?? measureAccents.length,
+      density: roundNumber(summary.density ?? (measureAccents.length / slotsPerMeasure)),
+      meanAccentStrength: roundNumber(
+        summary.meanAccentStrength ??
+          (measureAccents.reduce((sum, accent) => sum + (accent.strength || 0), 0) / Math.max(measureAccents.length, 1))
+      ),
+      maxAccentStrength: roundNumber(
+        summary.maxAccentStrength ?? Math.max(...measureAccents.map((accent) => accent.strength || 0), 0)
+      ),
+      downbeatStrength: roundNumber(
+        summary.downbeatStrength ??
+          measureAccents.find((accent) => Math.abs((accent.beatInMeasure ?? 0)) < 1e-6)?.strength ??
+          0
+      ),
+      bandStrengths: {
+        low: roundNumber(summary.bandStrengths?.low ?? derivedBandStrengths.low),
+        mid: roundNumber(summary.bandStrengths?.mid ?? derivedBandStrengths.mid),
+        high: roundNumber(summary.bandStrengths?.high ?? derivedBandStrengths.high),
+      },
+      energyMean: roundNumber(summary.energyMean ?? 0),
+      energyPeak: roundNumber(summary.energyPeak ?? 0),
+      intensity: roundNumber(summary.intensity ?? 0),
+      accents: measureAccents,
+    })
+  }
+
+  if (measuresByStartBeat.size === 0) {
+    for (const [startBeat, measureAccents] of accentsByStartBeat.entries()) {
+      const accentStrengthSum = measureAccents.reduce((sum, accent) => sum + (accent.strength || 0), 0)
+      const bandStrengths = getWeightedBandStrengths(measureAccents)
+
+      measuresByStartBeat.set(startBeat, {
+        measureIndex: Math.floor((startBeat - MEASURE_PHASE_OFFSET_BEATS) / MEASURE_LENGTH_BEATS),
+        startBeat,
+        endBeat: startBeat + MEASURE_LENGTH_BEATS,
+        accentOffsets: measureAccents.map((accent) => roundNumber(accent.beatInMeasure ?? 0)),
+        accentCount: measureAccents.length,
+        onsetCount: measureAccents.length,
+        density: roundNumber(measureAccents.length / slotsPerMeasure),
+        meanAccentStrength: roundNumber(accentStrengthSum / Math.max(measureAccents.length, 1)),
+        maxAccentStrength: roundNumber(Math.max(...measureAccents.map((accent) => accent.strength || 0), 0)),
+        downbeatStrength: roundNumber(
+          measureAccents.find((accent) => Math.abs((accent.beatInMeasure ?? 0)) < 1e-6)?.strength || 0,
+        ),
+        bandStrengths,
+        energyMean: 0,
+        energyPeak: 0,
+        intensity: 0,
+        accents: measureAccents,
+      })
+    }
+  }
+
+  return {
+    measuresByStartBeat,
+  }
+}
+
+function getMeasureAnalysis(lookups, measureStartBeat) {
+  return lookups.measuresByStartBeat.get(measureStartBeat) || null
+}
+
+function getAccentWindowStrength(accents, centerOffset, tolerance = ACCENT_MATCH_TOLERANCE_BEATS) {
+  if (!Array.isArray(accents) || accents.length === 0) return 0
+
+  let bestStrength = 0
+  for (const accent of accents) {
+    const distance = Math.abs((accent.beatInMeasure ?? 0) - centerOffset)
+    const closeness = clamp01(1 - distance / Math.max(tolerance, 0.001))
+    bestStrength = Math.max(bestStrength, (accent.strength || 0) * closeness)
+  }
+  return clamp01(bestStrength)
+}
+
+function getAccentAlignmentStrength(accents, offsets, tolerance = ACCENT_MATCH_TOLERANCE_BEATS) {
+  if (!Array.isArray(offsets) || offsets.length === 0) return 0
+  if (!Array.isArray(accents) || accents.length === 0) return 0
+
+  let totalStrength = 0
+  for (const offset of offsets) {
+    totalStrength += getAccentWindowStrength(accents, offset, tolerance)
+  }
+
+  return clamp01(totalStrength / offsets.length)
+}
+
+function getPatternAnalysisMultiplier(patternName, measureAnalysis) {
+  const patternMeta = PATTERN_LIBRARY[patternName]
+  if (!patternMeta || !measureAnalysis) return 1
+
+  const accents = measureAnalysis.accents || []
+  const lowBand = measureAnalysis.bandStrengths?.low || 0
+  const highBand = measureAnalysis.bandStrengths?.high || 0
+  const intensity = measureAnalysis.intensity || 0
+  const density = measureAnalysis.density || 0
+  const accentAlignment = getAccentAlignmentStrength(accents, patternMeta.offsets)
+  const earlyAccent = getAccentWindowStrength(accents, 1)
+  const lateAccent = getAccentWindowStrength(accents, 3)
+
+  let multiplier = 0.82 + accentAlignment * 0.82
+  if (patternMeta.offsets.some((offset) => offset <= 1.5)) {
+    multiplier *= 0.9 + earlyAccent * 0.25
+  }
+  if (patternMeta.offsets.some((offset) => offset >= 2.5)) {
+    multiplier *= 0.9 + lateAccent * 0.35
+  }
+
+  if (density >= 0.5 || intensity >= 0.56) {
+    multiplier *= patternMeta.dense ? 1.22 : 0.88
+  } else if (density <= 0.28 && intensity <= 0.42) {
+    multiplier *= patternMeta.dense ? 0.7 : 1.18
+  }
+
+  if (lowBand > highBand + 0.08) {
+    multiplier *= patternMeta.offsets.length === 1 ? 1.08 : 1.03
+  }
+  if (highBand > lowBand + 0.08 && patternMeta.chain) {
+    multiplier *= 1.08
+  }
+
+  return clampRange(multiplier, 0.45, 1.8)
+}
+
+function getRailAnalysisChanceDelta(measureAnalysis) {
+  if (!measureAnalysis) return 0
+
+  const lowBand = measureAnalysis.bandStrengths?.low || 0
+  const highBand = measureAnalysis.bandStrengths?.high || 0
+  const intensity = measureAnalysis.intensity || 0
+  const density = measureAnalysis.density || 0
+  const lateAccent = getAccentWindowStrength(measureAnalysis.accents || [], 3, 0.75)
+
+  let delta = 0
+  delta += lowBand * 0.16
+  delta += intensity * 0.12
+  delta += lateAccent * 0.14
+  delta -= Math.max(0, highBand - lowBand) * 0.1
+  delta -= Math.max(0, density - 0.65) * 0.08
+
+  return clampRange(delta - 0.12, -0.1, 0.22)
+}
+
+function getRailDifficultyMultiplier(entry, difficultyProgress) {
+  if (difficultyProgress <= 0) return 1
+
+  let multiplier = 1
+  if (entry.dense) multiplier *= 1 + difficultyProgress * 0.28
+  if (entry.offsets.some((offset) => offset >= 2.5)) multiplier *= 1 + difficultyProgress * 0.24
+  if (entry.lanes.some((lane) => lane !== 'center')) multiplier *= 1 + difficultyProgress * 0.08
+
+  return clampRange(multiplier, 0.75, 1.75)
+}
+
+function getRailPatternAnalysisMultiplier(entry, measureAnalysis) {
+  if (!measureAnalysis) return 1
+
+  const accents = measureAnalysis.accents || []
+  const lowBand = measureAnalysis.bandStrengths?.low || 0
+  const highBand = measureAnalysis.bandStrengths?.high || 0
+  const alignment = getAccentAlignmentStrength(accents, entry.offsets)
+  const centerLaneCount = entry.lanes.filter((lane) => lane === 'center').length
+  const sideLaneCount = entry.lanes.filter((lane) => lane === 'left' || lane === 'right').length
+
+  let multiplier = 0.85 + alignment * 0.75
+  if (lowBand >= highBand) {
+    multiplier *= 1 + centerLaneCount * 0.08
+  }
+  if (highBand > lowBand + 0.05) {
+    multiplier *= 1 + sideLaneCount * 0.06
+  }
+  if ((measureAnalysis.intensity || 0) >= 0.55 && entry.dense) {
+    multiplier *= 1.08
+  }
+
+  return clampRange(multiplier, 0.55, 1.7)
+}
+
+function getPlacementDifficultyMultiplier(entry, difficultyProgress) {
+  if (difficultyProgress <= 0) return 1
+
+  const entryName = entry.name.toLowerCase()
+  const centerCount = entry.lanes.filter((lane) => lane === 'center').length
+  const wideCount = entry.lanes.filter((lane) => lane === 'farLeft' || lane === 'farRight').length
+  const sideCount = entry.lanes.filter((lane) => lane === 'left' || lane === 'right').length
+
+  let multiplier = 1 + difficultyProgress * (wideCount * 0.22 + sideCount * 0.08 - centerCount * 0.06)
+  if (entryName.includes('sweep') || entryName.includes('bounce') || entryName.includes('cross') || entryName.includes('outside')) {
+    multiplier *= 1 + difficultyProgress * 0.28
+  }
+  if (entryName === 'centersingle') {
+    multiplier *= 1 - difficultyProgress * 0.55
+  }
+
+  return clampRange(multiplier, 0.35, 1.9)
+}
+
+function getPlacementAnalysisMultiplier(entry, measureAnalysis) {
+  if (!measureAnalysis) return 1
+
+  const lowBand = measureAnalysis.bandStrengths?.low || 0
+  const midBand = measureAnalysis.bandStrengths?.mid || 0
+  const highBand = measureAnalysis.bandStrengths?.high || 0
+  const density = measureAnalysis.density || 0
+  const entryName = entry.name.toLowerCase()
+  const centerCount = entry.lanes.filter((lane) => lane === 'center').length
+  const wideCount = entry.lanes.filter((lane) => lane === 'farLeft' || lane === 'farRight').length
+  const sideCount = entry.lanes.filter((lane) => lane === 'left' || lane === 'right').length
+
+  let multiplier = 1
+
+  if (lowBand >= midBand && lowBand >= highBand) {
+    multiplier *= 1 + centerCount * 0.08 + sideCount * 0.03 - wideCount * 0.04
+  }
+  if (highBand > lowBand + 0.05) {
+    multiplier *= 1 + wideCount * 0.14 + (entryName.includes('sweep') ? 0.1 : 0)
+  }
+  if (density >= 0.5) {
+    multiplier *= entryName.includes('sweep') || entryName.includes('bounce') ? 1.1 : 0.96
+  } else if (density <= 0.28) {
+    multiplier *= centerCount > 0 ? 1.08 : 0.94
+  }
+
+  return clampRange(multiplier, 0.7, 1.45)
+}
+
 function getLaneX(lane) {
   const base = LANE_POSITIONS[lane] ?? 0
   const jitterScale = lane === 'center' ? 0.55 : 1
@@ -206,20 +550,23 @@ function getLanePreferenceOrder(preferredLane) {
   })
 }
 
-function shouldUseRail(score, measuresSinceRail) {
-  if (score < MIN_SCORE_FOR_RAILS) return false
+function shouldUseRail(score, measuresSinceRail, measureAnalysis = null, analysisBlend = 0, difficultyProgress = 0) {
+  const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
+  if (effectiveScore < MIN_SCORE_FOR_RAILS) return false
   if (measuresSinceRail < MIN_MEASURES_BETWEEN_RAILS) return false
   if (measuresSinceRail >= FORCE_RAIL_AFTER_MEASURES) return true
 
-  const baseChance = score < 18 ? 0.24 : score < 36 ? 0.34 : 0.46
+  const baseChance = (effectiveScore < 18 ? 0.24 : effectiveScore < 36 ? 0.38 : 0.54) + difficultyProgress * 0.18
   const urgencyBonus = measuresSinceRail >= 3 ? 0.16 : measuresSinceRail >= 2 ? 0.08 : 0
-  return Math.random() < baseChance + urgencyBonus
+  const analysisChanceDelta = getRailAnalysisChanceDelta(measureAnalysis) * clampRange(analysisBlend, 0, 1.5)
+  return Math.random() < clampRange(baseChance + urgencyBonus + analysisChanceDelta, 0, 0.92)
 }
 
-function getWeightedRailPatternPool(score, recentPatternName = '') {
+function getWeightedRailPatternPool(score, recentPatternName = '', measureAnalysis = null, analysisBlend = 0, difficultyProgress = 0) {
+  const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
   let pool = RAIL_PATTERN_LIBRARY.filter((entry) => {
-    if (typeof entry.minScore === 'number' && score < entry.minScore) return false
-    if (typeof entry.maxScore === 'number' && score > entry.maxScore) return false
+    if (typeof entry.minScore === 'number' && effectiveScore < entry.minScore) return false
+    if (typeof entry.maxScore === 'number' && effectiveScore > entry.maxScore) return false
     return entry.weight > 0.05
   })
 
@@ -228,13 +575,39 @@ function getWeightedRailPatternPool(score, recentPatternName = '') {
     if (dedupedPool.length > 0) pool = dedupedPool
   }
 
+  if (measureAnalysis && analysisBlend > 0) {
+    pool = pool.map((entry) => ({
+      ...entry,
+      weight: entry.weight * getBlendedWeightMultiplier(
+        getRailPatternAnalysisMultiplier(entry, measureAnalysis),
+        analysisBlend,
+      ),
+    }))
+  }
+
+  if (difficultyProgress > 0) {
+    pool = pool.map((entry) => ({
+      ...entry,
+      weight: entry.weight * getRailDifficultyMultiplier(entry, difficultyProgress),
+    }))
+  }
+
   return pool
 }
 
-function getPlacementPool({ count, dense, score, recentPlacementName }) {
+function getPlacementPool({
+  count,
+  dense,
+  score,
+  recentPlacementName,
+  measureAnalysis = null,
+  analysisBlend = 0,
+  difficultyProgress = 0,
+}) {
+  const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
   let pool = (PLACEMENT_LIBRARY[count] || PLACEMENT_LIBRARY[1]).filter((entry) => {
-    if (typeof entry.minScore === 'number' && score < entry.minScore) return false
-    if (typeof entry.maxScore === 'number' && score > entry.maxScore) return false
+    if (typeof entry.minScore === 'number' && effectiveScore < entry.minScore) return false
+    if (typeof entry.maxScore === 'number' && effectiveScore > entry.maxScore) return false
     if (entry.denseOnly && !dense) return false
     if (entry.sparseOnly && dense) return false
     return true
@@ -243,6 +616,23 @@ function getPlacementPool({ count, dense, score, recentPlacementName }) {
   if (recentPlacementName && pool.length > 1) {
     const dedupedPool = pool.filter((entry) => entry.name !== recentPlacementName)
     if (dedupedPool.length > 0) pool = dedupedPool
+  }
+
+  if (measureAnalysis && analysisBlend > 0) {
+    pool = pool.map((entry) => ({
+      ...entry,
+      weight: entry.weight * getBlendedWeightMultiplier(
+        getPlacementAnalysisMultiplier(entry, measureAnalysis),
+        analysisBlend,
+      ),
+    }))
+  }
+
+  if (difficultyProgress > 0) {
+    pool = pool.map((entry) => ({
+      ...entry,
+      weight: entry.weight * getPlacementDifficultyMultiplier(entry, difficultyProgress),
+    }))
   }
 
   return pool
@@ -262,6 +652,22 @@ function getGrindExitZ(obstacle) {
 
 function getBeatDistanceForWorldDistance(distance, speed) {
   return distance / Math.max(speed, 0.001) / BEAT_INTERVAL
+}
+
+function getPredictedTravelDistance(durationSeconds, currentSpeed, targetSpeed) {
+  const duration = Math.max(durationSeconds, 0)
+  const safeCurrentSpeed = Math.max(currentSpeed || 0, 0)
+  const safeTargetSpeed = Math.max(targetSpeed || safeCurrentSpeed, 0)
+
+  if (duration <= 0) return 0
+  if (Math.abs(safeTargetSpeed - safeCurrentSpeed) < 0.0001) {
+    return safeCurrentSpeed * duration
+  }
+
+  return (
+    safeTargetSpeed * duration -
+    ((safeTargetSpeed - safeCurrentSpeed) * (1 - Math.exp(-SPEED_RESPONSE * duration))) / SPEED_RESPONSE
+  )
 }
 
 function getObstacleLaneWindow(obstacle, speed) {
@@ -461,6 +867,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       scaleY: 1,
       rotY: 0,
       beatIndex: 0,
+      hitScrollDistance: Number.NaN,
       isVertical: false,
       showHoldSign: false,
       railLength: GRIND_RAIL_LENGTH_MIN,
@@ -479,6 +886,20 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
   const timingDebugPatternIndex = useRef(0)
   const contactShadowTexture = useMemo(() => createContactShadowTexture(), [])
   const recentDebugObstacles = useRef(new Map())
+  const worldScrollDistance = useRef(0)
+  const trackAnalysisLookups = useRef(buildTrackAnalysisLookups(null))
+  const railLogGeometry = useMemo(
+    () => new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, false),
+    []
+  )
+
+  const {
+    useTrackAnalysis,
+    analysisBlend,
+  } = useControls('Music Analysis', {
+    useTrackAnalysis: true,
+    analysisBlend: { value: 0.8, min: 0, max: 1.5, step: 0.05 },
+  })
 
   const {
     logScale,
@@ -530,8 +951,61 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     railShadowScaleZ: { value: 0.52, min: 0.2, max: 3, step: 0.05 },
   })
 
+  const railWoodMaterial = useMemo(
+    () => createLogToonMaterial({
+      color: logColor,
+      lightX: logLightX,
+      lightY: logLightY,
+      lightZ: logLightZ,
+      glossiness: logGlossiness,
+      rimAmount: 0,
+      rimThreshold: 0,
+      steps: logSteps,
+      shadowBrightness: logShadowBrightness,
+      brightness: logBrightness,
+      rimColor: '#000000',
+    }),
+    [
+      logColor,
+      logLightX,
+      logLightY,
+      logLightZ,
+      logGlossiness,
+      logSteps,
+      logShadowBrightness,
+      logBrightness,
+    ]
+  )
+
   const wasGameOver = useRef(false)
   const graceTimer = useRef(3.0) // invincibility grace period at start
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetch(TRACK_ANALYSIS_URL)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((analysis) => {
+        if (cancelled || !analysis) return
+        trackAnalysisLookups.current = buildTrackAnalysisLookups(analysis)
+      })
+      .catch(() => {
+        if (cancelled) return
+        trackAnalysisLookups.current = buildTrackAnalysisLookups(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => () => {
+    railLogGeometry.dispose()
+  }, [railLogGeometry])
+
+  useEffect(() => () => {
+    railWoodMaterial.dispose()
+  }, [railWoodMaterial])
 
   const resetObstacleSlot = (slot) => {
     slot.id = 0
@@ -545,10 +1019,15 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     slot.scaleY = 1
     slot.rotY = HORIZONTAL_LOG_ROTATION
     slot.beatIndex = 0
+    slot.hitScrollDistance = Number.NaN
     slot.isVertical = false
     slot.showHoldSign = false
     slot.railLength = GRIND_RAIL_LENGTH_MIN
     slot.railLift = 0
+  }
+
+  const deactivateObstacleSlot = (slot) => {
+    resetObstacleSlot(slot)
   }
 
   const stopGrinding = () => {
@@ -611,23 +1090,24 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     }
   }
 
-  const choosePatternType = (minOffset = 0) => {
+  const choosePatternType = (minOffset = 0, measureAnalysis = null, difficultyProgress = 0) => {
     const score = gameState.score
-    const rampProgress = Math.min(score / MAX_RAMP_SCORE, 1)
+    const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
+    const rampProgress = Math.min(effectiveScore / MAX_RAMP_SCORE, 1)
     const recent = patternHistory.current
-    let pool = getWeightedPatternPool(score, minOffset)
+    let pool = getWeightedPatternPool(score, minOffset, difficultyProgress)
 
-    if (consecutiveDensePatterns.current >= 2) {
+    if (consecutiveDensePatterns.current >= (difficultyProgress >= 0.65 ? 3 : 2)) {
       pool = pool.filter(({ name }) => !PATTERN_LIBRARY[name].dense)
     }
-    if (consecutiveChainPatterns.current >= 2) {
+    if (consecutiveChainPatterns.current >= (difficultyProgress >= 0.75 ? 3 : 2)) {
       pool = pool.filter(({ name }) => !PATTERN_LIBRARY[name].chain)
     }
     if (recent.length >= 2 && recent[recent.length - 1] === recent[recent.length - 2] && pool.length > 1) {
       pool = pool.filter(({ name }) => name !== recent[recent.length - 1])
     }
     if (
-      score >= 18 &&
+      effectiveScore >= 18 &&
       recent.length >= 2 &&
       recent.every((pattern) => !PATTERN_LIBRARY[pattern]?.dense)
     ) {
@@ -637,7 +1117,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       }))
     }
     if (
-      score >= 24 &&
+      effectiveScore >= 24 &&
       recent.length >= 2 &&
       recent.every((pattern) => PATTERN_LIBRARY[pattern]?.dense)
     ) {
@@ -647,11 +1127,36 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       }))
     }
 
+    if (measureAnalysis && useTrackAnalysis && analysisBlend > 0) {
+      pool = pool.map((entry) => ({
+        ...entry,
+        weight: entry.weight * getBlendedWeightMultiplier(
+          getPatternAnalysisMultiplier(entry.name, measureAnalysis),
+          analysisBlend,
+        ),
+      }))
+    }
+
     if (pool.length === 0) return null
     return pickWeightedPattern(pool)
   }
 
   const scheduleMeasurePattern = (measureStartBeat) => {
+    if (isDownbeatTest) {
+      const downbeatOffsets = [1, 3]
+
+      downbeatOffsets.forEach((beatOffset, index) => {
+        spawnObstacleForBeat({
+          beatIndex: measureStartBeat + beatOffset,
+          clusterId: `downbeat:${measureStartBeat}:${index + 1}`,
+          lane: 'center',
+          isVertical: false,
+          railLength: GRIND_RAIL_LENGTH_MIN,
+        })
+      })
+      return
+    }
+
     if (isTimingDebug) {
       const debugPattern = TIMING_DEBUG_PATTERN_LIBRARY[timingDebugPatternIndex.current % TIMING_DEBUG_PATTERN_LIBRARY.length]
       timingDebugPatternIndex.current += 1
@@ -674,11 +1179,17 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     }
 
     const score = gameState.score
+    const difficultyProgress = getRunDifficultyProgress(score, measureStartBeat)
+    const measureAnalysis = useTrackAnalysis
+      ? getMeasureAnalysis(trackAnalysisLookups.current, measureStartBeat)
+      : null
     const recentPatternName = patternHistory.current[patternHistory.current.length - 1] || ''
-    const useRail = shouldUseRail(score, measuresSinceRail.current)
+    const useRail = shouldUseRail(score, measuresSinceRail.current, measureAnalysis, analysisBlend, difficultyProgress)
 
     if (useRail) {
-      const railPattern = pickWeightedEntry(getWeightedRailPatternPool(score, recentPatternName))
+      const railPattern = pickWeightedEntry(
+        getWeightedRailPatternPool(score, recentPatternName, measureAnalysis, analysisBlend, difficultyProgress)
+      )
       if (railPattern) {
         let clusterId = 0
         let previousBeatOffset = null
@@ -723,7 +1234,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     }
 
     const blockedOffset = Math.max(0, logBlockedUntilBeat.current - measureStartBeat)
-    const patternType = choosePatternType(blockedOffset)
+    const patternType = choosePatternType(blockedOffset, measureAnalysis, difficultyProgress)
     const patternMeta = patternType ? (PATTERN_LIBRARY[patternType] || null) : null
 
     if (!patternMeta) {
@@ -739,6 +1250,9 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       dense: patternMeta.dense,
       score,
       recentPlacementName: placementHistory.current[placementHistory.current.length - 1] || '',
+      measureAnalysis,
+      analysisBlend,
+      difficultyProgress,
     })
     const placement = pickWeightedEntry(placementPool) || { name: 'fallback', lanes: Array(pattern.length).fill('center') }
     let clusterId = 0
@@ -803,9 +1317,12 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     slot.id = nextObstacleId.current++
     slot.clusterId = clusterId
     slot.beatIndex = beatIndex
+    // Pooled slots are recycled after despawn; clear the previous hit anchor so
+    // a new obstacle doesn't inherit stale timing and jump in late.
+    slot.hitScrollDistance = Number.NaN
     slot.rotY = isVertical ? VERTICAL_LOG_ROTATION : HORIZONTAL_LOG_ROTATION
-    slot.scaleY = isTimingDebug ? 1 : 0.7 + Math.random() * 0.6
-    slot.x = isTimingDebug ? (LANE_POSITIONS[spawnLane] ?? 0) : getLaneX(spawnLane)
+    slot.scaleY = (isTimingDebug || isDownbeatTest) ? 1 : 0.7 + Math.random() * 0.6
+    slot.x = (isTimingDebug || isDownbeatTest) ? (LANE_POSITIONS[spawnLane] ?? 0) : getLaneX(spawnLane)
     slot.requestedLane = lane
     slot.lane = spawnLane
     slot.isVertical = isVertical
@@ -838,6 +1355,8 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       gameState.obstacleDebug.current = []
       gameState.upArrowHeld.current = false
       gameState.grindCooldownObstacleId.current = 0
+      gameState.runDifficultyProgress.current = 0
+      worldScrollDistance.current = 0
       stopGrinding()
       graceTimer.current = 3.0
       wasGameOver.current = false
@@ -848,6 +1367,8 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       gameState.obstacleDebug.current = []
       recentDebugObstacles.current.clear()
       gameState.grindCooldownObstacleId.current = 0
+      gameState.runDifficultyProgress.current = 0
+      worldScrollDistance.current = 0
       stopGrinding()
       wasGameOver.current = true
       return
@@ -855,13 +1376,20 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
     if (!isRunning) return
 
     const speed = gameState.speed.current
-    if (graceTimer.current > 0) graceTimer.current -= delta
+    const gameDelta = getGameDelta(delta)
+    const targetSpeed = getTargetRunSpeed()
+    if (graceTimer.current > 0) graceTimer.current -= gameDelta
     const music = musicRef?.current
     const isMusicRunning = Boolean(music && !music.paused)
     const musicTime = isMusicRunning ? getPerceivedMusicTime(music.currentTime) : 0
 
     if (isMusicRunning) {
+      worldScrollDistance.current += speed * gameDelta
+    }
+
+    if (isMusicRunning) {
       const currentBeat = Math.floor(musicTime / BEAT_INTERVAL)
+      gameState.runDifficultyProgress.current = getRunDifficultyProgress(gameState.score, currentBeat)
       const hasClearedCountdown = currentBeat >= COUNTDOWN_BEATS
       const lookaheadBeat = hasClearedCountdown && currentBeat < STARTUP_SAFE_BEATS
         ? currentBeat + LOOKAHEAD_BEATS + STARTUP_SAFE_BEATS
@@ -985,25 +1513,47 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       if (!ob.visible) continue
 
       if (isMusicRunning) {
-        const hitTime = ob.beatIndex * BEAT_INTERVAL
+        const hitTime = getObstacleHitTime(ob.beatIndex)
         const timeUntilHit = hitTime - musicTime
+        const desiredDistanceUntilHit = timeUntilHit >= 0
+          ? getPredictedTravelDistance(timeUntilHit, speed, targetSpeed)
+          : timeUntilHit * speed
+        const desiredHitScrollDistance = worldScrollDistance.current + desiredDistanceUntilHit
+
+        if (!Number.isFinite(ob.hitScrollDistance)) {
+          ob.hitScrollDistance = desiredHitScrollDistance
+        } else {
+          const correctionRate = timeUntilHit > 1.8
+            ? OBSTACLE_HIT_DISTANCE_CORRECTION_FAR
+            : timeUntilHit > 0.75
+              ? OBSTACLE_HIT_DISTANCE_CORRECTION_MID
+              : OBSTACLE_HIT_DISTANCE_CORRECTION_NEAR
+          // Keep obstacles scrolling with the world and only nudge their
+          // world-space hit anchor toward the beat schedule over time.
+          ob.hitScrollDistance = THREE.MathUtils.damp(
+            ob.hitScrollDistance,
+            desiredHitScrollDistance,
+            correctionRate,
+            gameDelta,
+          )
+        }
+
+        const distanceUntilHit = ob.hitScrollDistance - worldScrollDistance.current
         const targetZ = ob.isVertical
-          ? -timeUntilHit * speed - getGrindHalfLength(ob)
-          : -timeUntilHit * speed
-        const smoothedZ = ob.z + (targetZ - ob.z) * POSITION_SMOOTHING
-        // Keep logs moving forward only so speed boosts don't pull them backward.
-        ob.z = Math.max(ob.z, smoothedZ)
+          ? -distanceUntilHit - getGrindHalfLength(ob)
+          : -distanceUntilHit
+        ob.z = targetZ
         const hasClearedPlayer = ob.isVertical
           ? ob.z > getGrindExitZ(ob) + DESPAWN_BEHIND_SECONDS * speed
           : timeUntilHit < -DESPAWN_BEHIND_SECONDS
         if (hasClearedPlayer) {
-          ob.visible = false
+          deactivateObstacleSlot(ob)
         }
       }
 
       if (ob.z > 15) {
         // passed behind camera, deactivate
-        ob.visible = false
+        deactivateObstacleSlot(ob)
       }
 
       if (refs.current[i]) {
@@ -1027,7 +1577,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
           ob.isVertical ? railShadowOffsetZ : logShadowOffsetZ
         )
         shadowRefs.current[i].scale.set(
-          ob.isVertical ? GRIND_RAIL_WIDTH * railShadowScaleX : logScale * logShadowScaleX,
+          ob.isVertical ? GRIND_RAIL_LOG_DIAMETER * railShadowScaleX : logScale * logShadowScaleX,
           ob.isVertical ? (ob.railLength || GRIND_RAIL_LENGTH_MIN) * railShadowScaleZ : logScale * logShadowScaleZ,
           1
         )
@@ -1054,7 +1604,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         railRefs.current[i].position.y = railY
 
         if (railTopRefs.current[i]) {
-          railTopRefs.current[i].scale.set(GRIND_RAIL_WIDTH, GRIND_RAIL_HEIGHT, railLength)
+          railTopRefs.current[i].scale.set(GRIND_RAIL_LOG_DIAMETER, railLength, GRIND_RAIL_LOG_DIAMETER)
         }
         if (railFrontSupportRefs.current[i]) {
           railFrontSupportRefs.current[i].position.set(0, -supportHeight * 0.5, supportZ)
@@ -1086,7 +1636,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         signRefs.current[i].rotation.z = 0.08
       }
       if (timingMarkerRefs.current[i]) {
-        const hitTime = ob.beatIndex * BEAT_INTERVAL
+        const hitTime = getObstacleHitTime(ob.beatIndex)
         const timeUntilHit = hitTime - musicTime
         timingMarkerRefs.current[i].visible =
           isTimingDebug &&
@@ -1127,7 +1677,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       .map((ob) => ({
         id: ob.id,
         clusterId: ob.clusterId,
-        targetTime: ob.beatIndex * BEAT_INTERVAL,
+        targetTime: getObstacleHitTime(ob.beatIndex),
         x: ob.x || 0,
         isVertical: Boolean(ob.isVertical),
       }))
@@ -1244,12 +1794,12 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
             >
               <mesh
                 ref={(el) => (railTopRefs.current[i] = el)}
+                geometry={railLogGeometry}
+                material={railWoodMaterial}
+                rotation={[Math.PI / 2, 0, GRIND_RAIL_LOG_FACET_ROTATION]}
                 castShadow
                 receiveShadow
-              >
-                <boxGeometry args={[1, 1, 1]} />
-                <meshToonMaterial color={GRIND_RAIL_COLOR} />
-              </mesh>
+              />
               <group ref={(el) => (railFrontSupportRefs.current[i] = el)}>
                 <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />

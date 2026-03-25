@@ -1,0 +1,218 @@
+const START_SCHEDULE_LEAD_SECONDS = 0.02
+const MAX_LATENCY_COMPENSATION_SECONDS = 0.08
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+export function createBufferedMusicTransport(url) {
+  let context = null
+  let gainNode = null
+  let buffer = null
+  let loadPromise = null
+  let source = null
+  let paused = true
+  let playbackRate = 1
+  let volume = 1
+  let anchorMediaTime = 0
+  let anchorPerformanceTime = 0
+  let disposed = false
+
+  const getDuration = () => buffer?.duration || Infinity
+
+  const clampMediaTime = (value) => clamp(value, 0, getDuration())
+
+  const getLatencyEstimate = () => {
+    if (!context) return 0
+
+    if (typeof context.getOutputTimestamp === 'function') {
+      try {
+        const timestamp = context.getOutputTimestamp()
+        const timestampLatency = context.currentTime - timestamp?.contextTime
+        if (Number.isFinite(timestampLatency) && timestampLatency >= 0 && timestampLatency <= 0.5) {
+          return clamp(timestampLatency, 0, MAX_LATENCY_COMPENSATION_SECONDS)
+        }
+      } catch {
+        // Fall back to coarse latency estimates below.
+      }
+    }
+
+    return clamp(Math.max(0, (context.baseLatency || 0) + (context.outputLatency || 0)), 0, MAX_LATENCY_COMPENSATION_SECONDS)
+  }
+
+  const getNowSeconds = () => performance.now() / 1000
+
+  const getCurrentMediaTimeFromPerformanceAt = (performanceTime) => {
+    if (paused || !source) return clampMediaTime(anchorMediaTime)
+    return clampMediaTime(anchorMediaTime + Math.max(0, performanceTime - anchorPerformanceTime) * playbackRate)
+  }
+
+  const getCurrentMediaTime = () => {
+    if (paused || !source) return clampMediaTime(anchorMediaTime)
+    return clampMediaTime(getCurrentMediaTimeFromPerformanceAt(getNowSeconds()))
+  }
+
+  const stopSource = () => {
+    if (!source) return
+    const activeSource = source
+    source = null
+    activeSource.onended = null
+    try {
+      activeSource.stop()
+    } catch {
+      // Source may already be stopped.
+    }
+    activeSource.disconnect()
+  }
+
+  const createContext = async () => {
+    if (context) return context
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextCtor) {
+      throw new Error('Web Audio is not supported in this browser.')
+    }
+    context = new AudioContextCtor({ latencyHint: 'interactive' })
+    gainNode = context.createGain()
+    gainNode.gain.value = volume
+    gainNode.connect(context.destination)
+    return context
+  }
+
+  const ensureReady = async () => {
+    const audioContext = await createContext()
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume()
+    }
+
+    if (buffer) return buffer
+    if (!loadPromise) {
+      loadPromise = fetch(url)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to load music: ${response.status}`)
+          }
+          return response.arrayBuffer()
+        })
+        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer.slice(0)))
+        .then((decodedBuffer) => {
+          buffer = decodedBuffer
+          return decodedBuffer
+        })
+    }
+    return loadPromise
+  }
+
+  const startSourceAt = async (startMediaTime) => {
+    const decodedBuffer = await ensureReady()
+    stopSource()
+
+    const nextSource = context.createBufferSource()
+    nextSource.buffer = decodedBuffer
+    nextSource.playbackRate.value = playbackRate
+    nextSource.connect(gainNode)
+
+    const scheduledStartTime = context.currentTime + START_SCHEDULE_LEAD_SECONDS
+    const clampedStartMediaTime = clampMediaTime(startMediaTime)
+    const scheduledAudiblePerformanceTime = getNowSeconds() + START_SCHEDULE_LEAD_SECONDS + getLatencyEstimate()
+
+    anchorMediaTime = clampedStartMediaTime
+    anchorPerformanceTime = scheduledAudiblePerformanceTime
+    paused = false
+    source = nextSource
+
+    nextSource.onended = () => {
+      if (source !== nextSource) return
+      anchorMediaTime = clampMediaTime(getCurrentMediaTime())
+      anchorPerformanceTime = getNowSeconds()
+      paused = true
+      source = null
+    }
+
+    nextSource.start(scheduledStartTime, clampedStartMediaTime)
+  }
+
+  const transport = {
+    async preload() {
+      if (disposed) return null
+      return ensureReady()
+    },
+    async play() {
+      if (disposed) return
+      if (!paused) return
+      await startSourceAt(anchorMediaTime)
+    },
+    pause() {
+      if (disposed) return
+      anchorMediaTime = clampMediaTime(getCurrentMediaTime())
+      anchorPerformanceTime = getNowSeconds()
+      paused = true
+      stopSource()
+    },
+    dispose() {
+      disposed = true
+      paused = true
+      stopSource()
+      loadPromise = null
+      buffer = null
+      if (gainNode) {
+        gainNode.disconnect()
+        gainNode = null
+      }
+      if (context) {
+        const activeContext = context
+        context = null
+        activeContext.close().catch(() => { })
+      }
+    },
+  }
+
+  Object.defineProperties(transport, {
+    currentTime: {
+      get() {
+        return clampMediaTime(getCurrentMediaTime())
+      },
+      set(value) {
+        const nextTime = clampMediaTime(Number.isFinite(value) ? value : 0)
+        anchorMediaTime = nextTime
+        anchorPerformanceTime = getNowSeconds()
+        if (!paused) {
+          void startSourceAt(nextTime)
+        }
+      },
+    },
+    paused: {
+      get() {
+        return paused
+      },
+    },
+    playbackRate: {
+      get() {
+        return playbackRate
+      },
+      set(value) {
+        const nextRate = Math.max(0.01, Number(value) || 1)
+        if (nextRate === playbackRate) return
+        const currentMediaTime = clampMediaTime(getCurrentMediaTime())
+        playbackRate = nextRate
+        anchorMediaTime = currentMediaTime
+        anchorPerformanceTime = getNowSeconds()
+        if (!paused) {
+          void startSourceAt(currentMediaTime)
+        }
+      },
+    },
+    volume: {
+      get() {
+        return volume
+      },
+      set(value) {
+        volume = clamp(Number.isFinite(value) ? value : 1, 0, 1)
+        if (gainNode) {
+          gainNode.gain.value = volume
+        }
+      },
+    },
+  })
+
+  return transport
+}
