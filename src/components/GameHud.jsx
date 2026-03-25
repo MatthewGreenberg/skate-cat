@@ -259,7 +259,7 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
       )}
       {showTrick && (
         <div
-          key={trickKey}
+          key={`trick-${trickKey}`}
           onAnimationEnd={() => setShowTrick(false)}
           style={{
             position: 'fixed',
@@ -291,7 +291,7 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
       )}
       {showPlus && (
         <div
-          key={plusKey}
+          key={`plus-${plusKey}`}
           onAnimationEnd={() => setShowPlus(false)}
           style={{
             position: 'fixed',

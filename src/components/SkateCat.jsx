@@ -181,7 +181,23 @@ const DEATH_WALK_BOB_HEIGHT = 0.06
 const _grindSparkLocal = new THREE.Vector3()
 const _grindSparkWorld = new THREE.Vector3()
 
-export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasStartedGame = false, musicRef, onJumpTiming, onJumpSfx }) {
+function applyOriginalMaterials(root) {
+  root.traverse((child) => {
+    if (!child.isMesh || !child.userData.__originalMaterial) return
+    child.material = child.userData.__originalMaterial
+    if (child.userData.__outlineMesh) child.userData.__outlineMesh.visible = false
+  })
+}
+
+function applyToonMaterials(root) {
+  root.traverse((child) => {
+    if (!child.isMesh || !child.userData.__toonMaterial) return
+    child.material = child.userData.__toonMaterial
+    if (child.userData.__outlineMesh) child.userData.__outlineMesh.visible = true
+  })
+}
+
+export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasStartedGame = false, useOriginalMaterials = false, musicRef, onJumpTiming, onJumpSfx }) {
   const { catRotX, catRotY, catRotZ } = useControls('Cat', {
     catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
     catRotY: { value: 1.3, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -217,11 +233,11 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   const introControls = useControls('Cat Intro', {
     introX: { value: 0.70, min: -3, max: 3, step: 0.05 },
     introY: { value: 0.15, min: -1, max: 2, step: 0.05 },
-    introZ: { value: 0.50, min: -3, max: 3, step: 0.05 },
+    introZ: { value: 1.0, min: -3, max: 3, step: 0.05 },
     introRotX: { value: -0.1, min: -Math.PI, max: Math.PI, step: 0.05 },
     introRotY: { value: -1.5, min: -Math.PI, max: Math.PI, step: 0.05 },
     introRotZ: { value: 0.60, min: -Math.PI, max: Math.PI, step: 0.05 },
-    introScale: { value: 0.025, min: 0.01, max: 0.05, step: 0.001 },
+    introScale: { value: 0.04, min: 0.01, max: 0.05, step: 0.001 },
   })
 
   const boxControls = useControls('Intro Box', {
@@ -244,6 +260,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   const boxRef = useRef()
   const catModelRef = useRef()
   const paintedBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor_painted-2.jpg')
+  const originalBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor.jpeg')
   const paintedBodyMap = useMemo(() => {
     const map = paintedBodyMapSource.clone()
     map.flipY = false
@@ -253,13 +270,22 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     map.needsUpdate = true
     return map
   }, [paintedBodyMapSource])
+  const originalBodyMap = useMemo(() => {
+    const map = originalBodyMapSource.clone()
+    map.flipY = false
+    map.colorSpace = THREE.SRGBColorSpace
+    map.wrapS = THREE.RepeatWrapping
+    map.wrapT = THREE.RepeatWrapping
+    map.needsUpdate = true
+    return map
+  }, [originalBodyMapSource])
   const skateClone = useMemo(() => {
     const clone = skateboard.scene.clone()
     clone.traverse((child) => { if (child.isMesh) child.castShadow = true })
     return clone
   }, [skateboard])
 
-  // Apply toon shading to a clone of the cat model
+  // Apply toon shading to a clone of the cat model (preserve originals for intro)
   const catWithToon = useMemo(() => {
     const clone = catScene.clone(true)
 
@@ -280,42 +306,71 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
       if (map) { mat.uniforms.uMap.value = map; mat.uniforms.uHasMap.value = 1.0 }
       if (oldMat.transparent) { mat.transparent = true; mat.uniforms.uAlphaTest.value = 0.5; mat.depthWrite = false }
       if (oldMat.side === THREE.DoubleSide) mat.side = THREE.DoubleSide
-      child.material = mat
       child.castShadow = true
 
-      // Add outline mesh for non-transparent meshes
+      // Create flat (unlit) material for intro using original texture
+      const flatMat = new THREE.MeshBasicMaterial({
+        map: oldMat.name === 'dingus' ? originalBodyMap : oldMat.map,
+        color: oldMat.color,
+        transparent: !!oldMat.transparent,
+        alphaTest: oldMat.transparent ? 0.5 : 0,
+        side: oldMat.side,
+        depthWrite: !oldMat.transparent,
+      })
+
+      // Start with flat material (intro is first)
+      child.material = flatMat
+      child.userData.__originalMaterial = flatMat
+      child.userData.__toonMaterial = mat
+
+      // Add outline mesh for non-transparent meshes (hidden initially)
       if (!oldMat.transparent && child.geometry) {
         const outlineMat = createOutlineMaterial()
         const outlineMesh = new THREE.Mesh(child.geometry, outlineMat)
         outlineMesh.matrixAutoUpdate = false
         outlineMesh.userData.__toonOutline = true
+        outlineMesh.visible = false
         child.add(outlineMesh)
+        child.userData.__outlineMesh = outlineMesh
       }
     })
 
     return clone
-  }, [catScene, paintedBodyMap])
+  }, [catScene, paintedBodyMap, originalBodyMap])
 
-  // Apply toon shading to the box model
+  // Apply toon shading to the box model (preserve originals for intro)
   const boxWithToon = useMemo(() => {
     const clone = boxScene.clone(true)
     const meshes = []
     clone.traverse((child) => { if (child.isMesh) meshes.push(child) })
     for (const child of meshes) {
-      const oldMat = child.material
+      const oldMat = child.material.clone()
       const mat = createToonMaterial()
       if (oldMat.map) { mat.uniforms.uMap.value = oldMat.map; mat.uniforms.uHasMap.value = 1.0 }
       if (oldMat.transparent) { mat.transparent = true; mat.uniforms.uAlphaTest.value = 0.5; mat.depthWrite = false }
       if (oldMat.side === THREE.DoubleSide) mat.side = THREE.DoubleSide
-      child.material = mat
       child.castShadow = true
+
+      const flatMat = new THREE.MeshBasicMaterial({
+        map: oldMat.map,
+        color: oldMat.color,
+        transparent: !!oldMat.transparent,
+        alphaTest: oldMat.transparent ? 0.5 : 0,
+        side: oldMat.side,
+        depthWrite: !oldMat.transparent,
+      })
+      child.material = flatMat
+      child.userData.__originalMaterial = flatMat
+      child.userData.__toonMaterial = mat
 
       if (!oldMat.transparent && child.geometry) {
         const outlineMat = createOutlineMaterial()
         const outlineMesh = new THREE.Mesh(child.geometry, outlineMat)
         outlineMesh.matrixAutoUpdate = false
         outlineMesh.userData.__toonOutline = true
+        outlineMesh.visible = false
         child.add(outlineMesh)
+        child.userData.__outlineMesh = outlineMesh
       }
     }
     return clone
@@ -343,6 +398,13 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     toonMeshesRef.current = toonMeshes
     outlineMeshesRef.current = outlineMeshes
   }, [catWithToon, boxWithToon])
+
+  // Swap between original PBR materials (intro) and toon materials (game)
+  useEffect(() => {
+    const fn = useOriginalMaterials ? applyOriginalMaterials : applyToonMaterials
+    fn(catWithToon)
+    fn(boxWithToon)
+  }, [useOriginalMaterials, catWithToon, boxWithToon])
 
   const jumpState = useRef({
     active: false,
@@ -851,31 +913,34 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     const il = introLerp.current
     const mix = (intro, gameplay) => intro + (gameplay - intro) * il
 
-    // Update toon + blink uniforms on cached meshes (no traverse)
+    // Update toon + blink uniforms on cached meshes (skip when using original PBR materials)
     /* eslint-disable react-hooks/immutability */
-    for (const child of toonMeshesRef.current) {
-      const u = child.material.uniforms
-      u.uLightDirection.value.set(
-        mix(INTRO_TOON.lightX, toonControls.lightX),
-        mix(INTRO_TOON.lightY, toonControls.lightY),
-        mix(INTRO_TOON.lightZ, toonControls.lightZ),
-      )
-      u.uGlossiness.value = toonControls.glossiness
-      u.uRimAmount.value = mix(INTRO_TOON.rimAmount, toonControls.rimAmount)
-      u.uRimThreshold.value = toonControls.rimThreshold
-      u.uRimColor.value.set(toonControls.rimColor)
-      u.uSteps.value = toonControls.steps
-      u.uShadowBrightness.value = mix(INTRO_TOON.shadowBrightness, toonControls.shadowBrightness)
-      u.uBrightness.value = mix(INTRO_TOON.brightness, toonControls.brightness)
-      u.uLeftEyeCenter.value.set(blinkControls.leftEyeX, blinkControls.leftEyeY)
-      u.uRightEyeCenter.value.set(blinkControls.rightEyeX, blinkControls.rightEyeY)
-      u.uEyeRadius.value.set(blinkControls.eyeRadiusX, blinkControls.eyeRadiusY)
-      u.uLidColor.value.set(blinkControls.lidColor)
-      u.uBlinkAmount.value = s.amount
-    }
-    for (const child of outlineMeshesRef.current) {
-      child.material.uniforms.uThickness.value = mix(INTRO_TOON.outlineThickness, toonControls.outlineThickness)
-      child.material.uniforms.uOutlineColor.value.set(toonControls.outlineColor)
+    if (!useOriginalMaterials) {
+      for (const child of toonMeshesRef.current) {
+        const u = child.material.uniforms
+        if (!u) continue
+        u.uLightDirection.value.set(
+          mix(INTRO_TOON.lightX, toonControls.lightX),
+          mix(INTRO_TOON.lightY, toonControls.lightY),
+          mix(INTRO_TOON.lightZ, toonControls.lightZ),
+        )
+        u.uGlossiness.value = toonControls.glossiness
+        u.uRimAmount.value = mix(INTRO_TOON.rimAmount, toonControls.rimAmount)
+        u.uRimThreshold.value = toonControls.rimThreshold
+        u.uRimColor.value.set(toonControls.rimColor)
+        u.uSteps.value = toonControls.steps
+        u.uShadowBrightness.value = mix(INTRO_TOON.shadowBrightness, toonControls.shadowBrightness)
+        u.uBrightness.value = mix(INTRO_TOON.brightness, toonControls.brightness)
+        u.uLeftEyeCenter.value.set(blinkControls.leftEyeX, blinkControls.leftEyeY)
+        u.uRightEyeCenter.value.set(blinkControls.rightEyeX, blinkControls.rightEyeY)
+        u.uEyeRadius.value.set(blinkControls.eyeRadiusX, blinkControls.eyeRadiusY)
+        u.uLidColor.value.set(blinkControls.lidColor)
+        u.uBlinkAmount.value = s.amount
+      }
+      for (const child of outlineMeshesRef.current) {
+        child.material.uniforms.uThickness.value = mix(INTRO_TOON.outlineThickness, toonControls.outlineThickness)
+        child.material.uniforms.uOutlineColor.value.set(toonControls.outlineColor)
+      }
     }
     /* eslint-enable react-hooks/immutability */
   })
@@ -889,18 +954,16 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     if (intro.phase === 'idle') {
       setGrindSparkInactive()
       gameState.catHeight.current = introControls.introY
-      // Cat on ground, facing camera, no board
-      catRef.current.position.set(introControls.introX, introControls.introY, introControls.introZ)
-      catRef.current.rotation.set(0, introControls.introRotY, 0)
+      // Cat centered, spinning horizontally
+      catRef.current.position.set(0, 0.05, 0)
+      catRef.current.rotation.set(0, state.clock.elapsedTime * 0.8, 0)
+      catRef.current.scale.set(1, 1, 1)
       if (boardRef.current) boardRef.current.visible = false
-      if (boxRef.current) boxRef.current.visible = true
-      // Intro scale + rotation + breathing effect
+      if (boxRef.current) boxRef.current.visible = false
       if (catModelRef.current) {
         catModelRef.current.scale.setScalar(introControls.introScale)
-        catModelRef.current.rotation.set(introControls.introRotX, introControls.introRotY, introControls.introRotZ)
+        catModelRef.current.rotation.set(0, 0, 0)
       }
-      const breath = Math.sin(state.clock.elapsedTime * 1.8) * 0.03
-      catRef.current.scale.set(1, 1 + breath, 1)
       return
     }
     if (intro.phase === 'hopping') {

@@ -4,9 +4,9 @@ import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta } from '../store'
 
-// Tight intro camera (close-up on cat)
-const INTRO_CAM = { x: 1.0, y: 0.8, z: 1.2 }
-const INTRO_LOOK = { x: 0.5, y: 0.2, z: 0 }
+// Intro camera centered on cat at origin
+const INTRO_CAM = { x: 0, y: 0.6, z: 2.0 }
+const INTRO_LOOK = { x: 0, y: 0.3, z: 0 }
 const INTRO_LERP_SPEED = 2.5
 
 export default function CameraRig({ started = false }) {

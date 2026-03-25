@@ -51,7 +51,8 @@ const GRIND_EXIT_RECOVERY_PADDING = 1.15
 const GRIND_MAGNET_ENTRY_BACK_BUFFER = 0.55
 const GRIND_MAGNET_ENTRY_FRONT_BUFFER = 0.28
 const GRIND_MAGNET_HEIGHT_BUFFER = 0.16
-const GRIND_RAIL_LOG_DIAMETER = 0.2
+const GRIND_RAIL_LOG_WIDTH = 0.28
+const GRIND_RAIL_LOG_HEIGHT = 0.16
 const GRIND_RAIL_LOG_FACET_ROTATION = Math.PI / 8
 const GRIND_RAIL_SUPPORT_COLOR = '#7d5431'
 const GRIND_RAIL_FOOT_COLOR = '#4f321c'
@@ -1581,7 +1582,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
           ob.isVertical ? railShadowOffsetZ : logShadowOffsetZ
         )
         shadowRefs.current[i].scale.set(
-          ob.isVertical ? GRIND_RAIL_LOG_DIAMETER * railShadowScaleX : logScale * logShadowScaleX,
+          ob.isVertical ? GRIND_RAIL_LOG_WIDTH * railShadowScaleX : logScale * logShadowScaleX,
           ob.isVertical ? (ob.railLength || GRIND_RAIL_LENGTH_MIN) * railShadowScaleZ : logScale * logShadowScaleZ,
           1
         )
@@ -1608,7 +1609,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
         railRefs.current[i].position.y = railY
 
         if (railTopRefs.current[i]) {
-          railTopRefs.current[i].scale.set(GRIND_RAIL_LOG_DIAMETER, GRIND_RAIL_LOG_DIAMETER, railLength)
+          railTopRefs.current[i].scale.set(GRIND_RAIL_LOG_WIDTH, GRIND_RAIL_LOG_HEIGHT, railLength)
         }
         if (railFrontSupportRefs.current[i]) {
           railFrontSupportRefs.current[i].position.set(0, -supportHeight * 0.5, supportZ)
@@ -1781,6 +1782,7 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
                 transparent
                 opacity={logShadowOpacity}
                 blending={THREE.MultiplyBlending}
+                premultipliedAlpha
                 toneMapped={false}
                 depthWrite={false}
                 depthTest={false}

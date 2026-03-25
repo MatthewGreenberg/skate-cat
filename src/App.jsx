@@ -15,6 +15,8 @@ import Background from './components/Background'
 import Sky from './components/Sky'
 import IntroRainbow from './components/IntroRainbow'
 import GameHud from './components/GameHud'
+import TransitionEffect from './components/TransitionEffect'
+import SceneCapture from './components/SceneCapture'
 import { EffectComposer, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
 import { BloomEffect } from 'postprocessing'
 import { useControls } from 'leva'
@@ -129,7 +131,7 @@ function DayNightController({ isRunning }) {
   )
 }
 
-function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightness, contrast, hue, saturation }) {
+function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightness, contrast, hue, saturation, snapshotTexture, transitionProgressRef, isTransitioning }) {
   const bloom = useMemo(() => new BloomEffect({
     intensity: bloomIntensity,
     luminanceThreshold: bloomThreshold,
@@ -143,6 +145,11 @@ function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightnes
   }, [bloom, bloomThreshold, bloomSmoothing])
 
   useFrame(() => {
+    // Suppress bloom during early transition so the snapshot renders cleanly
+    if (isTransitioning && transitionProgressRef.current < 0.15) {
+      bloom.intensity = 0
+      return
+    }
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
     bloom.intensity = THREE.MathUtils.lerp(bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
     bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(bloomThreshold, 0, nightFactor)
@@ -151,10 +158,26 @@ function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightnes
   return (
     <EffectComposer multisampling={0}>
       <primitive object={bloom} />
+      {isTransitioning && snapshotTexture && (
+        <TransitionEffect snapshotTexture={snapshotTexture} progressRef={transitionProgressRef} />
+      )}
       <BrightnessContrast brightness={brightness} contrast={contrast} />
       <HueSaturation hue={hue} saturation={saturation} />
     </EffectComposer>
   )
+}
+
+const TRANSITION_DURATION = 1.2
+
+function TransitionAnimator({ progressRef, isTransitioning, onComplete }) {
+  useFrame((_, delta) => {
+    if (!isTransitioning) return
+    progressRef.current = Math.min(progressRef.current + delta / TRANSITION_DURATION, 1)
+    if (progressRef.current >= 1) {
+      onComplete()
+    }
+  })
+  return null
 }
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
@@ -484,6 +507,13 @@ export default function App() {
   const [countdownText, setCountdownText] = useState('')
   const [countdownAnimationKey, setCountdownAnimationKey] = useState(0)
   const [volume, setVolume] = useState(0.5)
+  // Intro-to-toon transition state
+  const [useOriginalMaterials, setUseOriginalMaterials] = useState(true)
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const transitionProgressRef = useRef(0)
+  const shouldCaptureRef = useRef(false)
+  const snapshotRT = useMemo(() => new THREE.WebGLRenderTarget(1920, 1080), [])
+  const pendingStartRef = useRef(null)
   const { active: isLoadingAssets, progress: loadingProgress } = useProgress()
 
   const handleVolumePointerDone = useCallback((event) => {
@@ -621,7 +651,7 @@ export default function App() {
     }
   }, [])
 
-  const handleStart = useCallback(() => {
+  const finishStart = useCallback(() => {
     gameState.gameOver = false
     gameState.score = 0
     gameState.speed.current = 8
@@ -647,6 +677,39 @@ export default function App() {
     setTimingFeedback({ label: '', id: 0 })
     startMusicPlayback()
   }, [startMusicPlayback])
+
+  const handleStart = useCallback(() => {
+    // Capture the current frame (original materials) then transition to toon
+    shouldCaptureRef.current = true
+    pendingStartRef.current = finishStart
+  }, [finishStart])
+
+  const handleSceneCaptured = useCallback(() => {
+    // Start the dissolve transition first (progress=0 shows snapshot fully)
+    transitionProgressRef.current = 0
+    setIsTransitioning(true)
+    // Delay material swap by 2 frames so PostEffects/TransitionEffect are mounted
+    // and the snapshot is being rendered before we swap materials underneath
+    let framesWaited = 0
+    const waitForMount = () => {
+      framesWaited++
+      if (framesWaited < 3) {
+        requestAnimationFrame(waitForMount)
+        return
+      }
+      setUseOriginalMaterials(false)
+      // Now actually start the game
+      if (pendingStartRef.current) {
+        pendingStartRef.current()
+        pendingStartRef.current = null
+      }
+    }
+    requestAnimationFrame(waitForMount)
+  }, [])
+
+  const handleTransitionComplete = useCallback(() => {
+    setIsTransitioning(false)
+  }, [])
 
   const handleRestart = useCallback(() => {
     gameState.gameOver = false
@@ -842,7 +905,8 @@ export default function App() {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
+            paddingTop: '6vh',
             pointerEvents: 'none',
             zIndex: 999,
             fontFamily: 'Knewave',
@@ -900,8 +964,12 @@ export default function App() {
               Start Run
             </button>
             <div style={{
-              marginTop: '1.5rem',
+              position: 'fixed',
+              bottom: '4vh',
+              left: 0,
+              right: 0,
               display: 'flex',
+              justifyContent: 'center',
               alignItems: 'center',
               gap: '0.5rem',
               fontSize: '0.75rem',
@@ -1037,42 +1105,74 @@ export default function App() {
         gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
         shadows={{ type: THREE.PCFShadowMap }}
       >
-        <fog attach="fog" args={['#c4d4b8', 55, 130]} />
+        {hasStartedGame && <fog attach="fog" args={['#c4d4b8', 55, 130]} />}
 
         <CameraRig started={hasStartedGame} />
-        <DayNightController isRunning={hasStartedGame && !isGameOver} />
+        {hasStartedGame && <DayNightController isRunning={!isGameOver} />}
 
-        <Ground />
-        <Background />
-        <Sky />
-        <IntroRainbow visible={!hasStartedGame} />
+        {hasStartedGame && <Ground />}
+        {hasStartedGame && <Background />}
+        {hasStartedGame && <Sky />}
+        {!hasStartedGame && (
+          <>
+            <color attach="background" args={['#a8d8ea']} />
+            <ambientLight intensity={0.5} color="#f2f7ff" />
+            <directionalLight position={[3, 8, 5]} intensity={1.8} color="#ffe6bf" />
+            <hemisphereLight args={['#b7dbff', '#78a24f', 0.6]} />
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+              <planeGeometry args={[50, 50]} />
+              <meshBasicMaterial color="#8B6914" />
+            </mesh>
+          </>
+        )}
+        {hasStartedGame && <color attach="background" args={['#000000']} />}
         <SkateCat
           trailTargetRef={trailTarget}
           controlsEnabled={hasStartedGame && !isGameOver && !isCountdownActive}
           hasStartedGame={hasStartedGame}
+          useOriginalMaterials={useOriginalMaterials}
           musicRef={musicRef}
           onJumpTiming={handleJumpTiming}
           onJumpSfx={playJumpSfx}
         />
-        <Obstacles
-          musicRef={musicRef}
-          isRunning={hasStartedGame && !isGameOver}
-          canCollide={!isCountdownActive}
-          onLogHit={playDieSfx}
+        {hasStartedGame && (
+          <>
+            <Obstacles
+              musicRef={musicRef}
+              isRunning={!isGameOver}
+              canCollide={!isCountdownActive}
+              onLogHit={playDieSfx}
+            />
+            <SpeedLines />
+            <KickflipSparks />
+            <DustTrail />
+            <AmbientParticles />
+          </>
+        )}
+        <SceneCapture
+          shouldCapture={shouldCaptureRef}
+          renderTarget={snapshotRT}
+          onCaptured={handleSceneCaptured}
         />
-        <SpeedLines />
-        <KickflipSparks />
-        <DustTrail />
-        <AmbientParticles />
-        <PostEffects
-          bloomIntensity={bloomIntensity}
-          bloomThreshold={bloomThreshold}
-          bloomSmoothing={bloomSmoothing}
-          brightness={brightness}
-          contrast={contrast}
-          hue={hue}
-          saturation={saturation}
+        <TransitionAnimator
+          progressRef={transitionProgressRef}
+          isTransitioning={isTransitioning}
+          onComplete={handleTransitionComplete}
         />
+        {(hasStartedGame || isTransitioning) && (
+          <PostEffects
+            bloomIntensity={bloomIntensity}
+            bloomThreshold={bloomThreshold}
+            bloomSmoothing={bloomSmoothing}
+            brightness={brightness}
+            contrast={contrast}
+            hue={hue}
+            saturation={saturation}
+            snapshotTexture={snapshotRT.texture}
+            transitionProgressRef={transitionProgressRef}
+            isTransitioning={isTransitioning}
+          />
+        )}
       </Canvas>
     </>
   )
