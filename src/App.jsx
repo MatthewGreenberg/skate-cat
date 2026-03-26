@@ -13,13 +13,12 @@ import DustTrail from './components/DustTrail'
 import AmbientParticles from './components/AmbientParticles'
 import Background from './components/Background'
 import Sky from './components/Sky'
-import IntroRainbow from './components/IntroRainbow'
+import IntroScene from './components/IntroScene'
 import GameHud from './components/GameHud'
 import TransitionEffect from './components/TransitionEffect'
-import SceneCapture from './components/SceneCapture'
-import { EffectComposer, BrightnessContrast, HueSaturation } from '@react-three/postprocessing'
-import { BloomEffect } from 'postprocessing'
-import { useControls } from 'leva'
+import { EffectComposer } from '@react-three/postprocessing'
+import { BloomEffect, BrightnessContrastEffect, HueSaturationEffect, Pass, CopyMaterial } from 'postprocessing'
+import { button, useControls } from 'leva'
 import { createBufferedMusicTransport } from './audioTransport'
 import {
   gameState,
@@ -47,12 +46,139 @@ import {
   TRACK_BEAT_PHASE_OFFSET_SECONDS,
 } from './rhythm'
 
-// Reusable temp color for DayNightController
-const _tmpColor = new THREE.Color()
 const NIGHT_BLOOM_INTENSITY = 4.3
+const POST_CONTROL_LIMITS = {
+  bloomIntensity: { min: 0, max: 10, step: 0.1 },
+  bloomThreshold: { min: 0, max: 1, step: 0.05 },
+  bloomSmoothing: { min: 0, max: 1, step: 0.05 },
+  brightness: { min: -0.3, max: 0.3, step: 0.01 },
+  contrast: { min: -0.5, max: 0.5, step: 0.01 },
+  hue: { min: -Math.PI, max: Math.PI, step: 0.01 },
+  saturation: { min: -1, max: 1, step: 0.01 },
+}
+const DEFAULT_GAME_POST_SETTINGS = {
+  bloomIntensity: 2.1,
+  bloomThreshold: 0.35,
+  bloomSmoothing: 0.1,
+  brightness: 0.0,
+  contrast: 0.1,
+  hue: 0,
+  saturation: 0.15,
+}
+const DEFAULT_INTRO_POST_SETTINGS = {
+  bloomIntensity: 0.5,
+  bloomThreshold: 0,
+  bloomSmoothing: 0.15,
+  brightness: 0.0,
+  contrast: 0,
+  hue: 0,
+  saturation: 0,
+}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
+}
+
+function createPostProcessingControls(defaults) {
+  return {
+    bloomIntensity: { value: defaults.bloomIntensity, ...POST_CONTROL_LIMITS.bloomIntensity },
+    bloomThreshold: { value: defaults.bloomThreshold, ...POST_CONTROL_LIMITS.bloomThreshold },
+    bloomSmoothing: { value: defaults.bloomSmoothing, ...POST_CONTROL_LIMITS.bloomSmoothing },
+    brightness: { value: defaults.brightness, ...POST_CONTROL_LIMITS.brightness },
+    contrast: { value: defaults.contrast, ...POST_CONTROL_LIMITS.contrast },
+    hue: { value: defaults.hue, ...POST_CONTROL_LIMITS.hue },
+    saturation: { value: defaults.saturation, ...POST_CONTROL_LIMITS.saturation },
+  }
+}
+
+function interpolatePostSettings(from, to, alpha) {
+  return {
+    bloomIntensity: THREE.MathUtils.lerp(from.bloomIntensity, to.bloomIntensity, alpha),
+    bloomThreshold: THREE.MathUtils.lerp(from.bloomThreshold, to.bloomThreshold, alpha),
+    bloomSmoothing: THREE.MathUtils.lerp(from.bloomSmoothing, to.bloomSmoothing, alpha),
+    brightness: THREE.MathUtils.lerp(from.brightness, to.brightness, alpha),
+    contrast: THREE.MathUtils.lerp(from.contrast, to.contrast, alpha),
+    hue: THREE.MathUtils.lerp(from.hue, to.hue, alpha),
+    saturation: THREE.MathUtils.lerp(from.saturation, to.saturation, alpha),
+  }
+}
+
+const _snapshotSize = new THREE.Vector2()
+
+class SnapshotCapturePass extends Pass {
+  constructor() {
+    super('SnapshotCapturePass')
+    this.needsSwap = false
+    this.fullscreenMaterial = new CopyMaterial()
+    this.shouldCaptureRef = null
+    this.snapshotTextureRef = null
+    this.onCaptured = null
+    this.snapshotRenderTarget = null
+  }
+
+  ensureRenderTarget(renderer) {
+    renderer.getDrawingBufferSize(_snapshotSize)
+    const width = Math.max(1, Math.floor(_snapshotSize.x))
+    const height = Math.max(1, Math.floor(_snapshotSize.y))
+
+    if (this.snapshotRenderTarget && this.snapshotRenderTarget.width === width && this.snapshotRenderTarget.height === height) {
+      return this.snapshotRenderTarget
+    }
+
+    this.snapshotRenderTarget?.dispose()
+    this.snapshotRenderTarget = new THREE.WebGLRenderTarget(width, height, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+    })
+    this.snapshotRenderTarget.texture.colorSpace = THREE.SRGBColorSpace
+    this.snapshotRenderTarget.texture.generateMipmaps = false
+
+    return this.snapshotRenderTarget
+  }
+
+  render(renderer, inputBuffer, outputBuffer) {
+    this.fullscreenMaterial.inputBuffer = inputBuffer.texture
+
+    if (this.shouldCaptureRef?.current) {
+      const renderTarget = this.ensureRenderTarget(renderer)
+      renderer.setRenderTarget(renderTarget)
+      renderer.render(this.scene, this.camera)
+      this.snapshotTextureRef.current = renderTarget.texture
+      this.shouldCaptureRef.current = false
+      this.onCaptured?.()
+    }
+
+    renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer)
+    renderer.render(this.scene, this.camera)
+  }
+
+  dispose() {
+    if (this.snapshotTextureRef) {
+      this.snapshotTextureRef.current = null
+    }
+    super.dispose()
+  }
+}
+
+function SnapshotCapture({ shouldCaptureRef, snapshotTextureRef, onCaptured }) {
+  const pass = useMemo(() => new SnapshotCapturePass(), [])
+
+  useEffect(() => {
+    pass.shouldCaptureRef = shouldCaptureRef
+    pass.snapshotTextureRef = snapshotTextureRef
+    pass.onCaptured = onCaptured
+
+    return () => {
+      pass.shouldCaptureRef = null
+      pass.snapshotTextureRef = null
+      pass.onCaptured = null
+      snapshotTextureRef.current = null
+    }
+  }, [onCaptured, pass, shouldCaptureRef, snapshotTextureRef])
+
+  return <primitive object={pass} />
 }
 
 
@@ -131,48 +257,88 @@ function DayNightController({ isRunning }) {
   )
 }
 
-function PostEffects({ bloomIntensity, bloomThreshold, bloomSmoothing, brightness, contrast, hue, saturation, snapshotTexture, transitionProgressRef, isTransitioning }) {
+function PostEffects({
+  introSettings,
+  gameSettings,
+  snapshotTexture,
+  transitionSettings,
+  transitionProgressRef,
+  isTransitioning,
+  hasStartedGame,
+  shouldCaptureRef,
+  snapshotTextureRef,
+  onCaptured,
+}) {
   const bloom = useMemo(() => new BloomEffect({
-    intensity: bloomIntensity,
-    luminanceThreshold: bloomThreshold,
-    luminanceSmoothing: bloomSmoothing,
+    intensity: introSettings.bloomIntensity,
+    luminanceThreshold: introSettings.bloomThreshold,
+    luminanceSmoothing: introSettings.bloomSmoothing,
     mipmapBlur: true,
-  }), [])
+  }), [introSettings.bloomIntensity, introSettings.bloomSmoothing, introSettings.bloomThreshold])
+  const brightnessContrast = useMemo(() => new BrightnessContrastEffect({
+    brightness: introSettings.brightness,
+    contrast: introSettings.contrast,
+  }), [introSettings.brightness, introSettings.contrast])
+  const hueSaturation = useMemo(() => new HueSaturationEffect({
+    hue: introSettings.hue,
+    saturation: introSettings.saturation,
+  }), [introSettings.hue, introSettings.saturation])
 
-  useEffect(() => {
-    bloom.luminanceMaterial.threshold = bloomThreshold
-    bloom.luminanceMaterial.smoothing = bloomSmoothing
-  }, [bloom, bloomThreshold, bloomSmoothing])
+  useEffect(() => () => {
+    bloom.dispose()
+    brightnessContrast.dispose()
+    hueSaturation.dispose()
+  }, [bloom, brightnessContrast, hueSaturation])
 
   useFrame(() => {
+    const transitionMix = isTransitioning
+      ? THREE.MathUtils.smootherstep(transitionProgressRef.current, 0, 1)
+      : hasStartedGame ? 1 : 0
+    const activeSettings = interpolatePostSettings(introSettings, gameSettings, transitionMix)
+
+    brightnessContrast.brightness = activeSettings.brightness
+    brightnessContrast.contrast = activeSettings.contrast
+    hueSaturation.hue = activeSettings.hue
+    hueSaturation.saturation = activeSettings.saturation
+    bloom.luminanceMaterial.threshold = activeSettings.bloomThreshold
+    bloom.luminanceMaterial.smoothing = activeSettings.bloomSmoothing
+
     // Suppress bloom during early transition so the snapshot renders cleanly
-    if (isTransitioning && transitionProgressRef.current < 0.15) {
+    if (isTransitioning && snapshotTexture && transitionProgressRef.current < 0.15) {
       bloom.intensity = 0
       return
     }
-    const nightFactor = getNightFactor(gameState.timeOfDay.current)
-    bloom.intensity = THREE.MathUtils.lerp(bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
-    bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(bloomThreshold, 0, nightFactor)
+
+    const nightFactor = hasStartedGame ? getNightFactor(gameState.timeOfDay.current) : 0
+    bloom.intensity = THREE.MathUtils.lerp(activeSettings.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
+    bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(activeSettings.bloomThreshold, 0, nightFactor)
   })
 
   return (
     <EffectComposer multisampling={0}>
       <primitive object={bloom} />
       {isTransitioning && snapshotTexture && (
-        <TransitionEffect snapshotTexture={snapshotTexture} progressRef={transitionProgressRef} />
+        <TransitionEffect
+          snapshotTexture={snapshotTexture}
+          progressRef={transitionProgressRef}
+          settings={transitionSettings}
+        />
       )}
-      <BrightnessContrast brightness={brightness} contrast={contrast} />
-      <HueSaturation hue={hue} saturation={saturation} />
+      <primitive object={brightnessContrast} />
+      <primitive object={hueSaturation} />
+      <SnapshotCapture
+        shouldCaptureRef={shouldCaptureRef}
+        snapshotTextureRef={snapshotTextureRef}
+        onCaptured={onCaptured}
+      />
     </EffectComposer>
   )
 }
 
-const TRANSITION_DURATION = 1.2
-
-function TransitionAnimator({ progressRef, isTransitioning, onComplete }) {
+function TransitionAnimator({ progressRef, isTransitioning, duration, onComplete }) {
   useFrame((_, delta) => {
     if (!isTransitioning) return
-    progressRef.current = Math.min(progressRef.current + delta / TRANSITION_DURATION, 1)
+    progressRef.current = Math.min(progressRef.current + delta / Math.max(duration, 0.001), 1)
     if (progressRef.current >= 1) {
       onComplete()
     }
@@ -510,9 +676,10 @@ export default function App() {
   // Intro-to-toon transition state
   const [useOriginalMaterials, setUseOriginalMaterials] = useState(true)
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [snapshotTexture, setSnapshotTexture] = useState(null)
   const transitionProgressRef = useRef(0)
   const shouldCaptureRef = useRef(false)
-  const snapshotRT = useMemo(() => new THREE.WebGLRenderTarget(1920, 1080), [])
+  const snapshotTextureRef = useRef(null)
   const pendingStartRef = useRef(null)
   const { active: isLoadingAssets, progress: loadingProgress } = useProgress()
 
@@ -520,17 +687,60 @@ export default function App() {
     event.currentTarget.blur()
   }, [])
 
-  const {
-    bloomIntensity, bloomThreshold, bloomSmoothing,
-    brightness, contrast, hue, saturation,
-  } = useControls('Post Processing', {
-    bloomIntensity: { value: 2.1, min: 0, max: 10, step: 0.1 },
-    bloomThreshold: { value: 0.35, min: 0, max: 1, step: 0.05 },
-    bloomSmoothing: { value: 0.1, min: 0, max: 1, step: 0.05 },
-    brightness: { value: 0.0, min: -0.3, max: 0.3, step: 0.01 },
-    contrast: { value: 0.1, min: -0.5, max: 0.5, step: 0.01 },
-    hue: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
-    saturation: { value: 0.15, min: -1, max: 1, step: 0.01 },
+  const handleReturnToIntro = useCallback(() => {
+    hasStartedMusicRef.current = false
+    if (musicRef.current) {
+      musicRef.current.pause()
+      musicRef.current.currentTime = 0
+    }
+
+    gameState.gameOver = false
+    gameState.speed.current = 0
+    gameState.jumping = false
+    gameState.pendingJumpTiming.current = null
+    gameState.obstacleTargets.current = []
+    gameState.upArrowHeld.current = false
+    gameState.activeGrind.current = createIdleGrindState()
+    gameState.grindSpark.current = createIdleGrindSparkState()
+    gameState.screenShake.current = 0
+    gameState.comboEnergy.current = 1
+    gameState.timeOfDay.current = 0
+    gameState.runDifficultyProgress.current = 0
+
+    transitionProgressRef.current = 0
+    shouldCaptureRef.current = false
+    snapshotTextureRef.current = null
+    pendingStartRef.current = null
+
+    setHasStartedGame(false)
+    setIsGameOver(false)
+    setHasConfirmedMusicStart(false)
+    setIsCountdownActive(false)
+    setCountdownText('')
+    setUseOriginalMaterials(true)
+    setIsTransitioning(false)
+    setSnapshotTexture(null)
+    setTimingFeedback({ label: '', id: 0 })
+  }, [])
+
+  const introPost = useControls('Intro Post Processing', createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS))
+  const gamePost = useControls('Post Processing', createPostProcessingControls(DEFAULT_GAME_POST_SETTINGS))
+  const transitionSettings = useControls('Intro Transition', {
+    duration: { value: 0.95, min: 0.3, max: 4.5, step: 0.05, label: 'Duration' },
+    revealCurve: { value: 0.75, min: 0.2, max: 2.2, step: 0.01, label: 'Curve' },
+    thresholdStart: { value: 0.07, min: -0.3, max: 0.3, step: 0.01, label: 'Start' },
+    thresholdEnd: { value: 0.77, min: 0.2, max: 1.2, step: 0.01, label: 'End' },
+    bandBefore: { value: 0.06, min: 0.005, max: 0.2, step: 0.005, label: 'Edge In' },
+    bandAfter: { value: 0.07, min: 0.005, max: 0.2, step: 0.005, label: 'Edge Out' },
+    glowInnerOffset: { value: 0.08, min: 0, max: 0.08, step: 0.005, label: 'Glow In' },
+    glowOuterOffset: { value: 0.25, min: 0.01, max: 0.25, step: 0.005, label: 'Glow Out' },
+    glowIntensity: { value: 0.65, min: 0, max: 2, step: 0.05, label: 'Glow' },
+    glowColor: { value: '#3dd5e8', label: 'Color' },
+    noiseScaleA: { value: 8.5, min: 1, max: 24, step: 0.5, label: 'Noise A' },
+    noiseScaleB: { value: 8.0, min: 1, max: 32, step: 0.5, label: 'Noise B' },
+    noiseAmpA: { value: 0.0, min: 0, max: 0.6, step: 0.01, label: 'Noise Amt A' },
+    noiseAmpB: { value: 0.18, min: 0, max: 0.4, step: 0.01, label: 'Noise Amt B' },
+    replay: button(() => handleReturnToIntro()),
   })
   const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useControls('Timing Debug', {
     timingOffsetMs: { value: 0, min: -300, max: 180, step: 1 },
@@ -554,6 +764,19 @@ export default function App() {
       music.dispose()
     }
   }, [])
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.repeat) return
+      if (!event.shiftKey || event.key.toLowerCase() !== 'r') return
+      if (!hasStartedGame && !isTransitioning) return
+      event.preventDefault()
+      handleReturnToIntro()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleReturnToIntro, hasStartedGame, isTransitioning])
 
   useEffect(() => {
     gameState.onGameOver = () => setIsGameOver(true)
@@ -679,36 +902,27 @@ export default function App() {
   }, [startMusicPlayback])
 
   const handleStart = useCallback(() => {
-    // Capture the current frame (original materials) then transition to toon
+    transitionProgressRef.current = 0
+    setSnapshotTexture(null)
+    snapshotTextureRef.current = null
+    setIsTransitioning(true)
     shouldCaptureRef.current = true
     pendingStartRef.current = finishStart
   }, [finishStart])
 
   const handleSceneCaptured = useCallback(() => {
-    // Start the dissolve transition first (progress=0 shows snapshot fully)
     transitionProgressRef.current = 0
-    setIsTransitioning(true)
-    // Delay material swap by 2 frames so PostEffects/TransitionEffect are mounted
-    // and the snapshot is being rendered before we swap materials underneath
-    let framesWaited = 0
-    const waitForMount = () => {
-      framesWaited++
-      if (framesWaited < 3) {
-        requestAnimationFrame(waitForMount)
-        return
-      }
-      setUseOriginalMaterials(false)
-      // Now actually start the game
-      if (pendingStartRef.current) {
-        pendingStartRef.current()
-        pendingStartRef.current = null
-      }
+    setSnapshotTexture(snapshotTextureRef.current)
+    setUseOriginalMaterials(false)
+    if (pendingStartRef.current) {
+      pendingStartRef.current()
+      pendingStartRef.current = null
     }
-    requestAnimationFrame(waitForMount)
   }, [])
 
   const handleTransitionComplete = useCallback(() => {
     setIsTransitioning(false)
+    setSnapshotTexture(null)
   }, [])
 
   const handleRestart = useCallback(() => {
@@ -851,169 +1065,6 @@ export default function App() {
       <audio ref={jumpSfxRef} src="/jump.wav" preload="auto" />
       <audio ref={jump2SfxRef} src="/jump2.wav" preload="auto" />
       <audio ref={dieSfxRef} src="/die.wav" preload="auto" />
-      {!hasStartedGame && !isLoadingAssets && loadingProgress >= 100 && (
-        <>
-          <style>
-            {`@keyframes introTitleDrop {
-              0% { transform: translateY(-60px) rotate(-6deg) scale(0.7); opacity: 0; }
-              50% { transform: translateY(8px) rotate(-2.5deg) scale(1.05); opacity: 1; }
-              70% { transform: translateY(-3px) rotate(-3deg) scale(0.98); }
-              100% { transform: translateY(0) rotate(-3deg) scale(1); opacity: 1; }
-            }
-            @keyframes introSubSpring {
-              0% { transform: translateY(18px); opacity: 0; }
-              60% { transform: translateY(-2px); opacity: 1; }
-              100% { transform: translateY(0); opacity: 1; }
-            }
-            @keyframes introBtnPop {
-              0% { transform: scale(0); opacity: 0; }
-              60% { transform: scale(1.12); opacity: 1; }
-              100% { transform: scale(1); opacity: 1; }
-            }
-            @keyframes introBtnGlow {
-              0%, 100% { box-shadow: 0 6px 20px rgba(255, 107, 53, 0.5), 0 0 0 0 rgba(255, 107, 53, 0); }
-              50% { box-shadow: 0 8px 30px rgba(255, 107, 53, 0.7), 0 0 0 6px rgba(255, 107, 53, 0.12); }
-            }
-            @keyframes introHintFade {
-              0%, 100% { opacity: 0.4; }
-              50% { opacity: 0.8; }
-            }
-            .intro-start-btn {
-              transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1), background 0.18s ease;
-            }
-            .intro-start-btn:hover {
-              background: linear-gradient(135deg, #FF8F5C, #FF5722);
-              transform: scale(1.08);
-            }
-            .intro-start-btn:active {
-              transform: scale(0.96);
-            }
-            .intro-start-btn:focus-visible {
-              outline: 3px solid rgba(255, 255, 255, 0.8);
-              outline-offset: 3px;
-            }
-            @media (prefers-reduced-motion: reduce) {
-              .intro-start-btn,
-              .intro-start-btn:hover,
-              .intro-start-btn:active { transition: none; transform: none; }
-              * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
-            }`}
-          </style>
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            paddingTop: '6vh',
-            pointerEvents: 'none',
-            zIndex: 999,
-            fontFamily: 'Knewave',
-            color: 'white',
-          }}>
-            <h1 style={{
-              margin: 0,
-              fontSize: 'clamp(3.5rem, 10vw, 7.5rem)',
-              lineHeight: 1,
-              letterSpacing: '0.04em',
-              transform: 'rotate(-3deg)',
-              textShadow: `
-                3px 3px 0 #FF6B35,
-                6px 6px 0 rgba(255, 107, 53, 0.4),
-                0 0 40px rgba(255, 107, 53, 0.3),
-                0 0 80px rgba(255, 175, 72, 0.15)
-              `,
-              animation: 'introTitleDrop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both',
-              pointerEvents: 'none',
-            }}>
-              Skate Cat
-            </h1>
-            <div style={{
-              marginTop: '0.4rem',
-              fontSize: 'clamp(0.9rem, 2.5vw, 1.3rem)',
-              letterSpacing: '0.25em',
-              textTransform: 'uppercase',
-              opacity: 0,
-              color: 'rgba(255, 255, 255, 0.75)',
-              textShadow: '0 2px 10px rgba(0, 0, 0, 0.4)',
-              animation: 'introSubSpring 0.55s cubic-bezier(0.33, 1, 0.68, 1) 0.4s both',
-              pointerEvents: 'none',
-            }}>
-              Kick &#x2022; Flip &#x2022; Repeat
-            </div>
-            <button
-              className="intro-start-btn"
-              onClick={handleStart}
-              style={{
-                marginTop: '2rem',
-                padding: '1rem 3rem',
-                fontSize: 'clamp(1rem, 2.5vw, 1.3rem)',
-                fontFamily: 'Knewave',
-                letterSpacing: '0.08em',
-                background: 'linear-gradient(135deg, #FF6B35, #FF8F5C)',
-                color: 'white',
-                border: '3px solid rgba(255, 255, 255, 0.35)',
-                borderRadius: '60px',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-                boxShadow: '0 6px 20px rgba(255, 107, 53, 0.5)',
-                animation: 'introBtnPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.6s both, introBtnGlow 3s ease-in-out 1.5s infinite',
-              }}
-            >
-              Start Run
-            </button>
-            <div style={{
-              position: 'fixed',
-              bottom: '4vh',
-              left: 0,
-              right: 0,
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: '0.75rem',
-              fontFamily: 'Nunito, sans-serif',
-              fontWeight: 800,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'rgba(255, 255, 255, 0.45)',
-              textShadow: '0 1px 6px rgba(0, 0, 0, 0.3)',
-              animation: 'introHintFade 3s ease-in-out 1.2s infinite both',
-              pointerEvents: 'none',
-            }}>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '1.6rem',
-                height: '1.6rem',
-                borderRadius: '5px',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                background: 'rgba(255, 255, 255, 0.08)',
-                fontSize: '0.85rem',
-                fontFamily: 'Knewave',
-                color: 'rgba(255, 255, 255, 0.6)',
-              }}>&#x2191;</span>
-              jump / grind
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '3rem',
-                height: '1.6rem',
-                borderRadius: '5px',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                background: 'rgba(255, 255, 255, 0.08)',
-                fontSize: '0.85rem',
-                fontFamily: 'Knewave',
-                color: 'rgba(255, 255, 255, 0.6)',
-              }}>&#x2190; / &#x2193;</span>
-              airborne 360
-            </div>
-          </div>
-        </>
-      )}
       {isCountdownActive && (
         <>
           <style>
@@ -1058,6 +1109,46 @@ export default function App() {
         musicRef={musicRef}
         visible={hasStartedGame && !isGameOver}
       />
+      {(hasStartedGame || isTransitioning) && (
+        <button
+          onClick={handleReturnToIntro}
+          style={{
+            position: 'fixed',
+            right: '1rem',
+            bottom: '1rem',
+            zIndex: 240,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.55rem',
+            padding: '0.7rem 0.95rem',
+            borderRadius: '999px',
+            border: '2px solid rgba(255, 255, 255, 0.22)',
+            background: 'rgba(10, 12, 18, 0.72)',
+            backdropFilter: 'blur(10px)',
+            color: '#ffffff',
+            fontFamily: 'Nunito, sans-serif',
+            fontWeight: 900,
+            fontSize: '0.72rem',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.24)',
+          }}
+        >
+          <span>Replay Intro</span>
+          <span
+            style={{
+              padding: '0.18rem 0.42rem',
+              borderRadius: '999px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontSize: '0.63rem',
+            }}
+          >
+            Shift+R
+          </span>
+        </button>
+      )}
       {hasStartedGame && (
         <div
           style={{
@@ -1113,28 +1204,19 @@ export default function App() {
         {hasStartedGame && <Ground />}
         {hasStartedGame && <Background />}
         {hasStartedGame && <Sky />}
-        {!hasStartedGame && (
-          <>
-            <color attach="background" args={['#a8d8ea']} />
-            <ambientLight intensity={0.5} color="#f2f7ff" />
-            <directionalLight position={[3, 8, 5]} intensity={1.8} color="#ffe6bf" />
-            <hemisphereLight args={['#b7dbff', '#78a24f', 0.6]} />
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-              <planeGeometry args={[50, 50]} />
-              <meshBasicMaterial color="#8B6914" />
-            </mesh>
-          </>
-        )}
+        {!hasStartedGame && <IntroScene onStart={handleStart} disabled={isTransitioning} />}
         {hasStartedGame && <color attach="background" args={['#000000']} />}
-        <SkateCat
-          trailTargetRef={trailTarget}
-          controlsEnabled={hasStartedGame && !isGameOver && !isCountdownActive}
-          hasStartedGame={hasStartedGame}
-          useOriginalMaterials={useOriginalMaterials}
-          musicRef={musicRef}
-          onJumpTiming={handleJumpTiming}
-          onJumpSfx={playJumpSfx}
-        />
+        {/* SkateCat is always mounted (pre-loaded) but hidden during the intro screen */}
+        <group visible={hasStartedGame}>
+          <SkateCat
+            trailTargetRef={trailTarget}
+            controlsEnabled={hasStartedGame && !isGameOver && !isCountdownActive}
+            useOriginalMaterials={useOriginalMaterials}
+            musicRef={musicRef}
+            onJumpTiming={handleJumpTiming}
+            onJumpSfx={playJumpSfx}
+          />
+        </group>
         {hasStartedGame && (
           <>
             <Obstacles
@@ -1149,30 +1231,24 @@ export default function App() {
             <AmbientParticles />
           </>
         )}
-        <SceneCapture
-          shouldCapture={shouldCaptureRef}
-          renderTarget={snapshotRT}
-          onCaptured={handleSceneCaptured}
-        />
         <TransitionAnimator
           progressRef={transitionProgressRef}
           isTransitioning={isTransitioning}
+          duration={transitionSettings.duration}
           onComplete={handleTransitionComplete}
         />
-        {(hasStartedGame || isTransitioning) && (
-          <PostEffects
-            bloomIntensity={bloomIntensity}
-            bloomThreshold={bloomThreshold}
-            bloomSmoothing={bloomSmoothing}
-            brightness={brightness}
-            contrast={contrast}
-            hue={hue}
-            saturation={saturation}
-            snapshotTexture={snapshotRT.texture}
-            transitionProgressRef={transitionProgressRef}
-            isTransitioning={isTransitioning}
-          />
-        )}
+        <PostEffects
+          introSettings={introPost}
+          gameSettings={gamePost}
+          snapshotTexture={snapshotTexture}
+          transitionSettings={transitionSettings}
+          transitionProgressRef={transitionProgressRef}
+          isTransitioning={isTransitioning}
+          hasStartedGame={hasStartedGame}
+          shouldCaptureRef={shouldCaptureRef}
+          snapshotTextureRef={snapshotTextureRef}
+          onCaptured={handleSceneCaptured}
+        />
       </Canvas>
     </>
   )

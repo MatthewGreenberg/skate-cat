@@ -178,6 +178,8 @@ const DEATH_HOP_DURATION = 0.4
 const DEATH_WALK_SPEED = 1.2
 const DEATH_WALK_BOB_SPEED = 8
 const DEATH_WALK_BOB_HEIGHT = 0.06
+const INTRO_BOARD_IDLE_POSITION = { x: 0.44, y: 0.03, z: 0.54 }
+const INTRO_BOARD_IDLE_ROTATION = { x: 0.05, y: 0.18, z: -0.08 }
 const _grindSparkLocal = new THREE.Vector3()
 const _grindSparkWorld = new THREE.Vector3()
 
@@ -197,7 +199,7 @@ function applyToonMaterials(root) {
   })
 }
 
-export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasStartedGame = false, useOriginalMaterials = false, musicRef, onJumpTiming, onJumpSfx }) {
+export default function SkateCat({ trailTargetRef, controlsEnabled = true, useOriginalMaterials = false, musicRef, onJumpTiming, onJumpSfx }) {
   const { catRotX, catRotY, catRotZ } = useControls('Cat', {
     catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
     catRotY: { value: 1.3, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -230,23 +232,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     forceClose: false,
   })
 
-  const introControls = useControls('Cat Intro', {
-    introX: { value: 0.70, min: -3, max: 3, step: 0.05 },
-    introY: { value: 0.15, min: -1, max: 2, step: 0.05 },
-    introZ: { value: 1.0, min: -3, max: 3, step: 0.05 },
-    introRotX: { value: -0.1, min: -Math.PI, max: Math.PI, step: 0.05 },
-    introRotY: { value: -1.5, min: -Math.PI, max: Math.PI, step: 0.05 },
-    introRotZ: { value: 0.60, min: -Math.PI, max: Math.PI, step: 0.05 },
-    introScale: { value: 0.04, min: 0.01, max: 0.05, step: 0.001 },
-  })
-
-  const boxControls = useControls('Intro Box', {
-    boxX: { value: 0.35, min: -3, max: 3, step: 0.05 },
-    boxY: { value: 0, min: -2, max: 2, step: 0.05 },
-    boxZ: { value: 0.20, min: -3, max: 3, step: 0.05 },
-    boxScale: { value: 6, min: 1, max: 50, step: 1 },
-    boxRotY: { value: 0.30, min: -Math.PI, max: Math.PI, step: 0.05 },
-  })
+  const introPose = { x: -0.7, y: 0.02, z: 0.27, scale: 0.03 }
+  const introRot = { introRotX: -0.04, introRotY: -0.72, introRotZ: 0.18 }
 
   const blinkState = useRef({ timer: 3, blinking: false, blinkTime: 0, amount: 0, blinksLeft: 0 })
 
@@ -256,8 +243,6 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
   const grindLightRef = useRef()
   const skateboard = useGLTF('/skateboard.glb')
   const { scene: catScene } = useGLTF('/maxwell_the_cat_dingus/scene.gltf')
-  const { scene: boxScene } = useGLTF('/empty_cardboard_box/scene.gltf')
-  const boxRef = useRef()
   const catModelRef = useRef()
   const paintedBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor_painted-2.jpg')
   const originalBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor.jpeg')
@@ -338,51 +323,13 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     return clone
   }, [catScene, paintedBodyMap, originalBodyMap])
 
-  // Apply toon shading to the box model (preserve originals for intro)
-  const boxWithToon = useMemo(() => {
-    const clone = boxScene.clone(true)
-    const meshes = []
-    clone.traverse((child) => { if (child.isMesh) meshes.push(child) })
-    for (const child of meshes) {
-      const oldMat = child.material.clone()
-      const mat = createToonMaterial()
-      if (oldMat.map) { mat.uniforms.uMap.value = oldMat.map; mat.uniforms.uHasMap.value = 1.0 }
-      if (oldMat.transparent) { mat.transparent = true; mat.uniforms.uAlphaTest.value = 0.5; mat.depthWrite = false }
-      if (oldMat.side === THREE.DoubleSide) mat.side = THREE.DoubleSide
-      child.castShadow = true
-
-      const flatMat = new THREE.MeshBasicMaterial({
-        map: oldMat.map,
-        color: oldMat.color,
-        transparent: !!oldMat.transparent,
-        alphaTest: oldMat.transparent ? 0.5 : 0,
-        side: oldMat.side,
-        depthWrite: !oldMat.transparent,
-      })
-      child.material = flatMat
-      child.userData.__originalMaterial = flatMat
-      child.userData.__toonMaterial = mat
-
-      if (!oldMat.transparent && child.geometry) {
-        const outlineMat = createOutlineMaterial()
-        const outlineMesh = new THREE.Mesh(child.geometry, outlineMat)
-        outlineMesh.matrixAutoUpdate = false
-        outlineMesh.userData.__toonOutline = true
-        outlineMesh.visible = false
-        child.add(outlineMesh)
-        child.userData.__outlineMesh = outlineMesh
-      }
-    }
-    return clone
-  }, [boxScene])
-
   // Cache mesh references to avoid traverse() every frame
   const toonMeshesRef = useRef([])
   const outlineMeshesRef = useRef([])
   useEffect(() => {
     const toonMeshes = []
     const outlineMeshes = []
-    const sources = [catWithToon, boxWithToon]
+    const sources = [catWithToon]
 
     for (const root of sources) {
       root.traverse((child) => {
@@ -397,14 +344,13 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
     toonMeshesRef.current = toonMeshes
     outlineMeshesRef.current = outlineMeshes
-  }, [catWithToon, boxWithToon])
+  }, [catWithToon])
 
   // Swap between original PBR materials (intro) and toon materials (game)
   useEffect(() => {
     const fn = useOriginalMaterials ? applyOriginalMaterials : applyToonMaterials
     fn(catWithToon)
-    fn(boxWithToon)
-  }, [useOriginalMaterials, catWithToon, boxWithToon])
+  }, [useOriginalMaterials, catWithToon])
 
   const jumpState = useRef({
     active: false,
@@ -429,17 +375,15 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     rimAmount: 0.45, shadowBrightness: 0.05,
     brightness: 2.05, outlineThickness: 0.0,
   }
-  const introLerp = useRef(0) // 0 = intro, 1 = gameplay
+  const introLerp = useRef(1) // 0 = intro, 1 = gameplay
 
-  // Intro hop-on state
+  // Legacy intro hop-on state is disabled for the TV-room intro flow.
   const introState = useRef({
-    phase: 'idle', // 'idle' | 'hopping' | 'done'
+    phase: 'done', // 'idle' | 'hopping' | 'done'
     time: 0,
   })
   const HOP_ON_DURATION = 0.4
   const HOP_ON_HEIGHT = 0.8
-  const CAT_INTRO_OFFSET_X = 1.2 // cat starts to the side
-  const CAT_INTRO_Y = 0.0 // cat starts on the ground
 
   const deathState = useRef({
     active: false,
@@ -797,16 +741,6 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     primeJumpTakeoffPose()
   }, [getJumpPlan, musicRef, onJumpSfx, onJumpTiming, primeJumpTakeoffPose, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
 
-  // Trigger hop-on when game starts
-  const prevStarted = useRef(false)
-  useEffect(() => {
-    if (hasStartedGame && !prevStarted.current) {
-      introState.current.phase = 'hopping'
-      introState.current.time = 0
-    }
-    prevStarted.current = hasStartedGame
-  }, [hasStartedGame])
-
   useEffect(() => {
     const onKeyDown = (e) => {
       if (!controlsEnabled) return
@@ -953,41 +887,74 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     const intro = introState.current
     if (intro.phase === 'idle') {
       setGrindSparkInactive()
-      gameState.catHeight.current = introControls.introY
-      // Cat centered, spinning horizontally
-      catRef.current.position.set(0, 0.05, 0)
-      catRef.current.rotation.set(0, state.clock.elapsedTime * 0.8, 0)
+      const loungeTime = state.clock.elapsedTime
+      const loungeBob = Math.sin(loungeTime * 1.4) * 0.008
+      const loungeTurn = Math.sin(loungeTime * 0.7) * 0.06
+      gameState.catHeight.current = introPose.y + loungeBob
+      catRef.current.position.set(
+        introPose.x + Math.cos(loungeTime * 0.55) * 0.008,
+        introPose.y + loungeBob,
+        introPose.z + Math.sin(loungeTime * 0.7) * 0.012
+      )
+      catRef.current.rotation.set(0, loungeTurn, 0)
       catRef.current.scale.set(1, 1, 1)
-      if (boardRef.current) boardRef.current.visible = false
-      if (boxRef.current) boxRef.current.visible = false
+      if (boardRef.current) {
+        boardRef.current.visible = true
+        boardRef.current.position.set(
+          INTRO_BOARD_IDLE_POSITION.x,
+          INTRO_BOARD_IDLE_POSITION.y + Math.sin(loungeTime * 1.9) * 0.004,
+          INTRO_BOARD_IDLE_POSITION.z
+        )
+        boardRef.current.rotation.set(
+          INTRO_BOARD_IDLE_ROTATION.x,
+          INTRO_BOARD_IDLE_ROTATION.y,
+          INTRO_BOARD_IDLE_ROTATION.z
+        )
+      }
       if (catModelRef.current) {
-        catModelRef.current.scale.setScalar(introControls.introScale)
-        catModelRef.current.rotation.set(0, 0, 0)
+        catModelRef.current.scale.setScalar(introPose.scale)
+        catModelRef.current.rotation.set(
+          introRot.introRotX + Math.sin(loungeTime * 1.1) * 0.015,
+          introRot.introRotY + Math.cos(loungeTime * 0.6) * 0.025,
+          introRot.introRotZ + Math.sin(loungeTime * 0.8) * 0.012
+        )
       }
       return
     }
     if (intro.phase === 'hopping') {
       setGrindSparkInactive()
-      if (boardRef.current) boardRef.current.visible = true
-      if (boxRef.current) boxRef.current.visible = false
       intro.time += delta
       const t = Math.min(intro.time / HOP_ON_DURATION, 1)
+      const ease = THREE.MathUtils.smootherstep(t, 0, 1)
+      if (boardRef.current) {
+        boardRef.current.visible = true
+        boardRef.current.position.set(
+          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_POSITION.x, 0, ease),
+          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_POSITION.y, 0, ease),
+          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_POSITION.z, 0, ease)
+        )
+        boardRef.current.rotation.set(
+          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_ROTATION.x, 0, ease),
+          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_ROTATION.y, 0, ease),
+          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_ROTATION.z, 0, ease)
+        )
+      }
       if (catModelRef.current) {
-        const s = THREE.MathUtils.lerp(introControls.introScale, 0.03, t)
+        const s = THREE.MathUtils.lerp(introPose.scale, 0.03, t)
         catModelRef.current.scale.setScalar(s)
-        catModelRef.current.rotation.x = THREE.MathUtils.lerp(introControls.introRotX, catRotX, t)
-        catModelRef.current.rotation.y = THREE.MathUtils.lerp(introControls.introRotY, catRotY, t)
-        catModelRef.current.rotation.z = THREE.MathUtils.lerp(introControls.introRotZ, catRotZ, t)
+        catModelRef.current.rotation.x = THREE.MathUtils.lerp(introRot.introRotX, catRotX, t)
+        catModelRef.current.rotation.y = THREE.MathUtils.lerp(introRot.introRotY, catRotY, t)
+        catModelRef.current.rotation.z = THREE.MathUtils.lerp(introRot.introRotZ, catRotZ, t)
       }
       // Arc from intro position to on-board
       const hopHeight = 4 * HOP_ON_HEIGHT * t * (1 - t)
-      const x = introControls.introX * (1 - t)
-      const z = introControls.introZ * (1 - t)
-      const y = introControls.introY + hopHeight + 0.2 * t
+      const x = introPose.x * (1 - t)
+      const z = introPose.z * (1 - t)
+      const y = introPose.y + hopHeight + 0.2 * t
       gameState.catHeight.current = y
       catRef.current.position.set(x, y, z)
       // Rotate from facing camera to facing forward
-      catRef.current.rotation.set(0, introControls.introRotY * (1 - t), 0)
+      catRef.current.rotation.set(0, introRot.introRotY * (1 - t), 0)
       if (t >= 1) {
         intro.phase = 'done'
         catRef.current.position.set(0, 0.2, 0)
@@ -1255,8 +1222,8 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
     catRef.current.rotation.y = catSpinJustFinished
       ? 0
       : spin.active
-      ? catSpinRotationY
-      : THREE.MathUtils.lerp(catRef.current.rotation.y, POWERSLIDE_CAT_TURN_Y * powerslide.direction * catPoseAmount + grindBodyYaw * powerslide.direction, gameDelta * 10)
+        ? catSpinRotationY
+        : THREE.MathUtils.lerp(catRef.current.rotation.y, POWERSLIDE_CAT_TURN_Y * powerslide.direction * catPoseAmount + grindBodyYaw * powerslide.direction, gameDelta * 10)
     catRef.current.rotation.z = THREE.MathUtils.lerp(catRef.current.rotation.z, POWERSLIDE_CAT_LEAN_Z * powerslide.direction * catPoseAmount + grindBodyLean * powerslide.direction, gameDelta * 10)
 
     if (grindLightRef.current) {
@@ -1340,13 +1307,6 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
           rotation={[catRotX, catRotY, catRotZ]}
         />
       </group>
-      <group ref={boxRef} position={[introControls.introX + boxControls.boxX, boxControls.boxY, introControls.introZ + boxControls.boxZ]}>
-        <primitive
-          object={boxWithToon}
-          scale={boxControls.boxScale / 1000}
-          rotation={[0, boxControls.boxRotY, 0]}
-        />
-      </group>
       <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
       <pointLight
         position={[0.3, 0.8, 0.3]}
@@ -1361,4 +1321,3 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, hasSt
 
 useGLTF.preload('/skateboard.glb')
 useGLTF.preload('/maxwell_the_cat_dingus/scene.gltf')
-useGLTF.preload('/empty_cardboard_box/scene.gltf')

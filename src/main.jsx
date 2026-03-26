@@ -9,6 +9,6 @@ const isDebugMode = new URLSearchParams(window.location.search).has('debug')
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
-    <Leva hidden={!isDebugMode} collapsed />
+    <Leva hidden={!isDebugMode} collapsed={false} />
   </StrictMode>,
 )

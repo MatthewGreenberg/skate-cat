@@ -4,18 +4,27 @@ import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta } from '../store'
 
-// Intro camera centered on cat at origin
-const INTRO_CAM = { x: 0, y: 0.6, z: 2.0 }
-const INTRO_LOOK = { x: 0, y: 0.3, z: 0 }
 const INTRO_LERP_SPEED = 2.5
+const INTRO_FOV = 43
+const GAME_FOV = 75
 
 export default function CameraRig({ started = false }) {
   const { camera } = useThree()
   const currentZoom = useRef(0)
   const jumpZoom = useRef(0)
   const shakeTime = useRef(0)
-  const camPos = useRef(new THREE.Vector3(INTRO_CAM.x, INTRO_CAM.y, INTRO_CAM.z))
-  const camLook = useRef(new THREE.Vector3(INTRO_LOOK.x, INTRO_LOOK.y, INTRO_LOOK.z))
+
+  const { introCamX, introCamY, introCamZ, introLookX, introLookY, introLookZ } = useControls('Intro Scene Camera', {
+    introCamX: { value: 0.15, min: -5, max: 5, step: 0.1 },
+    introCamY: { value: 1.05, min: -2, max: 5, step: 0.1 },
+    introCamZ: { value: 3.6, min: -5, max: 10, step: 0.1 },
+    introLookX: { value: 0.35, min: -5, max: 5, step: 0.1 },
+    introLookY: { value: 0.8, min: -2, max: 5, step: 0.1 },
+    introLookZ: { value: -1.0, min: -5, max: 5, step: 0.1 },
+  })
+
+  const camPos = useRef(new THREE.Vector3(introCamX, introCamY, introCamZ))
+  const camLook = useRef(new THREE.Vector3(introLookX, introLookY, introLookZ))
 
   const { posX, posY, posZ, lookX, lookY, lookZ, kickflipZoom, kickflipLerp, kickflipAngleX, kickflipAngleY } = useControls('Camera', {
     posX: { value: 1.9, min: -10, max: 10, step: 0.1 },
@@ -30,7 +39,7 @@ export default function CameraRig({ started = false }) {
     kickflipAngleY: { value: 0.25, min: -1, max: 1, step: 0.05 },
   })
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const gameDelta = getGameDelta(delta)
     // Calculate zoom-out based on speed above base
     const speedExtra = Math.max(0, gameState.speed.current - gameState.baseSpeed)
@@ -58,11 +67,18 @@ export default function CameraRig({ started = false }) {
           posY + jumpZoom.current * kickflipAngleY + shakeY,
           posZ + z
         )
-      : new THREE.Vector3(INTRO_CAM.x, INTRO_CAM.y, INTRO_CAM.z)
+      : new THREE.Vector3(introCamX, introCamY, introCamZ)
 
     const targetLook = started
       ? new THREE.Vector3(lookX, lookY, lookZ)
-      : new THREE.Vector3(INTRO_LOOK.x, INTRO_LOOK.y, INTRO_LOOK.z)
+      : new THREE.Vector3(introLookX, introLookY, introLookZ)
+
+    const targetFov = started ? GAME_FOV : INTRO_FOV
+    const nextFov = THREE.MathUtils.lerp(camera.fov, targetFov, gameDelta * 5)
+    if (Math.abs(nextFov - camera.fov) > 0.001) {
+      camera.fov = nextFov
+      camera.updateProjectionMatrix()
+    }
 
     const lerpSpeed = started ? INTRO_LERP_SPEED : 10 // snap fast on intro, smooth transition out
     camPos.current.lerp(targetPos, gameDelta * lerpSpeed)
