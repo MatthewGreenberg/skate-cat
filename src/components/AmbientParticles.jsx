@@ -1,11 +1,11 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { gameState, getGameDelta, getNightFactor } from '../store'
 
 const PARTICLE_COUNT = 40
 
-export default function AmbientParticles() {
+export default function AmbientParticles({ active = true }) {
   const meshRef = useRef()
   const matRef = useRef()
   const motionTime = useRef(0)
@@ -27,8 +27,25 @@ export default function AmbientParticles() {
 
   const _dummy = useMemo(() => new THREE.Object3D(), [])
 
+  useEffect(() => {
+    if (active || !meshRef.current) return
+
+    for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+      _dummy.scale.setScalar(0)
+      _dummy.updateMatrix()
+      meshRef.current.setMatrixAt(i, _dummy.matrix)
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true
+
+    if (matRef.current) {
+      matRef.current.opacity = 0
+    }
+  }, [active, _dummy])
+
   useFrame((_, delta) => {
     if (!meshRef.current) return
+    if (!active) return
+
     const gameDelta = getGameDelta(delta)
     motionTime.current += gameDelta
 

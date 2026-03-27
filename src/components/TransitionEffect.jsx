@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useMemo } from 'react'
 import { Pass } from 'postprocessing'
 import * as THREE from 'three'
 
@@ -11,24 +11,21 @@ const transitionVertexShader = /* glsl */ `
   }
 `
 
-const transitionFragmentShader = /* glsl */ `
-  uniform sampler2D inputBuffer;
-  uniform sampler2D uSnapshot;
+// Diffusion pass: evolves the reveal mask via ping-pong feedback.
+// Reads previous frame's mask, diffuses neighbors, injects raw threshold reveal.
+const diffusionFragmentShader = /* glsl */ `
+  uniform sampler2D uPrevField;
   uniform float uProgress;
   uniform float uAspectRatio;
   uniform float uRevealCurve;
   uniform float uThresholdStart;
   uniform float uThresholdEnd;
-  uniform float uBandBefore;
-  uniform float uBandAfter;
-  uniform float uGlowInnerOffset;
-  uniform float uGlowOuterOffset;
-  uniform float uGlowIntensity;
   uniform float uNoiseScaleA;
   uniform float uNoiseScaleB;
   uniform float uNoiseAmpA;
   uniform float uNoiseAmpB;
-  uniform vec3 uGlowColor;
+  uniform float uDiffuseSpread;
+  uniform vec2 uTexelSize;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -47,6 +44,55 @@ const transitionFragmentShader = /* glsl */ `
   }
 
   void main() {
+    vec2 center = vec2(0.5);
+    float dist = length((vUv - center) * vec2(1.0, uAspectRatio));
+    float n = noise(vUv * uNoiseScaleA) * uNoiseAmpA
+            + noise(vUv * uNoiseScaleB) * uNoiseAmpB;
+    float edge = dist + n;
+
+    float reveal = pow(clamp(uProgress, 0.0, 1.0), uRevealCurve);
+    float threshold = mix(uThresholdStart, uThresholdEnd, reveal);
+
+    // Sharp raw reveal so diffusion has room to soften
+    float rawReveal = 1.0 - smoothstep(threshold - 0.03, threshold + 0.02, edge);
+
+    // 5-tap neighbor sampling from previous frame
+    float prev  = texture2D(uPrevField, vUv).r;
+    float prevN = texture2D(uPrevField, vUv + vec2(0.0,  uTexelSize.y * 1.5)).r;
+    float prevS = texture2D(uPrevField, vUv + vec2(0.0, -uTexelSize.y * 1.5)).r;
+    float prevE = texture2D(uPrevField, vUv + vec2( uTexelSize.x * 1.5, 0.0)).r;
+    float prevW = texture2D(uPrevField, vUv + vec2(-uTexelSize.x * 1.5, 0.0)).r;
+
+    // Weighted average biased toward max neighbor (creates spreading tendrils)
+    float avg = (prev * 2.0 + prevN + prevS + prevE + prevW) / 6.0;
+    float maxN = max(max(prevN, prevS), max(prevE, prevW));
+    float diffused = mix(avg, maxN, uDiffuseSpread) * 0.997;
+
+    // Raw reveal keeps overall timing on track
+    float result = max(diffused, rawReveal);
+
+    gl_FragColor = vec4(result, 0.0, 0.0, 1.0);
+  }
+`
+
+// Composite pass: blends game/live intro using the diffused mask, adds glow ring.
+const compositeFragmentShader = /* glsl */ `
+  uniform sampler2D inputBuffer;
+  uniform sampler2D uIntro;
+  uniform sampler2D uDiffusedMask;
+  uniform float uProgress;
+  uniform float uBandBefore;
+  uniform float uBandAfter;
+  uniform float uGlowInnerOffset;
+  uniform float uGlowOuterOffset;
+  uniform float uGlowIntensity;
+  uniform vec3 uGlowColor;
+  uniform float uDollyAmount;
+  uniform float uDollyStart;
+  uniform float uFlashStrength;
+  varying vec2 vUv;
+
+  void main() {
     vec4 inputColor = texture2D(inputBuffer, vUv);
 
     if (uProgress >= 1.0) {
@@ -54,26 +100,32 @@ const transitionFragmentShader = /* glsl */ `
       return;
     }
 
-    vec4 snapshotColor = texture2D(uSnapshot, vUv);
+    // Dolly: zoom intro UVs toward center (ease-out for immediate feel)
+    float dollyT = uDollyStart + (1.0 - uDollyStart) * (1.0 - (1.0 - uProgress) * (1.0 - uProgress));
+    vec2 introUv = mix(vUv, vec2(0.5), dollyT * uDollyAmount);
+    vec4 introColor = texture2D(uIntro, introUv);
     if (uProgress <= 0.0) {
-      gl_FragColor = snapshotColor;
+      gl_FragColor = introColor;
       return;
     }
 
-    vec2 center = vec2(0.5, 0.5);
-    float dist = length((vUv - center) * vec2(1.0, uAspectRatio));
-    float n = noise(vUv * uNoiseScaleA) * uNoiseAmpA + noise(vUv * uNoiseScaleB) * uNoiseAmpB;
-    float edge = dist + n;
+    // Diffused reveal mask: 1 = game visible, 0 = intro visible
+    float revealMask = texture2D(uDiffusedMask, vUv).r;
 
-    float reveal = pow(clamp(uProgress, 0.0, 1.0), uRevealCurve);
-    float threshold = mix(uThresholdStart, uThresholdEnd, reveal);
-    float band = smoothstep(threshold - uBandBefore, threshold + uBandAfter, edge);
+    // Band softness controls how sharply the mask transitions
+    float softReveal = smoothstep(uBandBefore, 1.0 - uBandAfter, revealMask);
+    float band = 1.0 - softReveal;
 
-    float edgeGlow = smoothstep(threshold - uGlowOuterOffset, threshold - uGlowInnerOffset, edge)
-      - smoothstep(threshold + uGlowInnerOffset, threshold + uGlowOuterOffset, edge);
+    // Glow ring centered at the transition edge (mask ~ 0.5)
+    float edgeGlow = smoothstep(0.5 - uGlowOuterOffset, 0.5 - uGlowInnerOffset, revealMask)
+                   - smoothstep(0.5 + uGlowInnerOffset, 0.5 + uGlowOuterOffset, revealMask);
 
-    vec3 blended = mix(inputColor.rgb, snapshotColor.rgb, band);
+    vec3 blended = mix(inputColor.rgb, introColor.rgb, band);
     blended += uGlowColor * edgeGlow * uGlowIntensity;
+
+    // White flash: peaks at capture moment, decays exponentially
+    float flash = exp(-uProgress * 25.0) * uFlashStrength;
+    blended += vec3(flash);
 
     gl_FragColor = vec4(blended, 1.0);
   }
@@ -83,79 +135,178 @@ class IntroTransitionPass extends Pass {
   constructor() {
     super('IntroTransitionPass')
     this.progressRef = null
-    this.snapshotTexture = null
+    this.introTexture = null
     this.needsSwap = true
-    this.fullscreenMaterial = new THREE.ShaderMaterial({
+
+    this.pingPongA = null
+    this.pingPongB = null
+    this.ppWidth = 0
+    this.ppHeight = 0
+
+    this.diffusionMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        inputBuffer: new THREE.Uniform(null),
-        uSnapshot: new THREE.Uniform(null),
+        uPrevField: new THREE.Uniform(null),
         uProgress: new THREE.Uniform(0),
         uAspectRatio: new THREE.Uniform(1),
         uRevealCurve: new THREE.Uniform(0.72),
         uThresholdStart: new THREE.Uniform(-0.02),
         uThresholdEnd: new THREE.Uniform(0.84),
-        uBandBefore: new THREE.Uniform(0.07),
-        uBandAfter: new THREE.Uniform(0.05),
-        uGlowInnerOffset: new THREE.Uniform(0.01),
-        uGlowOuterOffset: new THREE.Uniform(0.11),
-        uGlowIntensity: new THREE.Uniform(0.5),
         uNoiseScaleA: new THREE.Uniform(8),
         uNoiseScaleB: new THREE.Uniform(16),
         uNoiseAmpA: new THREE.Uniform(0.25),
         uNoiseAmpB: new THREE.Uniform(0.1),
-        uGlowColor: new THREE.Uniform(new THREE.Color('#ff7326')),
+        uDiffuseSpread: new THREE.Uniform(0.35),
+        uTexelSize: new THREE.Uniform(new THREE.Vector2()),
       },
       vertexShader: transitionVertexShader,
-      fragmentShader: transitionFragmentShader,
+      fragmentShader: diffusionFragmentShader,
       blending: THREE.NoBlending,
       toneMapped: false,
       depthWrite: false,
       depthTest: false,
     })
+
+    this.compositeMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        inputBuffer: new THREE.Uniform(null),
+        uIntro: new THREE.Uniform(null),
+        uDiffusedMask: new THREE.Uniform(null),
+        uProgress: new THREE.Uniform(0),
+        uBandBefore: new THREE.Uniform(0.07),
+        uBandAfter: new THREE.Uniform(0.05),
+        uGlowInnerOffset: new THREE.Uniform(0.01),
+        uGlowOuterOffset: new THREE.Uniform(0.11),
+        uGlowIntensity: new THREE.Uniform(0.5),
+        uGlowColor: new THREE.Uniform(new THREE.Color('#ff7326')),
+        uDollyAmount: new THREE.Uniform(0.4),
+        uDollyStart: new THREE.Uniform(0.06),
+        uFlashStrength: new THREE.Uniform(0.6),
+      },
+      vertexShader: transitionVertexShader,
+      fragmentShader: compositeFragmentShader,
+      blending: THREE.NoBlending,
+      toneMapped: false,
+      depthWrite: false,
+      depthTest: false,
+    })
+
+    this.fullscreenMaterial = this.compositeMaterial
+  }
+
+  ensurePingPongTargets(width, height) {
+    const halfW = Math.ceil(width / 2)
+    const halfH = Math.ceil(height / 2)
+    if (this.ppWidth === halfW && this.ppHeight === halfH) return
+
+    this.pingPongA?.dispose()
+    this.pingPongB?.dispose()
+
+    const opts = {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+      generateMipmaps: false,
+    }
+
+    this.pingPongA = new THREE.WebGLRenderTarget(halfW, halfH, opts)
+    this.pingPongB = new THREE.WebGLRenderTarget(halfW, halfH, opts)
+    this.ppWidth = halfW
+    this.ppHeight = halfH
+
+    this.diffusionMaterial.uniforms.uTexelSize.value.set(1 / halfW, 1 / halfH)
   }
 
   render(renderer, inputBuffer, outputBuffer) {
-    const uniforms = this.fullscreenMaterial.uniforms
-    uniforms.inputBuffer.value = inputBuffer.texture
-    uniforms.uSnapshot.value = this.snapshotTexture
-    uniforms.uProgress.value = this.progressRef?.current ?? 1
-    uniforms.uAspectRatio.value = inputBuffer.width > 0
-      ? inputBuffer.height / inputBuffer.width
-      : 1
+    const progress = this.progressRef?.current ?? 0
+
+    if (!this.introTexture || progress >= 1.0) {
+      this.screen.material = this.compositeMaterial
+      this.compositeMaterial.uniforms.inputBuffer.value = inputBuffer.texture
+      this.compositeMaterial.uniforms.uProgress.value = 1.0
+      renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer)
+      renderer.render(this.scene, this.camera)
+      return
+    }
+
+    this.ensurePingPongTargets(inputBuffer.width, inputBuffer.height)
+
+    const aspect = inputBuffer.width > 0 ? inputBuffer.height / inputBuffer.width : 1
+
+    // --- Diffusion pass: read A, write B ---
+    this.screen.material = this.diffusionMaterial
+    const d = this.diffusionMaterial.uniforms
+    d.uPrevField.value = this.pingPongA.texture
+    d.uProgress.value = progress
+    d.uAspectRatio.value = aspect
+
+    renderer.setRenderTarget(this.pingPongB)
+    renderer.render(this.scene, this.camera)
+
+    // Swap
+    const temp = this.pingPongA
+    this.pingPongA = this.pingPongB
+    this.pingPongB = temp
+
+    // --- Composite pass: blend using diffused mask ---
+    this.screen.material = this.compositeMaterial
+    const c = this.compositeMaterial.uniforms
+    c.inputBuffer.value = inputBuffer.texture
+    c.uIntro.value = this.introTexture
+    c.uDiffusedMask.value = this.pingPongA.texture
+    c.uProgress.value = progress
 
     renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer)
     renderer.render(this.scene, this.camera)
   }
+
+  dispose() {
+    this.pingPongA?.dispose()
+    this.pingPongB?.dispose()
+    this.diffusionMaterial.dispose()
+    this.compositeMaterial.dispose()
+    this.pingPongA = null
+    this.pingPongB = null
+    super.dispose()
+  }
 }
 
-export default function TransitionEffect({ snapshotTexture, progressRef, settings }) {
+export default function TransitionEffect({ introTexture, progressRef, settings }) {
   const pass = useMemo(() => new IntroTransitionPass(), [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     pass.progressRef = progressRef
-    pass.snapshotTexture = snapshotTexture
+    pass.introTexture = introTexture
 
     return () => {
       pass.progressRef = null
-      pass.snapshotTexture = null
+      pass.introTexture = null
     }
-  }, [pass, progressRef, snapshotTexture])
+  }, [introTexture, pass, progressRef])
 
   useEffect(() => {
-    const uniforms = pass.fullscreenMaterial.uniforms
-    uniforms.uRevealCurve.value = settings.revealCurve
-    uniforms.uThresholdStart.value = settings.thresholdStart
-    uniforms.uThresholdEnd.value = settings.thresholdEnd
-    uniforms.uBandBefore.value = settings.bandBefore
-    uniforms.uBandAfter.value = settings.bandAfter
-    uniforms.uGlowInnerOffset.value = settings.glowInnerOffset
-    uniforms.uGlowOuterOffset.value = settings.glowOuterOffset
-    uniforms.uGlowIntensity.value = settings.glowIntensity
-    uniforms.uNoiseScaleA.value = settings.noiseScaleA
-    uniforms.uNoiseScaleB.value = settings.noiseScaleB
-    uniforms.uNoiseAmpA.value = settings.noiseAmpA
-    uniforms.uNoiseAmpB.value = settings.noiseAmpB
-    uniforms.uGlowColor.value.set(settings.glowColor)
+    const d = pass.diffusionMaterial.uniforms
+    d.uRevealCurve.value = settings.revealCurve
+    d.uThresholdStart.value = settings.thresholdStart
+    d.uThresholdEnd.value = settings.thresholdEnd
+    d.uNoiseScaleA.value = settings.noiseScaleA
+    d.uNoiseScaleB.value = settings.noiseScaleB
+    d.uNoiseAmpA.value = settings.noiseAmpA
+    d.uNoiseAmpB.value = settings.noiseAmpB
+    d.uDiffuseSpread.value = settings.diffuseSpread
+
+    const c = pass.compositeMaterial.uniforms
+    c.uBandBefore.value = settings.bandBefore
+    c.uBandAfter.value = settings.bandAfter
+    c.uGlowInnerOffset.value = settings.glowInnerOffset
+    c.uGlowOuterOffset.value = settings.glowOuterOffset
+    c.uGlowIntensity.value = settings.glowIntensity
+    c.uGlowColor.value.set(settings.glowColor)
+    c.uDollyAmount.value = settings.dollyAmount
+    c.uDollyStart.value = settings.dollyStart ?? 0.06
+    c.uFlashStrength.value = settings.flashStrength ?? 0.6
   }, [pass, settings])
 
   useEffect(() => () => {

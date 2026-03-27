@@ -1,7 +1,7 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
+import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useProgress } from '@react-three/drei'
+import { useFBO, useProgress } from '@react-three/drei'
 import Ground from './components/Ground'
 import SkateCat from './components/SkateCat'
 import SpeedLines from './components/SpeedLines'
@@ -17,7 +17,7 @@ import IntroScene from './components/IntroScene'
 import GameHud from './components/GameHud'
 import TransitionEffect from './components/TransitionEffect'
 import { EffectComposer } from '@react-three/postprocessing'
-import { BloomEffect, BrightnessContrastEffect, HueSaturationEffect, Pass, CopyMaterial } from 'postprocessing'
+import { BloomEffect, BrightnessContrastEffect, HueSaturationEffect } from 'postprocessing'
 import { button, useControls } from 'leva'
 import { createBufferedMusicTransport } from './audioTransport'
 import {
@@ -103,84 +103,6 @@ function interpolatePostSettings(from, to, alpha) {
   }
 }
 
-const _snapshotSize = new THREE.Vector2()
-
-class SnapshotCapturePass extends Pass {
-  constructor() {
-    super('SnapshotCapturePass')
-    this.needsSwap = false
-    this.fullscreenMaterial = new CopyMaterial()
-    this.shouldCaptureRef = null
-    this.snapshotTextureRef = null
-    this.onCaptured = null
-    this.snapshotRenderTarget = null
-  }
-
-  ensureRenderTarget(renderer) {
-    renderer.getDrawingBufferSize(_snapshotSize)
-    const width = Math.max(1, Math.floor(_snapshotSize.x))
-    const height = Math.max(1, Math.floor(_snapshotSize.y))
-
-    if (this.snapshotRenderTarget && this.snapshotRenderTarget.width === width && this.snapshotRenderTarget.height === height) {
-      return this.snapshotRenderTarget
-    }
-
-    this.snapshotRenderTarget?.dispose()
-    this.snapshotRenderTarget = new THREE.WebGLRenderTarget(width, height, {
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      depthBuffer: false,
-      stencilBuffer: false,
-    })
-    this.snapshotRenderTarget.texture.colorSpace = THREE.SRGBColorSpace
-    this.snapshotRenderTarget.texture.generateMipmaps = false
-
-    return this.snapshotRenderTarget
-  }
-
-  render(renderer, inputBuffer, outputBuffer) {
-    this.fullscreenMaterial.inputBuffer = inputBuffer.texture
-
-    if (this.shouldCaptureRef?.current) {
-      const renderTarget = this.ensureRenderTarget(renderer)
-      renderer.setRenderTarget(renderTarget)
-      renderer.render(this.scene, this.camera)
-      this.snapshotTextureRef.current = renderTarget.texture
-      this.shouldCaptureRef.current = false
-      this.onCaptured?.()
-    }
-
-    renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer)
-    renderer.render(this.scene, this.camera)
-  }
-
-  dispose() {
-    if (this.snapshotTextureRef) {
-      this.snapshotTextureRef.current = null
-    }
-    super.dispose()
-  }
-}
-
-function SnapshotCapture({ shouldCaptureRef, snapshotTextureRef, onCaptured }) {
-  const pass = useMemo(() => new SnapshotCapturePass(), [])
-
-  useEffect(() => {
-    pass.shouldCaptureRef = shouldCaptureRef
-    pass.snapshotTextureRef = snapshotTextureRef
-    pass.onCaptured = onCaptured
-
-    return () => {
-      pass.shouldCaptureRef = null
-      pass.snapshotTextureRef = null
-      pass.onCaptured = null
-      snapshotTextureRef.current = null
-    }
-  }, [onCaptured, pass, shouldCaptureRef, snapshotTextureRef])
-
-  return <primitive object={pass} />
-}
-
 
 function DayNightController({ isRunning }) {
   const dirLightRef = useRef()
@@ -260,15 +182,14 @@ function DayNightController({ isRunning }) {
 function PostEffects({
   introSettings,
   gameSettings,
-  snapshotTexture,
   transitionSettings,
   transitionProgressRef,
   isTransitioning,
-  hasStartedGame,
-  shouldCaptureRef,
-  snapshotTextureRef,
-  onCaptured,
+  showGameWorld,
+  runActive,
+  introCaptureCameraRef,
 }) {
+  const { size, viewport } = useThree()
   const bloom = useMemo(() => new BloomEffect({
     intensity: introSettings.bloomIntensity,
     luminanceThreshold: introSettings.bloomThreshold,
@@ -283,6 +204,17 @@ function PostEffects({
     hue: introSettings.hue,
     saturation: introSettings.saturation,
   }), [introSettings.hue, introSettings.saturation])
+  const introScene = useMemo(() => new THREE.Scene(), [])
+  const introCaptureCamera = useMemo(() => new THREE.PerspectiveCamera(43, 1, 0.1, 1000), [])
+  const introWidth = Math.max(1, Math.floor(size.width * viewport.dpr * 0.5))
+  const introHeight = Math.max(1, Math.floor(size.height * viewport.dpr * 0.5))
+  const introRenderTarget = useFBO(introWidth, introHeight, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    depthBuffer: false,
+    stencilBuffer: false,
+    generateMipmaps: false,
+  })
 
   useEffect(() => () => {
     bloom.dispose()
@@ -290,10 +222,49 @@ function PostEffects({
     hueSaturation.dispose()
   }, [bloom, brightnessContrast, hueSaturation])
 
+  useEffect(() => {
+    introRenderTarget.texture.colorSpace = THREE.SRGBColorSpace
+    introRenderTarget.texture.generateMipmaps = false
+  }, [introRenderTarget])
+
+  useEffect(() => {
+    introCaptureCamera.aspect = introWidth / introHeight
+    introCaptureCamera.updateProjectionMatrix()
+  }, [introCaptureCamera, introHeight, introWidth])
+
+  useLayoutEffect(() => {
+    introCaptureCameraRef.current = introCaptureCamera
+    return () => {
+      if (introCaptureCameraRef.current === introCaptureCamera) {
+        introCaptureCameraRef.current = null
+      }
+    }
+  }, [introCaptureCamera, introCaptureCameraRef])
+
+  useFrame((state) => {
+    if (!isTransitioning) return
+
+    const previousTarget = state.gl.getRenderTarget()
+    const previousAutoClear = state.gl.autoClear
+    const previousXrEnabled = state.gl.xr.enabled
+    const previousIsPresenting = state.gl.xr.isPresenting
+
+    state.gl.autoClear = true
+    state.gl.xr.enabled = false
+    state.gl.xr.isPresenting = false
+    state.gl.setRenderTarget(introRenderTarget)
+    state.gl.clear()
+    state.gl.render(introScene, introCaptureCamera)
+    state.gl.setRenderTarget(previousTarget)
+    state.gl.autoClear = previousAutoClear
+    state.gl.xr.enabled = previousXrEnabled
+    state.gl.xr.isPresenting = previousIsPresenting
+  }, 0)
+
   useFrame(() => {
     const transitionMix = isTransitioning
       ? THREE.MathUtils.smootherstep(transitionProgressRef.current, 0, 1)
-      : hasStartedGame ? 1 : 0
+      : showGameWorld ? 1 : 0
     const activeSettings = interpolatePostSettings(introSettings, gameSettings, transitionMix)
 
     brightnessContrast.brightness = activeSettings.brightness
@@ -303,35 +274,36 @@ function PostEffects({
     bloom.luminanceMaterial.threshold = activeSettings.bloomThreshold
     bloom.luminanceMaterial.smoothing = activeSettings.bloomSmoothing
 
-    // Suppress bloom during early transition so the snapshot renders cleanly
-    if (isTransitioning && snapshotTexture && transitionProgressRef.current < 0.15) {
+    // Suppress bloom during early transition so the live intro buffer renders cleanly.
+    if (isTransitioning && transitionProgressRef.current < 0.15) {
       bloom.intensity = 0
       return
     }
 
-    const nightFactor = hasStartedGame ? getNightFactor(gameState.timeOfDay.current) : 0
+    const nightFactor = runActive ? getNightFactor(gameState.timeOfDay.current) : 0
     bloom.intensity = THREE.MathUtils.lerp(activeSettings.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
     bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(activeSettings.bloomThreshold, 0, nightFactor)
   })
 
   return (
-    <EffectComposer multisampling={0}>
-      <primitive object={bloom} />
-      {isTransitioning && snapshotTexture && (
-        <TransitionEffect
-          snapshotTexture={snapshotTexture}
-          progressRef={transitionProgressRef}
-          settings={transitionSettings}
-        />
+    <>
+      {isTransitioning && createPortal(
+        <IntroScene disabled buttonLabel="PRESS START" />,
+        introScene,
       )}
-      <primitive object={brightnessContrast} />
-      <primitive object={hueSaturation} />
-      <SnapshotCapture
-        shouldCaptureRef={shouldCaptureRef}
-        snapshotTextureRef={snapshotTextureRef}
-        onCaptured={onCaptured}
-      />
-    </EffectComposer>
+      <EffectComposer multisampling={0}>
+        <primitive object={bloom} />
+        {isTransitioning && (
+          <TransitionEffect
+            introTexture={introRenderTarget.texture}
+            progressRef={transitionProgressRef}
+            settings={transitionSettings}
+          />
+        )}
+        <primitive object={brightnessContrast} />
+        <primitive object={hueSaturation} />
+      </EffectComposer>
+    </>
   )
 }
 
@@ -344,6 +316,71 @@ function TransitionAnimator({ progressRef, isTransitioning, duration, onComplete
     }
   })
   return null
+}
+
+function GameWorldWarmup({ active, onComplete }) {
+  const warmedFrames = useRef(0)
+  const completed = useRef(false)
+
+  useFrame(() => {
+    if (!active || completed.current) return
+
+    warmedFrames.current += 1
+    if (warmedFrames.current >= 2) {
+      completed.current = true
+      onComplete()
+    }
+  })
+
+  return null
+}
+
+function GameWorld({
+  visible,
+  sceneActive,
+  runActive,
+  isGameOver,
+  isCountdownActive,
+  useOriginalMaterials,
+  trailTargetRef,
+  musicRef,
+  onJumpTiming,
+  onJumpSfx,
+  onLogHit,
+}) {
+  return (
+    <>
+      {visible && <fog attach="fog" args={['#c4d4b8', 55, 130]} />}
+      {visible && <color attach="background" args={['#000000']} />}
+      <group visible={visible}>
+        <DayNightController isRunning={sceneActive && !isGameOver} />
+        <Ground active={sceneActive} />
+        <Background active={sceneActive} />
+        <Sky active={sceneActive} />
+        <group visible={visible}>
+          <SkateCat
+            trailTargetRef={trailTargetRef}
+            controlsEnabled={runActive && !isGameOver && !isCountdownActive}
+            useOriginalMaterials={useOriginalMaterials}
+            musicRef={musicRef}
+            onJumpTiming={onJumpTiming}
+            onJumpSfx={onJumpSfx}
+          />
+        </group>
+        <Obstacles
+          musicRef={musicRef}
+          active={runActive}
+          isRunning={runActive && !isGameOver}
+          canCollide={runActive && !isCountdownActive}
+          onLogHit={onLogHit}
+        />
+        <SpeedLines active={sceneActive} />
+        <KickflipSparks active={sceneActive} />
+        <DustTrail active={sceneActive} />
+        <AmbientParticles active={sceneActive} />
+      </group>
+    </>
+  )
 }
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
@@ -665,7 +702,12 @@ export default function App() {
   const jump2SfxRef = useRef(null)
   const dieSfxRef = useRef(null)
   const hasStartedMusicRef = useRef(false)
-  const [hasStartedGame, setHasStartedGame] = useState(false)
+  const introCaptureCameraRef = useRef(null)
+  const hasQueuedWarmupRef = useRef(false)
+  const [showGameWorld, setShowGameWorld] = useState(false)
+  const [runActive, setRunActive] = useState(false)
+  const [isGameWorldPrimed, setIsGameWorldPrimed] = useState(false)
+  const [hasCompletedBootReveal, setHasCompletedBootReveal] = useState(false)
   const [isGameOver, setIsGameOver] = useState(false)
   const [timingFeedback, setTimingFeedback] = useState({ label: '', id: 0 })
   const [hasConfirmedMusicStart, setHasConfirmedMusicStart] = useState(false)
@@ -673,18 +715,42 @@ export default function App() {
   const [countdownText, setCountdownText] = useState('')
   const [countdownAnimationKey, setCountdownAnimationKey] = useState(0)
   const [volume, setVolume] = useState(0.5)
-  // Intro-to-toon transition state
   const [useOriginalMaterials, setUseOriginalMaterials] = useState(true)
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [snapshotTexture, setSnapshotTexture] = useState(null)
   const transitionProgressRef = useRef(0)
-  const shouldCaptureRef = useRef(false)
-  const snapshotTextureRef = useRef(null)
-  const pendingStartRef = useRef(null)
   const { active: isLoadingAssets, progress: loadingProgress } = useProgress()
+  const isAssetLoadComplete = !isLoadingAssets && loadingProgress >= 100
+  const showLoadingOverlay = !hasCompletedBootReveal
+  const shouldMountGameWorld = isAssetLoadComplete || isGameWorldPrimed || showGameWorld || runActive || isTransitioning
+  const isWarmingGameWorld = showGameWorld && !isGameWorldPrimed && !runActive && !isTransitioning
+  const sceneActive = runActive || isTransitioning
 
   const handleVolumePointerDone = useCallback((event) => {
     event.currentTarget.blur()
+  }, [])
+
+  const resetRunState = useCallback(({ speed = 0, speedLinesOn = false } = {}) => {
+    gameState.gameOver = false
+    gameState.score = 0
+    gameState.speed.current = speed
+    gameState.speedBoostActive = speed > 0
+    gameState.speedLinesOn = speedLinesOn
+    gameState.jumping = false
+    gameState.streak.current = 0
+    gameState.scoreMultiplier.current = 1
+    gameState.pendingJumpTiming.current = null
+    gameState.obstacleTargets.current = []
+    gameState.upArrowHeld.current = false
+    gameState.activeGrind.current = createIdleGrindState()
+    gameState.grindSpark.current = createIdleGrindSparkState()
+    gameState.timeScale.current = 1
+    gameState.grindCooldownObstacleId.current = 0
+    gameState.catHeight.current = 0.05
+    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
+    gameState.screenShake.current = 0
+    gameState.comboEnergy.current = 1
+    gameState.timeOfDay.current = 0
+    gameState.runDifficultyProgress.current = 0
   }, [])
 
   const handleReturnToIntro = useCallback(() => {
@@ -694,44 +760,28 @@ export default function App() {
       musicRef.current.currentTime = 0
     }
 
-    gameState.gameOver = false
-    gameState.speed.current = 0
-    gameState.jumping = false
-    gameState.pendingJumpTiming.current = null
-    gameState.obstacleTargets.current = []
-    gameState.upArrowHeld.current = false
-    gameState.activeGrind.current = createIdleGrindState()
-    gameState.grindSpark.current = createIdleGrindSparkState()
-    gameState.screenShake.current = 0
-    gameState.comboEnergy.current = 1
-    gameState.timeOfDay.current = 0
-    gameState.runDifficultyProgress.current = 0
+    resetRunState()
 
     transitionProgressRef.current = 0
-    shouldCaptureRef.current = false
-    snapshotTextureRef.current = null
-    pendingStartRef.current = null
-
-    setHasStartedGame(false)
+    setRunActive(false)
+    setShowGameWorld(false)
     setIsGameOver(false)
     setHasConfirmedMusicStart(false)
     setIsCountdownActive(false)
     setCountdownText('')
-    setUseOriginalMaterials(true)
     setIsTransitioning(false)
-    setSnapshotTexture(null)
     setTimingFeedback({ label: '', id: 0 })
-  }, [])
+  }, [resetRunState])
 
   const introPost = useControls('Intro Post Processing', createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS))
   const gamePost = useControls('Post Processing', createPostProcessingControls(DEFAULT_GAME_POST_SETTINGS))
   const transitionSettings = useControls('Intro Transition', {
-    duration: { value: 0.95, min: 0.3, max: 4.5, step: 0.05, label: 'Duration' },
-    revealCurve: { value: 0.75, min: 0.2, max: 2.2, step: 0.01, label: 'Curve' },
-    thresholdStart: { value: 0.07, min: -0.3, max: 0.3, step: 0.01, label: 'Start' },
-    thresholdEnd: { value: 0.77, min: 0.2, max: 1.2, step: 0.01, label: 'End' },
-    bandBefore: { value: 0.06, min: 0.005, max: 0.2, step: 0.005, label: 'Edge In' },
-    bandAfter: { value: 0.07, min: 0.005, max: 0.2, step: 0.005, label: 'Edge Out' },
+    duration: { value: 2.4, min: 0.3, max: 4.5, step: 0.05, label: 'Duration' },
+    revealCurve: { value: 0.86, min: 0.2, max: 2.2, step: 0.01, label: 'Curve' },
+    thresholdStart: { value: 0.12, min: -0.3, max: 0.3, step: 0.01, label: 'Start' },
+    thresholdEnd: { value: 0.97, min: 0.2, max: 1.2, step: 0.01, label: 'End' },
+    bandBefore: { value: 0.01, min: 0.005, max: 0.2, step: 0.005, label: 'Edge In' },
+    bandAfter: { value: 0.2, min: 0.005, max: 0.2, step: 0.005, label: 'Edge Out' },
     glowInnerOffset: { value: 0.08, min: 0, max: 0.08, step: 0.005, label: 'Glow In' },
     glowOuterOffset: { value: 0.25, min: 0.01, max: 0.25, step: 0.005, label: 'Glow Out' },
     glowIntensity: { value: 0.65, min: 0, max: 2, step: 0.05, label: 'Glow' },
@@ -740,6 +790,10 @@ export default function App() {
     noiseScaleB: { value: 8.0, min: 1, max: 32, step: 0.5, label: 'Noise B' },
     noiseAmpA: { value: 0.0, min: 0, max: 0.6, step: 0.01, label: 'Noise Amt A' },
     noiseAmpB: { value: 0.18, min: 0, max: 0.4, step: 0.01, label: 'Noise Amt B' },
+    diffuseSpread: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'Diffuse Spread' },
+    dollyAmount: { value: 0.4, min: 0, max: 0.8, step: 0.01, label: 'Dolly' },
+    dollyStart: { value: 0.2, min: 0, max: 0.2, step: 0.005, label: 'Dolly Start' },
+    flashStrength: { value: 1, min: 0, max: 1, step: 0.05, label: 'Flash' },
     replay: button(() => handleReturnToIntro()),
   })
   const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useControls('Timing Debug', {
@@ -766,17 +820,49 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!isAssetLoadComplete || isGameWorldPrimed || hasQueuedWarmupRef.current) return
+
+    hasQueuedWarmupRef.current = true
+    setUseOriginalMaterials(false)
+    setShowGameWorld(true)
+  }, [isAssetLoadComplete, isGameWorldPrimed])
+
+  useEffect(() => {
+    if (
+      hasCompletedBootReveal ||
+      !isGameWorldPrimed ||
+      showGameWorld ||
+      isTransitioning
+    ) {
+      return
+    }
+
+    let revealFrameA = 0
+    let revealFrameB = 0
+    revealFrameA = window.requestAnimationFrame(() => {
+      revealFrameB = window.requestAnimationFrame(() => {
+        setHasCompletedBootReveal(true)
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(revealFrameA)
+      window.cancelAnimationFrame(revealFrameB)
+    }
+  }, [hasCompletedBootReveal, isGameWorldPrimed, isTransitioning, showGameWorld])
+
+  useEffect(() => {
     const onKeyDown = (event) => {
       if (event.repeat) return
       if (!event.shiftKey || event.key.toLowerCase() !== 'r') return
-      if (!hasStartedGame && !isTransitioning) return
+      if (!runActive && !isTransitioning) return
       event.preventDefault()
       handleReturnToIntro()
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleReturnToIntro, hasStartedGame, isTransitioning])
+  }, [handleReturnToIntro, isTransitioning, runActive])
 
   useEffect(() => {
     gameState.onGameOver = () => setIsGameOver(true)
@@ -798,11 +884,11 @@ export default function App() {
     if (musicRef.current) {
       musicRef.current.playbackRate = playbackRate
     }
-  }, [debugPlaybackRate, hasStartedGame, isTimingDebug])
+  }, [debugPlaybackRate, isTimingDebug, runActive])
 
   useEffect(() => {
     if (!musicRef.current) return
-    if (!hasStartedGame || isGameOver) {
+    if (!runActive || isGameOver) {
       musicRef.current.pause()
       hasStartedMusicRef.current = false
       setHasConfirmedMusicStart(false)
@@ -814,7 +900,7 @@ export default function App() {
     if (hasStartedMusicRef.current) {
       musicRef.current.play().catch(() => { })
     }
-  }, [hasStartedGame, isGameOver])
+  }, [isGameOver, runActive])
 
   useEffect(() => {
     if (!musicRef.current) return
@@ -822,7 +908,7 @@ export default function App() {
   }, [volume])
 
   useEffect(() => {
-    if (!hasStartedGame || isGameOver || !hasConfirmedMusicStart) {
+    if (!runActive || isGameOver || !hasConfirmedMusicStart) {
       return
     }
 
@@ -850,7 +936,7 @@ export default function App() {
 
     animationFrameId = window.requestAnimationFrame(syncCountdownToMusic)
     return () => window.cancelAnimationFrame(animationFrameId)
-  }, [hasConfirmedMusicStart, hasStartedGame, isGameOver])
+  }, [hasConfirmedMusicStart, isGameOver, runActive])
 
   const startMusicPlayback = useCallback(async () => {
     const music = musicRef.current
@@ -874,82 +960,47 @@ export default function App() {
     }
   }, [])
 
-  const finishStart = useCallback(() => {
-    gameState.gameOver = false
-    gameState.score = 0
+  const activateRun = useCallback(() => {
     gameState.speed.current = 8
     gameState.speedBoostActive = true
     gameState.speedLinesOn = true
-    gameState.jumping = false
-    gameState.streak.current = 0
-    gameState.scoreMultiplier.current = 1
-    gameState.pendingJumpTiming.current = null
-    gameState.obstacleTargets.current = []
-    gameState.upArrowHeld.current = false
-    gameState.activeGrind.current = createIdleGrindState()
-    gameState.grindSpark.current = createIdleGrindSparkState()
-    gameState.timeScale.current = 1
-    gameState.grindCooldownObstacleId.current = 0
-    gameState.catHeight.current = 0.05
-    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
-    gameState.comboEnergy.current = 1
-    gameState.timeOfDay.current = 0
-    gameState.runDifficultyProgress.current = 0
     setIsGameOver(false)
-    setHasStartedGame(true)
+    setRunActive(true)
     setTimingFeedback({ label: '', id: 0 })
-    startMusicPlayback()
-  }, [startMusicPlayback])
+  }, [])
+
+  const handleGameWorldPrimed = useCallback(() => {
+    setIsGameWorldPrimed(true)
+    setShowGameWorld(false)
+  }, [])
 
   const handleStart = useCallback(() => {
-    transitionProgressRef.current = 0
-    setSnapshotTexture(null)
-    snapshotTextureRef.current = null
-    setIsTransitioning(true)
-    shouldCaptureRef.current = true
-    pendingStartRef.current = finishStart
-  }, [finishStart])
+    if (!isGameWorldPrimed || isTransitioning) return
 
-  const handleSceneCaptured = useCallback(() => {
+    resetRunState({ speed: 8, speedLinesOn: false })
     transitionProgressRef.current = 0
-    setSnapshotTexture(snapshotTextureRef.current)
+    setRunActive(false)
+    setIsGameOver(false)
     setUseOriginalMaterials(false)
-    if (pendingStartRef.current) {
-      pendingStartRef.current()
-      pendingStartRef.current = null
-    }
-  }, [])
+    setShowGameWorld(true)
+    setIsTransitioning(true)
+  }, [isGameWorldPrimed, isTransitioning, resetRunState])
 
   const handleTransitionComplete = useCallback(() => {
     setIsTransitioning(false)
-    setSnapshotTexture(null)
-  }, [])
+    activateRun()
+    startMusicPlayback()
+  }, [activateRun, startMusicPlayback])
 
   const handleRestart = useCallback(() => {
-    gameState.gameOver = false
-    gameState.score = 0
-    gameState.speed.current = 8
-    gameState.speedBoostActive = true
-    gameState.speedLinesOn = true
-    gameState.jumping = false
-    gameState.streak.current = 0
-    gameState.scoreMultiplier.current = 1
-    gameState.pendingJumpTiming.current = null
-    gameState.obstacleTargets.current = []
-    gameState.upArrowHeld.current = false
-    gameState.activeGrind.current = createIdleGrindState()
-    gameState.grindSpark.current = createIdleGrindSparkState()
-    gameState.timeScale.current = 1
-    gameState.grindCooldownObstacleId.current = 0
-    gameState.catHeight.current = 0.05
-    gameState.lastScoringEvent.current = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
-    gameState.comboEnergy.current = 1
-    gameState.timeOfDay.current = 0
-    gameState.runDifficultyProgress.current = 0
+    resetRunState({ speed: 8, speedLinesOn: true })
     setIsGameOver(false)
+    setRunActive(true)
+    setShowGameWorld(true)
+    setUseOriginalMaterials(false)
     setTimingFeedback({ label: '', id: 0 })
     startMusicPlayback()
-  }, [startMusicPlayback])
+  }, [resetRunState, startMusicPlayback])
 
   const handleJumpTiming = useCallback((label) => {
     setTimingFeedback({ label, id: performance.now() })
@@ -980,9 +1031,12 @@ export default function App() {
     sfx.play().catch(() => { })
   }, [])
 
+  const loadingLabel = isAssetLoadComplete ? 'WARMING UP' : 'LOADING'
+  const introDisabled = !isGameWorldPrimed || isTransitioning
+
   return (
     <>
-      {(isLoadingAssets || loadingProgress < 100) && (
+      {showLoadingOverlay && (
         <>
           <style>
             {`@keyframes gameLoadingPulse {
@@ -1020,7 +1074,7 @@ export default function App() {
               animation: 'gameLoadingPulse 1.2s ease-in-out infinite',
               textShadow: '0 0 30px rgba(255, 107, 53, 0.3), 2px 2px 0 rgba(255, 107, 53, 0.25)',
             }}>
-              LOADING
+              {loadingLabel}
             </div>
             <div style={{
               position: 'relative',
@@ -1100,16 +1154,16 @@ export default function App() {
       )}
       <TimingDebugHud
         musicRef={musicRef}
-        visible={hasStartedGame && !isGameOver}
+        visible={runActive && !isGameOver}
         playbackRate={isTimingDebug ? Number(debugPlaybackRate) : 1}
         manualOffsetMs={isTimingDebug ? timingOffsetMs : 0}
         obstacleHitDelayMs={isTimingDebug ? obstacleHitDelayMs : 0}
       />
       <ObstacleSpacingDebugHud
         musicRef={musicRef}
-        visible={hasStartedGame && !isGameOver}
+        visible={runActive && !isGameOver}
       />
-      {(hasStartedGame || isTransitioning) && (
+      {(runActive || isTransitioning) && (
         <button
           onClick={handleReturnToIntro}
           style={{
@@ -1149,7 +1203,7 @@ export default function App() {
           </span>
         </button>
       )}
-      {hasStartedGame && (
+      {runActive && (
         <div
           style={{
             position: 'fixed',
@@ -1189,47 +1243,51 @@ export default function App() {
           />
         </div>
       )}
-      <GameHud musicRef={musicRef} visible={hasStartedGame && !isGameOver} timingFeedback={timingFeedback} />
+      <GameHud musicRef={musicRef} visible={runActive && !isGameOver} timingFeedback={timingFeedback} />
       <GameOverScreen visible={isGameOver} onRestart={handleRestart} />
       <Canvas
-        style={{ width: '100vw', height: '100vh' }}
+        style={{
+          width: '100vw',
+          height: '100vh',
+          opacity: hasCompletedBootReveal ? 1 : 0,
+        }}
         gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
         shadows={{ type: THREE.PCFShadowMap }}
       >
-        {hasStartedGame && <fog attach="fog" args={['#c4d4b8', 55, 130]} />}
-
-        <CameraRig started={hasStartedGame} />
-        {hasStartedGame && <DayNightController isRunning={!isGameOver} />}
-
-        {hasStartedGame && <Ground />}
-        {hasStartedGame && <Background />}
-        {hasStartedGame && <Sky />}
-        {!hasStartedGame && <IntroScene onStart={handleStart} disabled={isTransitioning} />}
-        {hasStartedGame && <color attach="background" args={['#000000']} />}
-        {/* SkateCat is always mounted (pre-loaded) but hidden during the intro screen */}
-        <group visible={hasStartedGame}>
-          <SkateCat
-            trailTargetRef={trailTarget}
-            controlsEnabled={hasStartedGame && !isGameOver && !isCountdownActive}
+        <CameraRig
+          runActive={runActive}
+          showGameWorld={showGameWorld}
+          isTransitioning={isTransitioning}
+          transitionProgressRef={transitionProgressRef}
+          introCaptureCameraRef={introCaptureCameraRef}
+        />
+        {!showGameWorld && !isTransitioning && (
+          <IntroScene
+            onStart={handleStart}
+            disabled={introDisabled}
+            buttonLabel={isGameWorldPrimed ? 'PRESS START' : 'LOADING...'}
+          />
+        )}
+        {shouldMountGameWorld && (
+          <GameWorld
+            visible={showGameWorld}
+            sceneActive={sceneActive}
+            runActive={runActive}
+            isGameOver={isGameOver}
+            isCountdownActive={isCountdownActive}
             useOriginalMaterials={useOriginalMaterials}
+            trailTargetRef={trailTarget}
             musicRef={musicRef}
             onJumpTiming={handleJumpTiming}
             onJumpSfx={playJumpSfx}
+            onLogHit={playDieSfx}
           />
-        </group>
-        {hasStartedGame && (
-          <>
-            <Obstacles
-              musicRef={musicRef}
-              isRunning={!isGameOver}
-              canCollide={!isCountdownActive}
-              onLogHit={playDieSfx}
-            />
-            <SpeedLines />
-            <KickflipSparks />
-            <DustTrail />
-            <AmbientParticles />
-          </>
+        )}
+        {shouldMountGameWorld && (
+          <GameWorldWarmup
+            active={isWarmingGameWorld}
+            onComplete={handleGameWorldPrimed}
+          />
         )}
         <TransitionAnimator
           progressRef={transitionProgressRef}
@@ -1240,14 +1298,12 @@ export default function App() {
         <PostEffects
           introSettings={introPost}
           gameSettings={gamePost}
-          snapshotTexture={snapshotTexture}
           transitionSettings={transitionSettings}
           transitionProgressRef={transitionProgressRef}
           isTransitioning={isTransitioning}
-          hasStartedGame={hasStartedGame}
-          shouldCaptureRef={shouldCaptureRef}
-          snapshotTextureRef={snapshotTextureRef}
-          onCaptured={handleSceneCaptured}
+          showGameWorld={showGameWorld}
+          runActive={runActive}
+          introCaptureCameraRef={introCaptureCameraRef}
         />
       </Canvas>
     </>

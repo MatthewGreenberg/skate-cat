@@ -844,7 +844,7 @@ function createLogToonMaterial({
   })
 }
 
-export default function Obstacles({ musicRef, isRunning, canCollide = true, onLogHit }) {
+export default function Obstacles({ musicRef, active: isActive = true, isRunning, canCollide = true, onLogHit }) {
   const log = useGLTF('/large_tree_log/scene.gltf')
   const refs = useRef([])
   const logRefs = useRef([])
@@ -1040,6 +1040,37 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
       gameState.activeGrind.current = createIdleGrindState()
     }
   }
+
+  useEffect(() => {
+    if (isActive) return
+
+    for (let i = 0; i < POOL_SIZE; i += 1) {
+      resetObstacleSlot(active.current[i])
+      if (refs.current[i]) refs.current[i].visible = false
+      if (logRefs.current[i]) logRefs.current[i].visible = false
+      if (railRefs.current[i]) railRefs.current[i].visible = false
+      if (signRefs.current[i]) signRefs.current[i].visible = false
+      if (timingMarkerRefs.current[i]) timingMarkerRefs.current[i].visible = false
+    }
+
+    measureCursor.current = getStartupMeasureCursor()
+    patternHistory.current = []
+    placementHistory.current = []
+    consecutiveDensePatterns.current = 0
+    consecutiveChainPatterns.current = 0
+    measuresSinceRail.current = INITIAL_MEASURES_SINCE_RAIL
+    logBlockedUntilBeat.current = 0
+    hasAssignedHoldTutorial.current = false
+    timingDebugPatternIndex.current = 0
+    recentDebugObstacles.current.clear()
+    gameState.obstacleTargets.current = []
+    gameState.obstacleDebug.current = []
+    gameState.upArrowHeld.current = false
+    gameState.grindCooldownObstacleId.current = 0
+    gameState.runDifficultyProgress.current = 0
+    worldScrollDistance.current = 0
+    stopGrinding()
+  }, [isActive])
 
   const laneHasMixedObstacleConflict = ({ lane, beatIndex, isVertical, railLength, pendingObstacles = [] }) => {
     const laneConflictSpeed = Math.max(gameState.speed.current || 0, gameState.baseSpeed || 0, 0.001)
@@ -1339,6 +1370,8 @@ export default function Obstacles({ musicRef, isRunning, canCollide = true, onLo
   }
 
   useFrame((_, delta) => {
+    if (!isActive) return
+
     // Reset obstacles when game restarts
     if (wasGameOver.current && !gameState.gameOver) {
       for (let i = 0; i < POOL_SIZE; i++) {

@@ -7,12 +7,47 @@ import { gameState, getGameDelta } from '../store'
 const INTRO_LERP_SPEED = 2.5
 const INTRO_FOV = 43
 const GAME_FOV = 75
+const INTRO_TRANSITION_DOLLY_DISTANCE = 0.5
+const INTRO_TRANSITION_FOV = 51
 
-export default function CameraRig({ started = false }) {
+function transitionEase(t) {
+  return 1 - (1 - t) * (1 - t)
+}
+
+const _vecA = new THREE.Vector3()
+const _vecB = new THREE.Vector3()
+const _vecD = new THREE.Vector3()
+const _vecE = new THREE.Vector3()
+const _vecF = new THREE.Vector3()
+const _vecH = new THREE.Vector3()
+
+function applyCameraPose(targetCamera, position, lookAt, fov) {
+  if (!targetCamera) return
+
+  targetCamera.position.copy(position)
+  if (Math.abs(targetCamera.fov - fov) > 0.001) {
+    targetCamera.fov = fov
+    targetCamera.updateProjectionMatrix()
+  }
+  targetCamera.lookAt(lookAt)
+}
+
+export default function CameraRig({
+  runActive = false,
+  showGameWorld = false,
+  isTransitioning = false,
+  transitionProgressRef,
+  introCaptureCameraRef,
+}) {
   const { camera } = useThree()
   const currentZoom = useRef(0)
   const jumpZoom = useRef(0)
   const shakeTime = useRef(0)
+
+  const posAtCapture = useRef(new THREE.Vector3())
+  const lookAtCapture = useRef(new THREE.Vector3())
+  const fovAtCapture = useRef(INTRO_FOV)
+  const wasTransitioning = useRef(false)
 
   const { introCamX, introCamY, introCamZ, introLookX, introLookY, introLookZ } = useControls('Intro Scene Camera', {
     introCamX: { value: 0.15, min: -5, max: 5, step: 0.1 },
@@ -39,18 +74,74 @@ export default function CameraRig({ started = false }) {
     kickflipAngleY: { value: 0.25, min: -1, max: 1, step: 0.05 },
   })
 
-  useFrame((state, delta) => {
+  useFrame((_, delta) => {
     const gameDelta = getGameDelta(delta)
-    // Calculate zoom-out based on speed above base
+    const introCamera = introCaptureCameraRef?.current || null
+
+    if (isTransitioning && !wasTransitioning.current) {
+      posAtCapture.current.copy(camPos.current)
+      lookAtCapture.current.copy(camLook.current)
+      fovAtCapture.current = camera.fov
+    }
+    wasTransitioning.current = isTransitioning
+
+    const introPos = _vecE.set(introCamX, introCamY, introCamZ)
+    const introLook = _vecF.set(introLookX, introLookY, introLookZ)
+
+    if (introCamera && !isTransitioning) {
+      applyCameraPose(introCamera, introPos, introLook, INTRO_FOV)
+    }
+
+    if (isTransitioning) {
+      const t = transitionEase(transitionProgressRef?.current ?? 0)
+      const nextFov = THREE.MathUtils.lerp(fovAtCapture.current, GAME_FOV, t)
+
+      _vecA.set(posX, posY, posZ)
+      camPos.current.lerpVectors(posAtCapture.current, _vecA, t)
+      _vecB.set(lookX, lookY, lookZ)
+      camLook.current.lerpVectors(lookAtCapture.current, _vecB, t)
+      applyCameraPose(camera, camPos.current, camLook.current, nextFov)
+
+      if (introCamera) {
+        _vecH.subVectors(lookAtCapture.current, posAtCapture.current)
+        if (_vecH.lengthSq() > 0.000001) {
+          _vecH.normalize().multiplyScalar(INTRO_TRANSITION_DOLLY_DISTANCE * t)
+          _vecD.copy(posAtCapture.current).add(_vecH)
+        } else {
+          _vecD.copy(posAtCapture.current)
+        }
+
+        const introFov = THREE.MathUtils.lerp(fovAtCapture.current, INTRO_TRANSITION_FOV, t)
+        applyCameraPose(introCamera, _vecD, lookAtCapture.current, introFov)
+      }
+      return
+    }
+
+    if (!runActive) {
+      currentZoom.current = 0
+      jumpZoom.current = 0
+      shakeTime.current = 0
+      gameState.screenShake.current = 0
+
+      if (showGameWorld) {
+        camPos.current.set(posX, posY, posZ)
+        camLook.current.set(lookX, lookY, lookZ)
+        applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
+      } else {
+        camPos.current.set(introCamX, introCamY, introCamZ)
+        camLook.current.set(introLookX, introLookY, introLookZ)
+        applyCameraPose(camera, camPos.current, camLook.current, INTRO_FOV)
+      }
+      return
+    }
+
     const speedExtra = Math.max(0, gameState.speed.current - gameState.baseSpeed)
     const targetZoom = speedExtra * 0.08
     currentZoom.current = THREE.MathUtils.lerp(currentZoom.current, targetZoom, gameDelta * 5)
 
-    // Jump zoom-out
     const jumpTarget = gameState.jumping ? kickflipZoom : 0
     jumpZoom.current = THREE.MathUtils.lerp(jumpZoom.current, jumpTarget, gameDelta * kickflipLerp)
 
-    // Screen shake
     if (gameState.screenShake.current > 0) {
       gameState.screenShake.current = Math.max(0, gameState.screenShake.current - gameDelta)
       shakeTime.current += gameDelta * 40
@@ -59,33 +150,19 @@ export default function CameraRig({ started = false }) {
     const shakeX = Math.sin(shakeTime.current * 1.1) * shakeIntensity
     const shakeY = Math.cos(shakeTime.current * 1.7) * shakeIntensity
 
-    // Target position/lookAt
     const z = currentZoom.current + jumpZoom.current
-    const targetPos = started
-      ? new THREE.Vector3(
-          posX + jumpZoom.current * kickflipAngleX + shakeX,
-          posY + jumpZoom.current * kickflipAngleY + shakeY,
-          posZ + z
-        )
-      : new THREE.Vector3(introCamX, introCamY, introCamZ)
-
-    const targetLook = started
-      ? new THREE.Vector3(lookX, lookY, lookZ)
-      : new THREE.Vector3(introLookX, introLookY, introLookZ)
-
-    const targetFov = started ? GAME_FOV : INTRO_FOV
+    const targetPos = _vecA.set(
+      posX + jumpZoom.current * kickflipAngleX + shakeX,
+      posY + jumpZoom.current * kickflipAngleY + shakeY,
+      posZ + z
+    )
+    const targetLook = _vecB.set(lookX, lookY, lookZ)
+    const targetFov = GAME_FOV
     const nextFov = THREE.MathUtils.lerp(camera.fov, targetFov, gameDelta * 5)
-    if (Math.abs(nextFov - camera.fov) > 0.001) {
-      camera.fov = nextFov
-      camera.updateProjectionMatrix()
-    }
 
-    const lerpSpeed = started ? INTRO_LERP_SPEED : 10 // snap fast on intro, smooth transition out
-    camPos.current.lerp(targetPos, gameDelta * lerpSpeed)
-    camLook.current.lerp(targetLook, gameDelta * lerpSpeed)
-
-    camera.position.copy(camPos.current)
-    camera.lookAt(camLook.current)
+    camPos.current.lerp(targetPos, gameDelta * INTRO_LERP_SPEED)
+    camLook.current.lerp(targetLook, gameDelta * INTRO_LERP_SPEED)
+    applyCameraPose(camera, camPos.current, camLook.current, nextFov)
   })
 
   return null

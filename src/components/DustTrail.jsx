@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { gameState, getGameDelta } from '../store'
@@ -8,7 +8,7 @@ const PARTICLE_LIFETIME = 0.8
 
 const _dummy = new THREE.Object3D()
 
-export default function DustTrail() {
+export default function DustTrail({ active = true }) {
   const meshRef = useRef()
 
   const particles = useRef(
@@ -23,8 +23,27 @@ export default function DustTrail() {
 
   const spawnTimer = useRef(0)
 
+  useEffect(() => {
+    if (active || !meshRef.current) return
+
+    spawnTimer.current = 0
+    for (const particle of particles.current) {
+      particle.active = false
+      particle.life = 0
+      particle.maxLife = 0
+    }
+    for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+      _dummy.scale.setScalar(0)
+      _dummy.updateMatrix()
+      meshRef.current.setMatrixAt(i, _dummy.matrix)
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true
+  }, [active])
+
   useFrame((_, delta) => {
     if (!meshRef.current) return
+    if (!active) return
+
     const gameDelta = getGameDelta(delta)
     const isGrinding = Boolean(gameState.activeGrind.current?.active)
 

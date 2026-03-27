@@ -92,7 +92,7 @@ const roadFragmentShader = /* glsl */ `
   }
 `
 
-export default function Ground() {
+export default function Ground({ active = true }) {
   const {
     baseSpeed, roadColor, roadDetail, edgeColor,
     toonSteps, shadowBrightness, grainAmount, grainScale,
@@ -165,7 +165,7 @@ export default function Ground() {
     // Lerp ground green color — warm tint at sunset/sunrise
     lerpDayNightColor(groundMaterial.color, '#4CB944', '#1a3318', nightFactor, '#7a8a30', warmFactor)
 
-    if (gameState.gameOver) return
+    if (!active || gameState.gameOver) return
     scrollOffset.current += gameState.speed.current * gameDelta
     for (let i = 0; i < SEGMENT_COUNT; i++) {
       // Each segment has a fixed slot; we wrap the scroll offset modularly

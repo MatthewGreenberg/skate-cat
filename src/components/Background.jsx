@@ -179,7 +179,7 @@ const bgFragmentShader = /* glsl */ `
   }
 `
 
-export default function Background() {
+export default function Background({ active = true }) {
   const meshRef = useRef()
   const motionTime = useRef(0)
   const scrollOffset = useRef(0)
@@ -282,7 +282,9 @@ export default function Background() {
     const mesh = meshRef.current
     if (!mesh) return
     const gameDelta = getGameDelta(delta)
-    motionTime.current += gameDelta
+    if (active) {
+      motionTime.current += gameDelta
+    }
 
     const t = gameState.timeOfDay.current
     const nightFactor = getNightFactor(t)
@@ -290,7 +292,7 @@ export default function Background() {
     const sunriseFactor = getSunriseFactor(t)
     const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
     const isSunrise = sunriseFactor > 0
-    const speed = gameState.gameOver ? 0 : gameState.speed.current || 0
+    const speed = active && !gameState.gameOver ? gameState.speed.current || 0 : 0
     const speedFactor = Math.min(speed / Math.max(gameState.baseSpeed, 0.001), 1.45)
     scrollOffset.current += speed * gameDelta * 0.009
     const lateralOffset = camera.position.x * 0.14

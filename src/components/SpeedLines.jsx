@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useControls } from 'leva'
 import * as THREE from 'three'
@@ -51,7 +51,7 @@ const fragmentShader = /* glsl */ `
   }
 `
 
-export default function SpeedLines() {
+export default function SpeedLines({ active = true }) {
   const meshRef = useRef()
   const energyRef = useRef(1)
 
@@ -83,7 +83,15 @@ export default function SpeedLines() {
     side: THREE.DoubleSide,
   }), [uniforms])
 
+  useEffect(() => {
+    if (!active) {
+      uniforms.uIntensity.value = 0
+    }
+  }, [active, uniforms])
+
   useFrame((_, delta) => {
+    if (!active) return
+
     const gameDelta = getGameDelta(delta)
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
     gameState.comboEnergy.current = Math.min(1, gameState.comboEnergy.current + gameDelta * 1.1)

@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { gameState, getGameDelta } from '../store'
@@ -14,7 +14,7 @@ const _dummy = new THREE.Object3D()
 const _color = new THREE.Color()
 const _colorArray = new Float32Array(PARTICLE_COUNT * 3)
 
-export default function KickflipSparks() {
+export default function KickflipSparks({ active = true }) {
   const meshRef = useRef()
 
   const particles = useRef(
@@ -31,7 +31,31 @@ export default function KickflipSparks() {
   const grindSpawnTimer = useRef(0)
   const lastGrindImpactId = useRef(0)
 
+  useEffect(() => {
+    if (active || !meshRef.current) return
+
+    grindSpawnTimer.current = 0
+    lastGrindImpactId.current = 0
+    for (const particle of particles.current) {
+      particle.active = false
+      particle.life = 0
+      particle.maxLife = PARTICLE_LIFETIME
+    }
+    for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+      _dummy.scale.setScalar(0)
+      _dummy.updateMatrix()
+      meshRef.current.setMatrixAt(i, _dummy.matrix)
+      _colorArray[i * 3] = 0
+      _colorArray[i * 3 + 1] = 0
+      _colorArray[i * 3 + 2] = 0
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true
+    meshRef.current.geometry.attributes.color.needsUpdate = true
+  }, [active])
+
   useFrame((_, delta) => {
+    if (!active) return
+
     const gameDelta = getGameDelta(delta)
     // Jump sparks — upward burst
     const kick = gameState.kickflip.current

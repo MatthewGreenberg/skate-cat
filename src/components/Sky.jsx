@@ -59,7 +59,7 @@ function randomCloudPos(camZ = 0) {
   }
 }
 
-export default function Sky() {
+export default function Sky({ active = true }) {
   const meshRef = useRef()
   const initialized = useRef(false)
   const { camera } = useThree()
@@ -122,7 +122,7 @@ export default function Sky() {
       return
     }
 
-    const speed = gameState.gameOver ? 0 : gameState.speed.current || 0
+    const speed = active && !gameState.gameOver ? gameState.speed.current || 0 : 0
     const drift = (0.3 + speed * 0.1) * delta
 
     const nightFactor = getNightFactor(gameState.timeOfDay.current)
