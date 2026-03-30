@@ -34,7 +34,9 @@ export default function GameWorld({
   runActive,
   isGameOver,
   isCountdownActive,
+  isTransitioning,
   useOriginalMaterials,
+  foliageSegmentCount = 2,
   trailTargetRef,
   musicRef,
   onJumpTiming,
@@ -47,13 +49,14 @@ export default function GameWorld({
       {visible && <color attach="background" args={['#000000']} />}
       <group visible={visible}>
         <DayNightController isRunning={sceneActive && !isGameOver} />
-        <Ground active={sceneActive} />
+        <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} />
         <Background active={sceneActive} />
         <Sky active={sceneActive} />
         <group visible={visible}>
           <SkateCat
             trailTargetRef={trailTargetRef}
             controlsEnabled={runActive && !isGameOver && !isCountdownActive}
+            isTransitioning={isTransitioning}
             useOriginalMaterials={useOriginalMaterials}
             musicRef={musicRef}
             onJumpTiming={onJumpTiming}

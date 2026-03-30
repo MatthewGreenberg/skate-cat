@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { createIdleGrindSparkState, createIdleGrindState, gameState, getGameDelta, getTargetRunSpeed, SPEED_RESPONSE } from '../store'
+import { createIdleGrindSparkState, createIdleGrindState, emitHudScoreChange, gameState, getGameDelta, getTargetRunSpeed, SPEED_RESPONSE } from '../store'
 import {
   getNearestScheduledTarget,
   getPerceivedMusicTime,
@@ -67,11 +67,14 @@ const DEATH_HOP_DURATION = 0.4
 const DEATH_WALK_SPEED = 1.2
 const DEATH_WALK_BOB_SPEED = 8
 const DEATH_WALK_BOB_HEIGHT = 0.06
-const INTRO_BOARD_IDLE_POSITION = { x: 0.44, y: 0.03, z: 0.54 }
-const INTRO_BOARD_IDLE_ROTATION = { x: 0.05, y: 0.18, z: -0.08 }
 const SQUASH_DURATION = 0.4
 const HOP_ON_DURATION = 0.4
 const HOP_ON_HEIGHT = 0.8
+const ENTRANCE_DROP_DURATION = 0.55
+const ENTRANCE_DROP_HEIGHT = 3.5
+const ENTRANCE_SPIN_ROTATIONS = 1
+const JUMP_KEY_CODES = new Set(['ArrowUp', 'Space', 'KeyW', 'KeyD'])
+const SPIN_KEY_CODES = new Set(['ArrowLeft', 'ArrowDown', 'KeyA', 'KeyS'])
 
 const _grindSparkLocal = new THREE.Vector3()
 const _grindSparkWorld = new THREE.Vector3()
@@ -91,11 +94,10 @@ export default function useCatAnimation({
   controlsEnabled,
   onJumpTiming,
   onJumpSfx,
-  introPose,
-  introRot,
   catRotX,
   catRotY,
   catRotZ,
+  isTransitioning,
 }) {
   // --- State refs ---
   const jumpState = useRef({
@@ -107,6 +109,7 @@ export default function useCatAnimation({
   const squashState = useRef({ active: false, time: 0 })
   const boardLandingState = useRef({ active: false, time: 0, roll: 0, strength: 1 })
   const introState = useRef({ phase: 'done', time: 0 })
+  const entranceTriggered = useRef(false)
   const deathState = useRef({ active: false, time: 0 })
   const spinState = useRef({ active: false, time: 0 })
   const spinInputBuffer = useRef(0)
@@ -118,6 +121,7 @@ export default function useCatAnimation({
     startRotX: 0, startRotZ: 0,
     startBoardYaw: 0, startBoardRoll: 0,
   })
+  const heldJumpKeys = useRef(new Set())
   const wasGameOver = useRef(false)
   const wasGrinding = useRef(false)
 
@@ -201,6 +205,7 @@ export default function useCatAnimation({
       isRail: false,
       trickName: '360',
     }
+    emitHudScoreChange()
     triggerCatSpin()
   }, [triggerCatSpin])
 
@@ -382,6 +387,7 @@ export default function useCatAnimation({
     wasGrinding.current = false
     introState.current.phase = 'done'
     introState.current.time = 0
+    entranceTriggered.current = false
     if (groupRef.current) {
       groupRef.current.position.set(0, 0.05, 0)
       groupRef.current.rotation.set(0, 0, 0)
@@ -389,11 +395,13 @@ export default function useCatAnimation({
     gameState.grindSpark.current = createIdleGrindSparkState()
     gameState.catHeight.current = 0.05
     if (catRef.current) {
+      catRef.current.visible = true
       catRef.current.position.set(0, 0.2, 0)
       catRef.current.rotation.set(0, 0, 0)
       catRef.current.scale.set(1, 1, 1)
     }
     if (boardRef.current) {
+      boardRef.current.visible = true
       boardRef.current.position.y = 0
       boardRef.current.rotation.x = 0
       boardRef.current.rotation.y = 0
@@ -439,17 +447,26 @@ export default function useCatAnimation({
 
   // --- Keyboard input ---
   useEffect(() => {
+    const getControlCode = (event) => event.code || event.key
+    const isJumpControl = (event) => JUMP_KEY_CODES.has(getControlCode(event))
+    const isSpinControl = (event) => SPIN_KEY_CODES.has(getControlCode(event))
+
     const onKeyDown = (e) => {
       if (!controlsEnabled) return
-      if (e.key === 'ArrowUp') {
+      if (isJumpControl(e)) {
+        e.preventDefault()
+        heldJumpKeys.current.add(getControlCode(e))
         gameState.upArrowHeld.current = true
         if (e.repeat) return
       }
+      if (isSpinControl(e)) {
+        e.preventDefault()
+      }
       if (gameState.gameOver) return
-      if (e.key === 'ArrowUp' && !jumpState.current.active) {
+      if (isJumpControl(e) && !jumpState.current.active) {
         startJump({ fromGrind: Boolean(gameState.activeGrind.current.active) })
       }
-      if ((e.key === 'ArrowLeft' || e.key === 'ArrowDown') && !e.repeat) {
+      if (isSpinControl(e) && !e.repeat) {
         const canTriggerGroundSpin = (
           !jumpState.current.active &&
           !gameState.activeGrind.current.active &&
@@ -471,9 +488,15 @@ export default function useCatAnimation({
       }
     }
     const onKeyUp = (e) => {
-      if (e.key === 'ArrowUp') gameState.upArrowHeld.current = false
+      if (!isJumpControl(e)) return
+      e.preventDefault()
+      heldJumpKeys.current.delete(getControlCode(e))
+      gameState.upArrowHeld.current = heldJumpKeys.current.size > 0
     }
-    const onBlur = () => { gameState.upArrowHeld.current = false }
+    const onBlur = () => {
+      heldJumpKeys.current.clear()
+      gameState.upArrowHeld.current = false
+    }
 
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -482,6 +505,7 @@ export default function useCatAnimation({
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
+      heldJumpKeys.current.clear()
       gameState.upArrowHeld.current = false
     }
   }, [controlsEnabled, startJump, triggerGroundSpin, triggerSpinTrick])
@@ -491,78 +515,65 @@ export default function useCatAnimation({
     if (!groupRef.current || !catRef.current) return
     const gameDelta = getGameDelta(delta)
 
-    // Intro: cat sits beside the board, then hops on
+    // Entrance: start drop immediately when transition begins
     const intro = introState.current
-    if (intro.phase === 'idle') {
-      setGrindSparkInactive()
-      const loungeTime = state.clock.elapsedTime
-      const loungeBob = Math.sin(loungeTime * 1.4) * 0.008
-      const loungeTurn = Math.sin(loungeTime * 0.7) * 0.06
-      gameState.catHeight.current = introPose.y + loungeBob
-      catRef.current.position.set(
-        introPose.x + Math.cos(loungeTime * 0.55) * 0.008,
-        introPose.y + loungeBob,
-        introPose.z + Math.sin(loungeTime * 0.7) * 0.012
-      )
-      catRef.current.rotation.set(0, loungeTurn, 0)
-      catRef.current.scale.set(1, 1, 1)
+    if (isTransitioning && !entranceTriggered.current) {
+      entranceTriggered.current = true
+      intro.phase = 'dropping'
+      intro.time = 0
+      // Board is already on the ground skating; cat starts above
+      groupRef.current.position.set(0, 0.05, 0)
+      groupRef.current.rotation.set(0, 0, 0)
       if (boardRef.current) {
         boardRef.current.visible = true
-        boardRef.current.position.set(
-          INTRO_BOARD_IDLE_POSITION.x,
-          INTRO_BOARD_IDLE_POSITION.y + Math.sin(loungeTime * 1.9) * 0.004,
-          INTRO_BOARD_IDLE_POSITION.z
-        )
-        boardRef.current.rotation.set(INTRO_BOARD_IDLE_ROTATION.x, INTRO_BOARD_IDLE_ROTATION.y, INTRO_BOARD_IDLE_ROTATION.z)
+        boardRef.current.position.set(0, 0, 0)
+        boardRef.current.rotation.set(0, 0, 0)
       }
-      if (catModelRef.current) {
-        catModelRef.current.scale.setScalar(introPose.scale)
-        catModelRef.current.rotation.set(
-          introRot.introRotX + Math.sin(loungeTime * 1.1) * 0.015,
-          introRot.introRotY + Math.cos(loungeTime * 0.6) * 0.025,
-          introRot.introRotZ + Math.sin(loungeTime * 0.8) * 0.012
-        )
-      }
-      return
     }
-    if (intro.phase === 'hopping') {
+    if (!isTransitioning && entranceTriggered.current && intro.phase === 'done') {
+      entranceTriggered.current = false
+    }
+
+    // Dropping: cat falls from above with a 360 spin onto the moving board
+    if (intro.phase === 'dropping') {
       setGrindSparkInactive()
       intro.time += delta
-      const t = Math.min(intro.time / HOP_ON_DURATION, 1)
+      const t = Math.min(intro.time / ENTRANCE_DROP_DURATION, 1)
       const ease = THREE.MathUtils.smootherstep(t, 0, 1)
+
+      // Board stays grounded and skating
+      groupRef.current.position.set(0, 0.05, 0)
+      groupRef.current.rotation.set(0, 0, 0)
       if (boardRef.current) {
-        boardRef.current.visible = true
-        boardRef.current.position.set(
-          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_POSITION.x, 0, ease),
-          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_POSITION.y, 0, ease),
-          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_POSITION.z, 0, ease)
-        )
-        boardRef.current.rotation.set(
-          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_ROTATION.x, 0, ease),
-          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_ROTATION.y, 0, ease),
-          THREE.MathUtils.lerp(INTRO_BOARD_IDLE_ROTATION.z, 0, ease)
-        )
+        boardRef.current.position.set(0, 0, 0)
+        boardRef.current.rotation.set(0, 0, 0)
       }
+
+      // Cat drops from above with gravity curve
+      const fallT = t * t * (3 - 2 * t)
+      const catY = THREE.MathUtils.lerp(ENTRANCE_DROP_HEIGHT, 0.2, fallT)
+      const spinAngle = ease * Math.PI * 2 * ENTRANCE_SPIN_ROTATIONS
+      catRef.current.position.set(0, catY, 0)
+      catRef.current.rotation.set(0, spinAngle, 0)
+      catRef.current.scale.set(1, 1, 1)
+
       if (catModelRef.current) {
-        const s = THREE.MathUtils.lerp(introPose.scale, 0.03, t)
-        catModelRef.current.scale.setScalar(s)
-        catModelRef.current.rotation.x = THREE.MathUtils.lerp(introRot.introRotX, catRotX, t)
-        catModelRef.current.rotation.y = THREE.MathUtils.lerp(introRot.introRotY, catRotY, t)
-        catModelRef.current.rotation.z = THREE.MathUtils.lerp(introRot.introRotZ, catRotZ, t)
+        catModelRef.current.scale.setScalar(0.03)
+        catModelRef.current.rotation.set(catRotX, catRotY, catRotZ)
       }
-      const hopHeight = 4 * HOP_ON_HEIGHT * t * (1 - t)
-      const x = introPose.x * (1 - t)
-      const z = introPose.z * (1 - t)
-      const y = introPose.y + hopHeight + 0.2 * t
-      gameState.catHeight.current = y
-      catRef.current.position.set(x, y, z)
-      catRef.current.rotation.set(0, introRot.introRotY * (1 - t), 0)
+
+      gameState.catHeight.current = catY + 0.05
+
       if (t >= 1) {
         intro.phase = 'done'
         catRef.current.position.set(0, 0.2, 0)
         catRef.current.rotation.set(0, 0, 0)
+        // Landing effects
         squashState.current.active = true
         squashState.current.time = 0
+        gameState.screenShake.current = 0.35
+        triggerBoardLandingRecoil({ fromGrind: false, direction: 1 })
+        gameState.catHeight.current = 0.05
       }
       return
     }

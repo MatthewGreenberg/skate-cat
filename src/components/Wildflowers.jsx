@@ -66,6 +66,8 @@ export default function Wildflowers() {
   }, [])
 
   useFrame((state) => {
+    if (!meshRef.current || meshRef.current.parent?.visible === false) return
+
     uniformsRef.current.uTime.value = state.clock.elapsedTime
 
     // Boost emissive at night so flowers keep their color

@@ -51,52 +51,6 @@ export default function GameOverScreen({ visible, onRestart }) {
 
   return (
     <>
-      <style>{`
-        @keyframes goTitleDrop {
-          0% { transform: translateY(-40px) rotate(4deg) scale(0.6); opacity: 0; }
-          50% { transform: translateY(6px) rotate(-2deg) scale(1.06); opacity: 1; }
-          70% { transform: translateY(-2px) rotate(-1deg) scale(0.98); }
-          100% { transform: translateY(0) rotate(-1.5deg) scale(1); opacity: 1; }
-        }
-        @keyframes goScoreReveal {
-          0% { transform: scale(0.8); opacity: 0; }
-          60% { transform: scale(1.06); opacity: 1; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes goMsgFade {
-          0% { transform: translateY(6px); opacity: 0; }
-          100% { transform: translateY(0); opacity: 1; }
-        }
-        @keyframes goBtnPop {
-          0% { transform: scale(0); opacity: 0; }
-          60% { transform: scale(1.1); opacity: 1; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes goBtnGlow {
-          0%, 100% { box-shadow: 0 6px 20px rgba(255,107,53,0.5), 0 0 0 0 rgba(255,107,53,0); }
-          50% { box-shadow: 0 8px 30px rgba(255,107,53,0.7), 0 0 0 6px rgba(255,107,53,0.12); }
-        }
-        @keyframes goHintFade {
-          0%, 100% { opacity: 0.3; }
-          50% { opacity: 0.6; }
-        }
-        .gameover-btn {
-          transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1), background 0.18s ease;
-        }
-        .gameover-btn:hover {
-          background: linear-gradient(135deg, #FF8F5C, #FF5722);
-          transform: scale(1.08);
-        }
-        .gameover-btn:active { transform: scale(0.96); }
-        .gameover-btn:focus-visible {
-          outline: 3px solid rgba(255,255,255,0.8);
-          outline-offset: 3px;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .gameover-btn, .gameover-btn:hover, .gameover-btn:active { transition: none; transform: none; }
-          * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
-        }
-      `}</style>
       <div style={{
         position: 'fixed',
         inset: 0,

@@ -3,12 +3,18 @@ import * as THREE from "three";
 
 const DEFAULT_TIMING_OFFSET_SECONDS = null;
 const debugParams = new URLSearchParams(window.location.search);
+const qualityParam = debugParams.get("quality") || "auto";
+const validQualityModes = new Set(["high", "auto", "quiet"]);
 export const debugMode = debugParams.get("debug") || "";
 export const isDebug = debugParams.has("debug");
 export const isTimingDebug = debugMode === "timing";
 export const isDownbeatTest = debugParams.get("downbeatTest") === "1";
 export const isObstacleSpacingDebug =
   debugMode === "spacing" || debugParams.get("spacingDebug") === "1";
+export const debugControlsEnabled = import.meta.env.DEV && isDebug;
+export const qualityMode = validQualityModes.has(qualityParam) ? qualityParam : "auto";
+export const isHighQuality = qualityMode === "high";
+export const isQuietQuality = qualityMode === "quiet";
 export const SPEED_RESPONSE = 4;
 
 export function createIdleGrindState() {
@@ -36,6 +42,7 @@ export const gameState = {
   gameOver: false,
   score: 0,
   onGameOver: null, // callback to trigger React re-render
+  onHudScoreChange: null,
   onRestart: null,
   kickflip: createRef(),
   screenShake: createRef(),
@@ -88,6 +95,42 @@ gameState.nightContrast.current = 0;
 gameState.timingOffsetSeconds.current = DEFAULT_TIMING_OFFSET_SECONDS;
 gameState.obstacleHitDelaySeconds.current = 0;
 gameState.runDifficultyProgress.current = 0;
+
+export function emitHudScoreChange() {
+  if (!gameState.onHudScoreChange) return;
+  gameState.onHudScoreChange({
+    score: gameState.score,
+    streak: gameState.streak.current,
+    multiplier: gameState.scoreMultiplier.current,
+    lastScoringEvent: gameState.lastScoringEvent.current,
+  });
+}
+
+export function resetObstacleTargets() {
+  gameState.obstacleTargets.current = [];
+}
+
+export function upsertObstacleTarget(target) {
+  const targets = gameState.obstacleTargets.current || [];
+  const existingIndex = targets.findIndex((entry) => entry.id === target.id);
+  if (existingIndex !== -1) {
+    targets.splice(existingIndex, 1);
+  }
+
+  let insertAt = targets.findIndex((entry) => entry.targetTime > target.targetTime);
+  if (insertAt === -1) insertAt = targets.length;
+  targets.splice(insertAt, 0, target);
+  gameState.obstacleTargets.current = targets;
+}
+
+export function removeObstacleTarget(id) {
+  const targets = gameState.obstacleTargets.current || [];
+  const targetIndex = targets.findIndex((entry) => entry.id === id);
+  if (targetIndex === -1) return;
+
+  targets.splice(targetIndex, 1);
+  gameState.obstacleTargets.current = targets;
+}
 
 export function getScoreMultiplier(streak) {
   if (streak >= 20) return 4;

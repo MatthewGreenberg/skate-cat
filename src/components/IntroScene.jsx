@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCursor, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useControls } from 'leva'
 import * as THREE from 'three'
+import { useOptionalControls } from '../lib/debugControls'
 
 function prepareAsset(scene, { screenMaterialName = null } = {}) {
   const root = scene.clone(true)
@@ -382,23 +382,23 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
   // ── Leva Controls ──────────────────────────────────────────────────────────
   // Camera controls are in CameraRig.jsx under "Intro Scene Camera"
 
-  const tvCtrl = useControls('Intro Scene TV', {
+  const tvCtrl = useOptionalControls('Intro Scene TV', {
     tvPosX: { value: DEFAULT_TV.posX, min: -5, max: 5, step: 0.01 },
     tvPosY: { value: DEFAULT_TV.posY, min: -5, max: 5, step: 0.01 },
     tvPosZ: { value: DEFAULT_TV.posZ, min: -5, max: 5, step: 0.01 },
     tvRotY: { value: DEFAULT_TV.rotY, min: -Math.PI, max: Math.PI, step: 0.01 },
     tvScale: { value: DEFAULT_TV.scale, min: 0.1, max: 8, step: 0.01 },
-  })
+  }, [])
 
-  const chairCtrl = useControls('Intro Scene Chair', {
+  const chairCtrl = useOptionalControls('Intro Scene Chair', {
     chairPosX: { value: -1.3, min: -5, max: 5, step: 0.01 },
     chairPosY: { value: 0, min: -5, max: 5, step: 0.01 },
     chairPosZ: { value: -0.1, min: -5, max: 5, step: 0.01 },
     chairRotY: { value: 0.81, min: -Math.PI, max: Math.PI, step: 0.01 },
     chairScale: { value: 1.12, min: 0.1, max: 3, step: 0.01 },
-  })
+  }, [])
 
-  const catCtrl = useControls('Intro Scene Cat', {
+  const catCtrl = useOptionalControls('Intro Scene Cat', {
     catPosX: { value: DEFAULT_CAT.posX, min: -5, max: 5, step: 0.01 },
     catPosY: { value: DEFAULT_CAT.posY, min: -5, max: 5, step: 0.01 },
     catPosZ: { value: DEFAULT_CAT.posZ, min: -5, max: 5, step: 0.01 },
@@ -406,9 +406,9 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
     catRotY: { value: DEFAULT_CAT.rotY, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
     catRotZ: { value: DEFAULT_CAT.rotZ, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
     catScale: { value: DEFAULT_CAT.scale, min: 0.005, max: 1, step: 0.001 },
-  })
+  }, [])
 
-  const tvUiCtrl = useControls('Intro Scene TV UI', {
+  const tvUiCtrl = useOptionalControls('Intro Scene TV UI', {
     uiOffsetX: { value: DEFAULT_TV_UI.offsetX, min: -1, max: 1, step: 0.001 },
     uiOffsetY: { value: DEFAULT_TV_UI.offsetY, min: -1, max: 1, step: 0.001 },
     uiOffsetZ: { value: DEFAULT_TV_UI.offsetZ, min: -0.25, max: 0.25, step: 0.001 },
@@ -423,7 +423,7 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
     glowScaleY: { value: DEFAULT_TV_UI.glowScaleY, min: 0.5, max: 1.5, step: 0.001 },
     glowOpacity: { value: DEFAULT_TV_UI.glowOpacity, min: 0, max: 0.2, step: 0.001 },
     glowOffsetZ: { value: DEFAULT_TV_UI.glowOffsetZ, min: -0.25, max: 0.25, step: 0.001 },
-  })
+  }, [])
 
   // ── Derived values ─────────────────────────────────────────────────────────
 
@@ -453,7 +453,7 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
     () => new THREE.Vector3(tvPosition.x + 2.45, floorY, tvPosition.z + 0.95),
     [floorY, tvPosition]
   )
-  const lampCtrl = useControls('Intro Scene Lamp', {
+  const lampCtrl = useOptionalControls('Intro Scene Lamp', {
     lampPosX: { value: defaultLampPosition.x, min: -5, max: 5, step: 0.01 },
     lampPosY: { value: defaultLampPosition.y, min: -5, max: 5, step: 0.01 },
     lampPosZ: { value: defaultLampPosition.z, min: -5, max: 5, step: 0.01 },
@@ -461,7 +461,7 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
     lampRotY: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
     lampRotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
     lampScale: { value: 1, min: 0.25, max: 3, step: 0.01 },
-  })
+  }, [defaultLampPosition.x, defaultLampPosition.y, defaultLampPosition.z])
 
   // ── Animation ──────────────────────────────────────────────────────────────
 

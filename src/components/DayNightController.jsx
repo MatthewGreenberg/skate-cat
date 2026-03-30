@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useControls } from 'leva'
 import {
   gameState,
   DAY_NIGHT_CYCLE_SPEED,
@@ -9,18 +8,21 @@ import {
   getNightContrastOffset,
   getSunsetFactor,
   getSunriseFactor,
+  qualityMode,
   lerpDayNightColor,
 } from '../store'
+import { useOptionalControls } from '../lib/debugControls'
 
 export default function DayNightController({ isRunning }) {
   const dirLightRef = useRef()
   const ambientRef = useRef()
   const hemiRef = useRef()
   const { scene } = useThree()
-  const { timeOfDay, paused } = useControls('Day/Night', {
+  const shadowMapSize = qualityMode === 'high' ? 1024 : qualityMode === 'quiet' ? 256 : 512
+  const { timeOfDay, paused } = useOptionalControls('Day/Night', {
     timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },
     paused: false,
-  })
+  }, [])
 
   useFrame((_, delta) => {
     // Cycle timeOfDay only while the run is active (or use leva override when paused)
@@ -71,8 +73,8 @@ export default function DayNightController({ isRunning }) {
         color="#ffe6bf"
         intensity={1.65}
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
         shadow-camera-left={-10}
         shadow-camera-right={10}
         shadow-camera-top={10}

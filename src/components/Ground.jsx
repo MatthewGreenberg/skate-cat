@@ -1,11 +1,11 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { useControls } from 'leva'
 import * as THREE from 'three'
 import Grass from './Grass'
 import Pebbles from './Pebbles'
 import Wildflowers from './Wildflowers'
 import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
+import { useOptionalControls } from '../lib/debugControls'
 
 const SEGMENT_COUNT = 8
 const SEGMENT_LENGTH = 20
@@ -92,12 +92,12 @@ const roadFragmentShader = /* glsl */ `
   }
 `
 
-export default function Ground({ active = true }) {
+export default function Ground({ active = true, foliageSegmentCount = 2 }) {
   const {
     baseSpeed, roadColor, roadDetail, edgeColor,
     toonSteps, shadowBrightness, grainAmount, grainScale,
     gradientStrength, edgeLineWidth, centerLineOpacity, vignetteStrength,
-  } = useControls('Road', {
+  } = useOptionalControls('Road', {
     baseSpeed: { value: 5, min: 0, max: 30, step: 0.5 },
     roadColor: '#c49468',
     roadDetail: '#8B6B4A',
@@ -110,7 +110,7 @@ export default function Ground({ active = true }) {
     edgeLineWidth: { value: 0.15, min: 0, max: 0.3, step: 0.01 },
     centerLineOpacity: { value: 0.3, min: 0, max: 1, step: 0.05 },
     vignetteStrength: { value: 0.27, min: 0, max: 0.3, step: 0.01 },
-  })
+  }, [])
 
   const roadMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
@@ -137,6 +137,7 @@ export default function Ground({ active = true }) {
   if (gameState.speed.current > 0 && gameState.speed.current < baseSpeed) gameState.speed.current = baseSpeed
   const groundMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: '#4CB944' }), [])
   const groupRefs = useRef([])
+  const detailRefs = useRef([])
   const totalLength = SEGMENT_COUNT * SEGMENT_LENGTH
   const scrollOffset = useRef(0)
 
@@ -175,6 +176,11 @@ export default function Ground({ active = true }) {
       if (groupRefs.current[i]) {
         groupRefs.current[i].position.z = -wrapped
       }
+      if (detailRefs.current[i]) {
+        detailRefs.current[i].visible =
+          wrapped >= -SEGMENT_LENGTH &&
+          wrapped < SEGMENT_LENGTH * foliageSegmentCount
+      }
     }
   })
 
@@ -199,8 +205,11 @@ export default function Ground({ active = true }) {
             <planeGeometry args={[3, SEGMENT_LENGTH]} />
             <shadowMaterial transparent opacity={0.35} depthWrite={false} />
           </mesh>
-          <Grass />
-          <Wildflowers />
+          <Pebbles segmentSeed={i} />
+          <group ref={(el) => (detailRefs.current[i] = el)}>
+            <Grass />
+            <Wildflowers />
+          </group>
         </group>
       ))}
     </group>

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { getGameDelta } from '../store'
@@ -24,6 +24,44 @@ export default function useToonShaderSync({
   blinkStateRef,
 }) {
   const introLerp = useRef(1) // 0 = intro look, 1 = gameplay look
+  const lastBlinkAmount = useRef(0)
+
+  useEffect(() => {
+    if (useOriginalMaterials) return
+
+    for (const child of toonMeshesRef.current) {
+      const u = child.material.uniforms
+      if (!u) continue
+      u.uGlossiness.value = toonControls.glossiness
+      u.uRimThreshold.value = toonControls.rimThreshold
+      u.uRimColor.value.set(toonControls.rimColor)
+      u.uSteps.value = toonControls.steps
+      u.uLeftEyeCenter.value.set(blinkControls.leftEyeX, blinkControls.leftEyeY)
+      u.uRightEyeCenter.value.set(blinkControls.rightEyeX, blinkControls.rightEyeY)
+      u.uEyeRadius.value.set(blinkControls.eyeRadiusX, blinkControls.eyeRadiusY)
+      u.uLidColor.value.set(blinkControls.lidColor)
+    }
+
+    for (const child of outlineMeshesRef.current) {
+      child.material.uniforms.uOutlineColor.value.set(toonControls.outlineColor)
+    }
+  }, [
+    blinkControls.eyeRadiusX,
+    blinkControls.eyeRadiusY,
+    blinkControls.leftEyeX,
+    blinkControls.leftEyeY,
+    blinkControls.lidColor,
+    blinkControls.rightEyeX,
+    blinkControls.rightEyeY,
+    outlineMeshesRef,
+    toonControls.glossiness,
+    toonControls.outlineColor,
+    toonControls.rimColor,
+    toonControls.rimThreshold,
+    toonControls.steps,
+    toonMeshesRef,
+    useOriginalMaterials,
+  ])
 
   useFrame((_, delta) => {
     const gameDelta = getGameDelta(delta)
@@ -82,24 +120,19 @@ export default function useToonShaderSync({
           mix(INTRO_TOON.lightY, toonControls.lightY),
           mix(INTRO_TOON.lightZ, toonControls.lightZ),
         )
-        u.uGlossiness.value = toonControls.glossiness
         u.uRimAmount.value = mix(INTRO_TOON.rimAmount, toonControls.rimAmount)
-        u.uRimThreshold.value = toonControls.rimThreshold
-        u.uRimColor.value.set(toonControls.rimColor)
-        u.uSteps.value = toonControls.steps
         u.uShadowBrightness.value = mix(INTRO_TOON.shadowBrightness, toonControls.shadowBrightness)
         u.uBrightness.value = mix(INTRO_TOON.brightness, toonControls.brightness)
-        u.uLeftEyeCenter.value.set(blinkControls.leftEyeX, blinkControls.leftEyeY)
-        u.uRightEyeCenter.value.set(blinkControls.rightEyeX, blinkControls.rightEyeY)
-        u.uEyeRadius.value.set(blinkControls.eyeRadiusX, blinkControls.eyeRadiusY)
-        u.uLidColor.value.set(blinkControls.lidColor)
-        u.uBlinkAmount.value = s.amount
+        if (lastBlinkAmount.current !== s.amount) {
+          u.uBlinkAmount.value = s.amount
+        }
       }
       for (const child of outlineMeshesRef.current) {
         child.material.uniforms.uThickness.value = mix(INTRO_TOON.outlineThickness, toonControls.outlineThickness)
-        child.material.uniforms.uOutlineColor.value.set(toonControls.outlineColor)
       }
     }
     /* eslint-enable react-hooks/immutability */
+
+    lastBlinkAmount.current = s.amount
   })
 }

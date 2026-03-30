@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
-export default function SceneCapture({ shouldCapture, snapshotTextureRef, onCaptured, renderPriority = 2 }) {
+export default function SceneCapture({ shouldCaptureRef, snapshotTextureRef, onCaptured, renderPriority = 2 }) {
   const { gl } = useThree()
   const capturedRef = useRef(false)
   const copyOrigin = useRef(new THREE.Vector2())
@@ -14,7 +14,7 @@ export default function SceneCapture({ shouldCapture, snapshotTextureRef, onCapt
   }, [snapshotTextureRef])
 
   useFrame(() => {
-    if (!shouldCapture.current) {
+    if (!shouldCaptureRef.current) {
       capturedRef.current = false
       return
     }
@@ -29,7 +29,6 @@ export default function SceneCapture({ shouldCapture, snapshotTextureRef, onCapt
     if (!currentTexture || currentTexture.image.width !== width || currentTexture.image.height !== height) {
       currentTexture?.dispose()
       const nextTexture = new THREE.FramebufferTexture(width, height)
-      nextTexture.colorSpace = THREE.SRGBColorSpace
       nextTexture.flipY = false
       nextTexture.minFilter = THREE.LinearFilter
       nextTexture.magFilter = THREE.LinearFilter
@@ -38,9 +37,9 @@ export default function SceneCapture({ shouldCapture, snapshotTextureRef, onCapt
 
     gl.setRenderTarget(null)
     gl.copyFramebufferToTexture(snapshotTextureRef.current, copyOrigin.current)
-    shouldCapture.current = false
+    shouldCaptureRef.current = false
 
-    onCaptured()
+    onCaptured(snapshotTextureRef.current)
   }, renderPriority)
 
   return null

@@ -1,11 +1,25 @@
 import { useEffect, useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Text, useGLTF } from '@react-three/drei'
-import { useControls } from 'leva'
 import * as THREE from 'three'
-import { createIdleGrindState, gameState, getGameDelta, getScoreMultiplier, getTargetRunSpeed, isDebug, isDownbeatTest, isObstacleSpacingDebug, isTimingDebug } from '../store'
+import {
+  createIdleGrindState,
+  emitHudScoreChange,
+  gameState,
+  getGameDelta,
+  getScoreMultiplier,
+  getTargetRunSpeed,
+  isDebug,
+  isDownbeatTest,
+  isObstacleSpacingDebug,
+  isTimingDebug,
+  removeObstacleTarget,
+  resetObstacleTargets,
+  upsertObstacleTarget,
+} from '../store'
 import { BEAT_INTERVAL, getObstacleHitTime, getPerceivedMusicTime } from '../rhythm'
 import { createLogToonMaterial, createContactShadowTexture } from '../lib/toonMaterials'
+import { useOptionalControls } from '../lib/debugControls'
 import {
   MEASURE_LENGTH_BEATS, MEASURE_PHASE_OFFSET_BEATS, STARTUP_SAFE_BEATS,
   COUNTDOWN_BEATS, TIMING_POINTS, SPIN_TRICK_BONUS_POINTS, MAX_RAMP_SCORE,
@@ -128,6 +142,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
   const contactShadowTexture = useMemo(() => createContactShadowTexture(), [])
   const recentDebugObstacles = useRef(new Map())
   const worldScrollDistance = useRef(0)
+  const needsCursorSync = useRef(true)
   const trackAnalysisLookups = useRef(buildTrackAnalysisLookups(null))
   const railLogGeometry = useMemo(() => {
     const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, false)
@@ -141,10 +156,10 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
   const {
     useTrackAnalysis,
     analysisBlend,
-  } = useControls('Music Analysis', {
+  } = useOptionalControls('Music Analysis', {
     useTrackAnalysis: true,
     analysisBlend: { value: 0.8, min: 0, max: 1.5, step: 0.05 },
-  })
+  }, [])
 
   const {
     logScale,
@@ -156,7 +171,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     logSteps,
     logShadowBrightness,
     logBrightness,
-  } = useControls('Obstacles', {
+  } = useOptionalControls('Obstacles', {
     logScale: { value: 0.8, min: 0.1, max: 3, step: 0.1 },
     logColor: '#905634',
     logLightX: { value: 4.0, min: -20, max: 20, step: 0.5 },
@@ -166,7 +181,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     logSteps: { value: 3, min: 1, max: 8, step: 1 },
     logShadowBrightness: { value: 0.2, min: 0, max: 1, step: 0.05 },
     logBrightness: { value: 1.7, min: 0.5, max: 4, step: 0.05 },
-  })
+  }, [])
 
   const {
     shadowColor,
@@ -181,7 +196,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     railShadowOffsetZ,
     railShadowScaleX,
     railShadowScaleZ,
-  } = useControls('Obstacle Shadows', {
+  } = useOptionalControls('Obstacle Shadows', {
     shadowColor: '#040201',
     shadowY: { value: CONTACT_SHADOW_Y, min: 0, max: 0.08, step: 0.001 },
     logShadowOpacity: { value: CONTACT_SHADOW_LOG_OPACITY, min: 0, max: 1, step: 0.01 },
@@ -194,9 +209,9 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     railShadowOffsetZ: { value: 0.06, min: -0.3, max: 0.5, step: 0.01 },
     railShadowScaleX: { value: 2.45, min: 0.5, max: 4, step: 0.05 },
     railShadowScaleZ: { value: 0.52, min: 0.2, max: 3, step: 0.05 },
-  })
+  }, [])
 
-  const railWoodMaterial = useMemo(
+  const logMaterial = useMemo(
     () => createLogToonMaterial({
       color: logColor,
       lightX: logLightX,
@@ -220,6 +235,15 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       logShadowBrightness,
       logBrightness,
     ]
+  )
+  const railWoodMaterial = logMaterial
+  const railSupportMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: GRIND_RAIL_SUPPORT_COLOR }), [])
+  const railFootMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: GRIND_RAIL_FOOT_COLOR }), [])
+  const holdSignPoleMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: '#8f6540' }), [])
+  const holdSignBoardMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: '#5f3f26' }), [])
+  const holdGlowMaterial = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#8ae4ff', toneMapped: false }),
+    []
   )
 
   const wasGameOver = useRef(false)
@@ -249,8 +273,13 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
   }, [railLogGeometry])
 
   useEffect(() => () => {
-    railWoodMaterial.dispose()
-  }, [railWoodMaterial])
+    logMaterial.dispose()
+    railSupportMaterial.dispose()
+    railFootMaterial.dispose()
+    holdSignPoleMaterial.dispose()
+    holdSignBoardMaterial.dispose()
+    holdGlowMaterial.dispose()
+  }, [holdGlowMaterial, holdSignBoardMaterial, holdSignPoleMaterial, logMaterial, railFootMaterial, railSupportMaterial])
 
   const resetObstacleSlot = (slot) => {
     slot.id = 0
@@ -272,6 +301,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
   }
 
   const deactivateObstacleSlot = (slot) => {
+    removeObstacleTarget(slot.id)
     resetObstacleSlot(slot)
   }
 
@@ -293,7 +323,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       if (timingMarkerRefs.current[i]) timingMarkerRefs.current[i].visible = false
     }
 
-    measureCursor.current = getStartupMeasureCursor()
+    needsCursorSync.current = true
     patternHistory.current = []
     placementHistory.current = []
     consecutiveDensePatterns.current = 0
@@ -303,7 +333,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     hasAssignedHoldTutorial.current = false
     timingDebugPatternIndex.current = 0
     recentDebugObstacles.current.clear()
-    gameState.obstacleTargets.current = []
+    resetObstacleTargets()
     gameState.obstacleDebug.current = []
     gameState.upArrowHeld.current = false
     gameState.grindCooldownObstacleId.current = 0
@@ -606,6 +636,13 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     if (slot.showHoldSign) hasAssignedHoldTutorial.current = true
     slot.railLength = resolvedRailLength
     slot.railLift = 0
+    upsertObstacleTarget({
+      id: slot.id,
+      clusterId: slot.clusterId,
+      targetTime: getObstacleHitTime(slot.beatIndex),
+      x: slot.x || 0,
+      isVertical: Boolean(slot.isVertical),
+    })
     return true
   }
 
@@ -629,7 +666,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       hasAssignedHoldTutorial.current = false
       timingDebugPatternIndex.current = 0
       recentDebugObstacles.current.clear()
-      gameState.obstacleTargets.current = []
+      resetObstacleTargets()
       gameState.obstacleDebug.current = []
       gameState.upArrowHeld.current = false
       gameState.grindCooldownObstacleId.current = 0
@@ -641,7 +678,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       return
     }
     if (gameState.gameOver) {
-      gameState.obstacleTargets.current = []
+      resetObstacleTargets()
       gameState.obstacleDebug.current = []
       recentDebugObstacles.current.clear()
       gameState.grindCooldownObstacleId.current = 0
@@ -666,6 +703,10 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     }
 
     if (isMusicRunning) {
+      if (needsCursorSync.current) {
+        measureCursor.current = getStartupMeasureCursor(musicTime)
+        needsCursorSync.current = false
+      }
       const currentBeat = Math.floor(musicTime / BEAT_INTERVAL)
       gameState.runDifficultyProgress.current = getRunDifficultyProgress(gameState.score, currentBeat)
       const hasClearedCountdown = currentBeat >= COUNTDOWN_BEATS
@@ -723,6 +764,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
             gameState.comboEnergy.current = 0
             gameState.pendingJumpTiming.current = null
             gameState.upArrowHeld.current = false
+            emitHudScoreChange()
             stopGrinding()
             if (onLogHit) onLogHit()
             if (gameState.onGameOver) gameState.onGameOver()
@@ -765,6 +807,8 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
             isRail: Boolean(ob.isVertical),
             trickName: landedSpinTrick ? '360' : '',
           }
+          removeObstacleTarget(ob.id)
+          emitHudScoreChange()
           if (matchedTiming) {
             const remainingObstacleIds = matchedTiming.obstacleIds.filter((id) => id !== ob.id)
             gameState.pendingJumpTiming.current = remainingObstacleIds.length > 0
@@ -948,20 +992,8 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       }
     }
 
-    const visibleObstacles = active.current.filter((ob) => ob.visible)
-    const scorableObstacles = visibleObstacles.filter((ob) => !ob.scored)
-
-    gameState.obstacleTargets.current = scorableObstacles
-      .map((ob) => ({
-        id: ob.id,
-        clusterId: ob.clusterId,
-        targetTime: getObstacleHitTime(ob.beatIndex),
-        x: ob.x || 0,
-        isVertical: Boolean(ob.isVertical),
-      }))
-      .sort((a, b) => a.targetTime - b.targetTime)
-
     if (isObstacleSpacingDebug) {
+      const visibleObstacles = active.current.filter((ob) => ob.visible)
       const debugSpeed = Math.max(speed, gameState.baseSpeed || 0, 0.001)
       const currentBeat = musicTime / BEAT_INTERVAL
 
@@ -1000,36 +1032,17 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
 
           const sourceMaterial = child.material
 
-          child.material = createLogToonMaterial({
-            color: logColor,
-            lightX: logLightX,
-            lightY: logLightY,
-            lightZ: logLightZ,
-            glossiness: logGlossiness,
-            rimAmount: 0,
-            rimThreshold: 0,
-            steps: logSteps,
-            shadowBrightness: logShadowBrightness,
-            brightness: logBrightness,
-            rimColor: '#000000',
-          })
+          child.material = logMaterial
           child.material.side = sourceMaterial.side
           child.castShadow = true
-          child.receiveShadow = true
+          child.receiveShadow = false
         })
 
         return scene
       }),
     [
       log.scene,
-      logColor,
-      logLightX,
-      logLightY,
-      logLightZ,
-      logGlossiness,
-      logSteps,
-      logShadowBrightness,
-      logBrightness,
+      logMaterial,
     ]
   )
 
@@ -1076,50 +1089,39 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
                 geometry={railLogGeometry}
                 material={railWoodMaterial}
                 castShadow
-                receiveShadow
               />
               <group ref={(el) => (railFrontSupportRefs.current[i] = el)}>
-                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} material={railSupportMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
-                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
                 </mesh>
-                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} material={railSupportMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
-                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
                 </mesh>
-                <mesh position={[0, -0.28, 0]} castShadow receiveShadow>
+                <mesh position={[0, -0.28, 0]} material={railSupportMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_SPAN + 0.06, GRIND_RAIL_SUPPORT_CROSSBAR_HEIGHT, GRIND_RAIL_SUPPORT_DEPTH]} />
-                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
                 </mesh>
-                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} material={railFootMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
-                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
                 </mesh>
-                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} material={railFootMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
-                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
                 </mesh>
               </group>
               <group ref={(el) => (railBackSupportRefs.current[i] = el)}>
-                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} material={railSupportMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
-                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
                 </mesh>
-                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} castShadow receiveShadow>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} material={railSupportMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH, 1, GRIND_RAIL_SUPPORT_DEPTH]} />
-                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
                 </mesh>
-                <mesh position={[0, -0.28, 0]} castShadow receiveShadow>
+                <mesh position={[0, -0.28, 0]} material={railSupportMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_SPAN + 0.06, GRIND_RAIL_SUPPORT_CROSSBAR_HEIGHT, GRIND_RAIL_SUPPORT_DEPTH]} />
-                  <meshToonMaterial color={GRIND_RAIL_SUPPORT_COLOR} />
                 </mesh>
-                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} material={railFootMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
-                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
                 </mesh>
-                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} castShadow receiveShadow>
+                <mesh position={[GRIND_RAIL_SUPPORT_SPAN * 0.5, -0.5, 0]} material={railFootMaterial}>
                   <boxGeometry args={[GRIND_RAIL_SUPPORT_WIDTH * 1.5, 0.05, GRIND_RAIL_SUPPORT_DEPTH * 1.8]} />
-                  <meshToonMaterial color={GRIND_RAIL_FOOT_COLOR} />
                 </mesh>
               </group>
             </group>
@@ -1128,13 +1130,11 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
               visible={false}
               scale={[1.22, 1.22, 1.22]}
             >
-              <mesh position={[0, -0.1, 0]} castShadow receiveShadow>
+              <mesh position={[0, -0.1, 0]} material={holdSignPoleMaterial}>
                 <boxGeometry args={[0.07, 0.55, 0.06]} />
-                <meshToonMaterial color="#8f6540" />
               </mesh>
-              <mesh position={[0, 0.18, 0]} castShadow receiveShadow>
+              <mesh position={[0, 0.18, 0]} material={holdSignBoardMaterial}>
                 <boxGeometry args={[0.58, 0.34, 0.08]} />
-                <meshToonMaterial color="#5f3f26" />
               </mesh>
               <Text
                 position={[0, 0.24, 0.05]}
@@ -1148,13 +1148,11 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
                 HOLD
               </Text>
               <group position={[0, 0.08, 0.05]}>
-                <mesh>
+                <mesh material={holdGlowMaterial}>
                   <boxGeometry args={[0.018, 0.05, 0.02]} />
-                  <meshBasicMaterial color="#8ae4ff" toneMapped={false} />
                 </mesh>
-                <mesh position={[0, 0.043, 0]}>
+                <mesh position={[0, 0.043, 0]} material={holdGlowMaterial}>
                   <coneGeometry args={[0.038, 0.058, 3]} />
-                  <meshBasicMaterial color="#8ae4ff" toneMapped={false} />
                 </mesh>
               </group>
             </group>

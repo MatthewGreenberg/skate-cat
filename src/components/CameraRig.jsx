@@ -1,14 +1,12 @@
 import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta } from '../store'
+import { useOptionalControls } from '../lib/debugControls'
 
 const INTRO_LERP_SPEED = 2.5
 const INTRO_FOV = 43
 const GAME_FOV = 75
-const INTRO_TRANSITION_DOLLY_DISTANCE = 0.5
-const INTRO_TRANSITION_FOV = 51
 
 function transitionEase(t) {
   return 1 - (1 - t) * (1 - t)
@@ -16,11 +14,6 @@ function transitionEase(t) {
 
 const _vecA = new THREE.Vector3()
 const _vecB = new THREE.Vector3()
-const _vecD = new THREE.Vector3()
-const _vecE = new THREE.Vector3()
-const _vecF = new THREE.Vector3()
-const _vecH = new THREE.Vector3()
-
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
 
@@ -37,7 +30,6 @@ export default function CameraRig({
   showGameWorld = false,
   isTransitioning = false,
   transitionProgressRef,
-  introCaptureCameraRef,
 }) {
   const { camera } = useThree()
   const currentZoom = useRef(0)
@@ -49,19 +41,19 @@ export default function CameraRig({
   const fovAtCapture = useRef(INTRO_FOV)
   const wasTransitioning = useRef(false)
 
-  const { introCamX, introCamY, introCamZ, introLookX, introLookY, introLookZ } = useControls('Intro Scene Camera', {
+  const { introCamX, introCamY, introCamZ, introLookX, introLookY, introLookZ } = useOptionalControls('Intro Scene Camera', {
     introCamX: { value: 0.15, min: -5, max: 5, step: 0.1 },
     introCamY: { value: 1.05, min: -2, max: 5, step: 0.1 },
     introCamZ: { value: 3.6, min: -5, max: 10, step: 0.1 },
     introLookX: { value: 0.35, min: -5, max: 5, step: 0.1 },
     introLookY: { value: 0.8, min: -2, max: 5, step: 0.1 },
     introLookZ: { value: -1.0, min: -5, max: 5, step: 0.1 },
-  })
+  }, [])
 
   const camPos = useRef(new THREE.Vector3(introCamX, introCamY, introCamZ))
   const camLook = useRef(new THREE.Vector3(introLookX, introLookY, introLookZ))
 
-  const { posX, posY, posZ, lookX, lookY, lookZ, kickflipZoom, kickflipLerp, kickflipAngleX, kickflipAngleY } = useControls('Camera', {
+  const { posX, posY, posZ, lookX, lookY, lookZ, kickflipZoom, kickflipLerp, kickflipAngleX, kickflipAngleY } = useOptionalControls('Camera', {
     posX: { value: 1.9, min: -10, max: 10, step: 0.1 },
     posY: { value: 2, min: 0, max: 10, step: 0.1 },
     posZ: { value: -0.7, min: -10, max: 15, step: 0.1 },
@@ -72,11 +64,10 @@ export default function CameraRig({
     kickflipLerp: { value: 3.0, min: 1, max: 20, step: 0.5 },
     kickflipAngleX: { value: 0.45, min: -1, max: 1, step: 0.05 },
     kickflipAngleY: { value: 0.25, min: -1, max: 1, step: 0.05 },
-  })
+  }, [])
 
   useFrame((_, delta) => {
     const gameDelta = getGameDelta(delta)
-    const introCamera = introCaptureCameraRef?.current || null
 
     if (isTransitioning && !wasTransitioning.current) {
       posAtCapture.current.copy(camPos.current)
@@ -84,13 +75,6 @@ export default function CameraRig({
       fovAtCapture.current = camera.fov
     }
     wasTransitioning.current = isTransitioning
-
-    const introPos = _vecE.set(introCamX, introCamY, introCamZ)
-    const introLook = _vecF.set(introLookX, introLookY, introLookZ)
-
-    if (introCamera && !isTransitioning) {
-      applyCameraPose(introCamera, introPos, introLook, INTRO_FOV)
-    }
 
     if (isTransitioning) {
       const t = transitionEase(transitionProgressRef?.current ?? 0)
@@ -101,19 +85,6 @@ export default function CameraRig({
       _vecB.set(lookX, lookY, lookZ)
       camLook.current.lerpVectors(lookAtCapture.current, _vecB, t)
       applyCameraPose(camera, camPos.current, camLook.current, nextFov)
-
-      if (introCamera) {
-        _vecH.subVectors(lookAtCapture.current, posAtCapture.current)
-        if (_vecH.lengthSq() > 0.000001) {
-          _vecH.normalize().multiplyScalar(INTRO_TRANSITION_DOLLY_DISTANCE * t)
-          _vecD.copy(posAtCapture.current).add(_vecH)
-        } else {
-          _vecD.copy(posAtCapture.current)
-        }
-
-        const introFov = THREE.MathUtils.lerp(fovAtCapture.current, INTRO_TRANSITION_FOV, t)
-        applyCameraPose(introCamera, _vecD, lookAtCapture.current, introFov)
-      }
       return
     }
 

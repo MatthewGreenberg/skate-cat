@@ -126,8 +126,6 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
   const [showTrick, setShowTrick] = useState(false)
   const [trickKey, setTrickKey] = useState(0)
   const [trickText, setTrickText] = useState('360!')
-  const lastScoredValue = useRef(gameState.score)
-  const lastStreakValue = useRef(0)
   const lastScoringEventId = useRef(gameState.lastScoringEvent.current?.id || 0)
   const judgement = timingFeedback?.label
     ? `${timingFeedback.label.toUpperCase()}${timingFeedback.label === 'Sloppy' ? '...' : '!'}`
@@ -136,23 +134,19 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
   useEffect(() => {
     if (!visible) return
 
-    let animationFrameId = 0
-    const tick = () => {
-      const nextScore = gameState.score
-      const nextStreak = gameState.streak.current
-      if (nextScore !== lastScoredValue.current) {
-        lastScoredValue.current = nextScore
-        setScore(nextScore)
-      }
-      if (nextStreak !== lastStreakValue.current) {
-        lastStreakValue.current = nextStreak
-        if (nextStreak >= 2) setStreakKey(performance.now())
-        setStreak(nextStreak)
-      }
-      const nextMultiplier = gameState.scoreMultiplier.current
-      setMultiplier((prev) => (prev === nextMultiplier ? prev : nextMultiplier))
+    const applyHudSnapshot = (snapshot) => {
+      const nextScore = snapshot.score ?? gameState.score
+      const nextStreak = snapshot.streak ?? gameState.streak.current
+      const nextMultiplier = snapshot.multiplier ?? gameState.scoreMultiplier.current
+      const scoringEvent = snapshot.lastScoringEvent ?? gameState.lastScoringEvent.current
 
-      const scoringEvent = gameState.lastScoringEvent.current
+      setScore(nextScore)
+      setMultiplier(nextMultiplier)
+      setStreak((prev) => {
+        if (prev !== nextStreak && nextStreak >= 2) setStreakKey(performance.now())
+        return nextStreak
+      })
+
       if (scoringEvent?.id && scoringEvent.id !== lastScoringEventId.current) {
         lastScoringEventId.current = scoringEvent.id
         setPlusText(`+${scoringEvent.points}`)
@@ -165,48 +159,47 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
           setShowTrick(true)
         }
       }
+    }
 
+    gameState.onHudScoreChange = applyHudSnapshot
+    applyHudSnapshot({
+      score: gameState.score,
+      streak: gameState.streak.current,
+      multiplier: gameState.scoreMultiplier.current,
+      lastScoringEvent: gameState.lastScoringEvent.current,
+    })
+
+    return () => {
+      if (gameState.onHudScoreChange === applyHudSnapshot) {
+        gameState.onHudScoreChange = null
+      }
+    }
+  }, [visible])
+
+  useEffect(() => {
+    if (!visible) return
+
+    let timeoutId = 0
+    const syncBeatDots = () => {
       const musicTime = getPerceivedMusicTime(musicRef?.current?.currentTime || 0)
       const beatIndex = Math.floor(musicTime / BEAT_INTERVAL)
       const nextBeat = ((beatIndex % 4) + 4) % 4
       setActiveBeat((prev) => (prev === nextBeat ? prev : nextBeat))
-      animationFrameId = window.requestAnimationFrame(tick)
-    }
-    animationFrameId = window.requestAnimationFrame(tick)
 
-    return () => window.cancelAnimationFrame(animationFrameId)
+      const nextBoundary = (beatIndex + 1) * BEAT_INTERVAL
+      const delayMs = Math.max(16, Math.round((nextBoundary - musicTime) * 1000))
+      timeoutId = window.setTimeout(syncBeatDots, delayMs)
+    }
+
+    syncBeatDots()
+
+    return () => window.clearTimeout(timeoutId)
   }, [musicRef, visible])
 
   if (!visible) return null
 
   return (
     <>
-      <style>
-        {`@keyframes streakPop {
-          0% { transform: translateX(-50%) rotate(-3deg) scale(0.3); opacity: 0; }
-          25% { transform: translateX(-50%) rotate(-2deg) scale(1.2); opacity: 1; }
-          60% { transform: translateX(-50%) rotate(-1deg) scale(0.96); opacity: 1; }
-          100% { transform: translateX(-50%) rotate(0deg) scale(1); opacity: 1; }
-        }
-        @keyframes scorePopFloat {
-          0% { transform: translateX(-50%) translateY(0) scale(0.5); opacity: 0; }
-          18% { transform: translateX(-50%) translateY(-12px) scale(1.3); opacity: 1; }
-          65% { transform: translateX(-50%) translateY(-36px) scale(1.05); opacity: 1; }
-          100% { transform: translateX(-50%) translateY(-56px) scale(0.85); opacity: 0; }
-        }
-        @keyframes hudJudgementPop {
-          0% { transform: translateX(-50%) translateY(16px) rotate(2deg) scale(0.5); opacity: 0; }
-          35% { transform: translateX(-50%) translateY(-4px) rotate(-1deg) scale(1.15); opacity: 1; }
-          70% { transform: translateX(-50%) translateY(0px) rotate(0deg) scale(1.02); opacity: 1; }
-          100% { transform: translateX(-50%) translateY(-12px) rotate(0deg) scale(0.94); opacity: 0; }
-        }
-        @keyframes trickPop {
-          0% { transform: translateX(-50%) translateY(18px) rotate(-8deg) scale(0.45); opacity: 0; }
-          22% { transform: translateX(-50%) translateY(0px) rotate(-4deg) scale(1.22); opacity: 1; }
-          58% { transform: translateX(-50%) translateY(-2px) rotate(-2deg) scale(0.98); opacity: 1; }
-          100% { transform: translateX(-50%) translateY(-12px) rotate(0deg) scale(0.9); opacity: 0; }
-        }`}
-      </style>
       <div
         key={timingFeedback?.id || judgement}
         style={getJudgementStyle(judgement, Boolean(visible && judgement))}

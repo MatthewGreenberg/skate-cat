@@ -1,8 +1,8 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { useControls } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
+import { useOptionalControls } from '../lib/debugControls'
 
 const BACKGROUND_DISTANCE = 145
 const BACKGROUND_HEIGHT = 28
@@ -193,14 +193,14 @@ export default function Background({ active = true }) {
     layerSeparation,
     hazeStrength,
     cloudStreakStrength,
-  } = useControls('Background', {
+  } = useOptionalControls('Background', {
     brightness: { value: 0.9, min: 0.4, max: 1.6, step: 0.01 },
     saturation: { value: 0.82, min: 0, max: 1.6, step: 0.01 },
     parallaxStrength: { value: 0.48, min: 0, max: 1.5, step: 0.01 },
     layerSeparation: { value: 0.82, min: 0.5, max: 1.8, step: 0.01 },
     hazeStrength: { value: 0.14, min: 0, max: 1.4, step: 0.01 },
     cloudStreakStrength: { value: 0.08, min: 0, max: 1.5, step: 0.01 },
-  })
+  }, [])
   const {
     daySkyTop,
     daySkyMid,
@@ -210,7 +210,7 @@ export default function Background({ active = true }) {
     dayMidColor,
     dayNearColor,
     dayCloudColor,
-  } = useControls('Background Day', {
+  } = useOptionalControls('Background Day', {
     daySkyTop: '#88b6e8',
     daySkyMid: '#c7def0',
     dayHorizon: '#f4e3c8',
@@ -219,7 +219,7 @@ export default function Background({ active = true }) {
     dayMidColor: '#75867f',
     dayNearColor: '#4f5b62',
     dayCloudColor: '#f5efe6',
-  })
+  }, [])
   const {
     nightSkyTop,
     nightSkyMid,
@@ -230,7 +230,7 @@ export default function Background({ active = true }) {
     nightNearColor,
     moonColor,
     starColor,
-  } = useControls('Background Night', {
+  } = useOptionalControls('Background Night', {
     nightSkyTop: '#09112b',
     nightSkyMid: '#1a2950',
     nightHorizon: '#25305a',
@@ -240,7 +240,7 @@ export default function Background({ active = true }) {
     nightNearColor: '#0d1020',
     moonColor: '#d9e6ff',
     starColor: '#9ed3ff',
-  })
+  }, [])
 
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },

@@ -14,7 +14,11 @@ function buildCloudGeometry() {
     { pos: [-0.5, -0.1, 0.5], scale: 0.7 },
   ]
 
-  const tempGeo = new THREE.IcosahedronGeometry(1, 1).toNonIndexed()
+  let tempGeo = new THREE.IcosahedronGeometry(1, 1)
+
+  if (tempGeo.index) {
+    tempGeo = tempGeo.toNonIndexed()
+  }
 
   const geos = puffs.map((puff) => {
     const g = tempGeo.clone()

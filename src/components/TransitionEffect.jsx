@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo } from 'react'
 import { Pass } from 'postprocessing'
 import * as THREE from 'three'
 
+const _clearColor = new THREE.Color()
+
 const transitionVertexShader = /* glsl */ `
   varying vec2 vUv;
 
@@ -142,6 +144,7 @@ class IntroTransitionPass extends Pass {
     this.pingPongB = null
     this.ppWidth = 0
     this.ppHeight = 0
+    this.pingPongSeeded = false
 
     this.diffusionMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -215,8 +218,23 @@ class IntroTransitionPass extends Pass {
     this.pingPongB = new THREE.WebGLRenderTarget(halfW, halfH, opts)
     this.ppWidth = halfW
     this.ppHeight = halfH
+    this.pingPongSeeded = false
 
     this.diffusionMaterial.uniforms.uTexelSize.value.set(1 / halfW, 1 / halfH)
+  }
+
+  seedPingPong(renderer) {
+    const previousAlpha = renderer.getClearAlpha()
+    renderer.getClearColor(_clearColor)
+    renderer.setClearColor(0x000000, 0)
+
+    renderer.setRenderTarget(this.pingPongA)
+    renderer.clear(true, false, false)
+    renderer.setRenderTarget(this.pingPongB)
+    renderer.clear(true, false, false)
+
+    renderer.setClearColor(_clearColor, previousAlpha)
+    this.pingPongSeeded = true
   }
 
   render(renderer, inputBuffer, outputBuffer) {
@@ -232,6 +250,9 @@ class IntroTransitionPass extends Pass {
     }
 
     this.ensurePingPongTargets(inputBuffer.width, inputBuffer.height)
+    if (!this.pingPongSeeded || progress <= 0.001) {
+      this.seedPingPong(renderer)
+    }
 
     const aspect = inputBuffer.width > 0 ? inputBuffer.height / inputBuffer.width : 1
 
