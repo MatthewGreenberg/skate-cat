@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
@@ -41,29 +42,33 @@ export default function CameraRig({
   const fovAtCapture = useRef(INTRO_FOV)
   const wasTransitioning = useRef(false)
 
-  const { introCamX, introCamY, introCamZ, introLookX, introLookY, introLookZ } = useOptionalControls('Intro Scene Camera', {
-    introCamX: { value: 0.15, min: -5, max: 5, step: 0.1 },
-    introCamY: { value: 1.05, min: -2, max: 5, step: 0.1 },
-    introCamZ: { value: 3.6, min: -5, max: 10, step: 0.1 },
-    introLookX: { value: 0.35, min: -5, max: 5, step: 0.1 },
-    introLookY: { value: 0.8, min: -2, max: 5, step: 0.1 },
-    introLookZ: { value: -1.0, min: -5, max: 5, step: 0.1 },
+  const { introCamX, introCamY, introCamZ, introLookX, introLookY, introLookZ } = useOptionalControls('Intro', {
+    Camera: folder({
+      introCamX: { value: 0.6, min: -5, max: 5, step: 0.1 },
+      introCamY: { value: 1.2, min: -2, max: 5, step: 0.1 },
+      introCamZ: { value: 2.4, min: -5, max: 10, step: 0.1 },
+      introLookX: { value: 0.3, min: -5, max: 5, step: 0.1 },
+      introLookY: { value: 0.8, min: -2, max: 5, step: 0.1 },
+      introLookZ: { value: -1.6, min: -5, max: 5, step: 0.1 },
+    }),
   }, [])
 
   const camPos = useRef(new THREE.Vector3(introCamX, introCamY, introCamZ))
   const camLook = useRef(new THREE.Vector3(introLookX, introLookY, introLookZ))
 
-  const { posX, posY, posZ, lookX, lookY, lookZ, kickflipZoom, kickflipLerp, kickflipAngleX, kickflipAngleY } = useOptionalControls('Camera', {
-    posX: { value: 1.9, min: -10, max: 10, step: 0.1 },
-    posY: { value: 2, min: 0, max: 10, step: 0.1 },
-    posZ: { value: -0.7, min: -10, max: 15, step: 0.1 },
-    lookX: { value: -3.9, min: -10, max: 10, step: 0.1 },
-    lookY: { value: -2.9, min: -5, max: 5, step: 0.1 },
-    lookZ: { value: -2.5, min: -20, max: 10, step: 0.1 },
-    kickflipZoom: { value: 1, min: 0, max: 2, step: 0.05 },
-    kickflipLerp: { value: 3.0, min: 1, max: 20, step: 0.5 },
-    kickflipAngleX: { value: 0.45, min: -1, max: 1, step: 0.05 },
-    kickflipAngleY: { value: 0.25, min: -1, max: 1, step: 0.05 },
+  const { posX, posY, posZ, lookX, lookY, lookZ, kickflipZoom, kickflipLerp, kickflipAngleX, kickflipAngleY } = useOptionalControls('Game', {
+    Camera: folder({
+      posX: { value: 1.9, min: -10, max: 10, step: 0.1 },
+      posY: { value: 2, min: 0, max: 10, step: 0.1 },
+      posZ: { value: -0.7, min: -10, max: 15, step: 0.1 },
+      lookX: { value: -3.9, min: -10, max: 10, step: 0.1 },
+      lookY: { value: -2.9, min: -5, max: 5, step: 0.1 },
+      lookZ: { value: -2.5, min: -20, max: 10, step: 0.1 },
+      kickflipZoom: { value: 1, min: 0, max: 2, step: 0.05 },
+      kickflipLerp: { value: 3.0, min: 1, max: 20, step: 0.5 },
+      kickflipAngleX: { value: 0.45, min: -1, max: 1, step: 0.05 },
+      kickflipAngleY: { value: 0.25, min: -1, max: 1, step: 0.05 },
+    }, { collapsed: true }),
   }, [])
 
   useFrame((_, delta) => {

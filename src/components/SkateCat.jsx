@@ -1,5 +1,6 @@
 import { useRef, useEffect, useMemo } from 'react'
 import { useGLTF, useTexture } from '@react-three/drei'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import { createToonMaterial, createOutlineMaterial } from '../lib/toonMaterials'
 import useToonShaderSync from '../hooks/useToonShaderSync'
@@ -22,37 +23,43 @@ function applyToonMaterials(root) {
   })
 }
 
-export default function SkateCat({ trailTargetRef, controlsEnabled = true, isTransitioning = false, useOriginalMaterials = false, musicRef, onJumpTiming, onJumpSfx }) {
-  const { catRotX, catRotY, catRotZ } = useOptionalControls('Cat', {
-    catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
-    catRotY: { value: 1.3, min: -Math.PI, max: Math.PI, step: 0.05 },
-    catRotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+export default function SkateCat({ trailTargetRef, controlsEnabled = true, isTransitioning = false, useOriginalMaterials = false, musicRef, onJumpSfx }) {
+  const { catRotX, catRotY, catRotZ } = useOptionalControls('Game', {
+    Cat: folder({
+      catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+      catRotY: { value: 1.3, min: -Math.PI, max: Math.PI, step: 0.05 },
+      catRotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
+    }, { collapsed: true }),
   }, [])
 
-  const toonControls = useOptionalControls('Cat Toon Shader', {
-    lightX: { value: 4.0, min: -20, max: 20, step: 0.5 },
-    lightY: { value: -7.5, min: -20, max: 20, step: 0.5 },
-    lightZ: { value: 3.0, min: -20, max: 20, step: 0.5 },
-    glossiness: { value: 1, min: 1, max: 100, step: 1 },
-    rimAmount: { value: 0.84, min: 0, max: 1, step: 0.01 },
-    rimThreshold: { value: 0.28, min: 0, max: 1, step: 0.01 },
-    rimColor: '#d7dcff',
-    steps: { value: 3, min: 1, max: 8, step: 1 },
-    shadowBrightness: { value: 0.20, min: 0, max: 1, step: 0.05 },
-    brightness: { value: 1.70, min: 0.5, max: 4, step: 0.05 },
-    outlineThickness: { value: 0.04, min: 0, max: 0.15, step: 0.005 },
-    outlineColor: '#000000',
+  const toonControls = useOptionalControls('Game', {
+    'Cat Toon Shader': folder({
+      lightX: { value: 4.0, min: -20, max: 20, step: 0.5 },
+      lightY: { value: -7.5, min: -20, max: 20, step: 0.5 },
+      lightZ: { value: 3.0, min: -20, max: 20, step: 0.5 },
+      glossiness: { value: 1, min: 1, max: 100, step: 1 },
+      rimAmount: { value: 0.84, min: 0, max: 1, step: 0.01 },
+      rimThreshold: { value: 0.28, min: 0, max: 1, step: 0.01 },
+      rimColor: '#d7dcff',
+      steps: { value: 3, min: 1, max: 8, step: 1 },
+      shadowBrightness: { value: 0.20, min: 0, max: 1, step: 0.05 },
+      brightness: { value: 1.70, min: 0.5, max: 4, step: 0.05 },
+      outlineThickness: { value: 0.04, min: 0, max: 0.15, step: 0.005 },
+      outlineColor: '#000000',
+    }, { collapsed: true }),
   }, [])
 
-  const blinkControls = useOptionalControls('Cat Blink', {
-    leftEyeX: { value: 0.84, min: 0, max: 1, step: 0.005 },
-    leftEyeY: { value: 0.60, min: 0, max: 1, step: 0.005 },
-    rightEyeX: { value: 0.66, min: 0, max: 1, step: 0.005 },
-    rightEyeY: { value: 0.57, min: 0, max: 1, step: 0.005 },
-    eyeRadiusX: { value: 0.08, min: 0.005, max: 0.15, step: 0.005 },
-    eyeRadiusY: { value: 0.05, min: 0.005, max: 0.15, step: 0.005 },
-    lidColor: '#1a1a2e',
-    forceClose: false,
+  const blinkControls = useOptionalControls('Game', {
+    'Cat Blink': folder({
+      leftEyeX: { value: 0.84, min: 0, max: 1, step: 0.005 },
+      leftEyeY: { value: 0.60, min: 0, max: 1, step: 0.005 },
+      rightEyeX: { value: 0.66, min: 0, max: 1, step: 0.005 },
+      rightEyeY: { value: 0.57, min: 0, max: 1, step: 0.005 },
+      eyeRadiusX: { value: 0.08, min: 0.005, max: 0.15, step: 0.005 },
+      eyeRadiusY: { value: 0.05, min: 0.005, max: 0.15, step: 0.005 },
+      lidColor: '#1a1a2e',
+      forceClose: false,
+    }, { collapsed: true }),
   }, [])
 
   const blinkState = useRef({ timer: 3, blinking: false, blinkTime: 0, amount: 0, blinksLeft: 0 })
@@ -165,7 +172,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, isTra
   const { introStateRef } = useCatAnimation({
     groupRef, boardRef, catRef, grindLightRef, catModelRef,
     blinkStateRef: blinkState,
-    musicRef, controlsEnabled, onJumpTiming, onJumpSfx,
+    musicRef, controlsEnabled, onJumpSfx,
     catRotX, catRotY, catRotZ,
     isTransitioning,
   })

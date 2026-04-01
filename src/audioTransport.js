@@ -17,6 +17,7 @@ export function createBufferedMusicTransport(url) {
   let anchorMediaTime = 0
   let anchorPerformanceTime = 0
   let disposed = false
+  let onEnded = null
 
   const getDuration = () => buffer?.duration || Infinity
 
@@ -126,6 +127,9 @@ export function createBufferedMusicTransport(url) {
       anchorPerformanceTime = getNowSeconds()
       paused = true
       source = null
+      if (typeof onEnded === 'function') {
+        onEnded()
+      }
     }
 
     nextSource.start(scheduledStartTime, clampedStartMediaTime)
@@ -210,6 +214,19 @@ export function createBufferedMusicTransport(url) {
         if (gainNode) {
           gainNode.gain.value = volume
         }
+      },
+    },
+    duration: {
+      get() {
+        return getDuration()
+      },
+    },
+    onEnded: {
+      get() {
+        return onEnded
+      },
+      set(value) {
+        onEnded = typeof value === 'function' ? value : null
       },
     },
   })

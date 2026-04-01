@@ -1,5 +1,6 @@
 import { useRef, useMemo, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
@@ -138,13 +139,15 @@ const grassFragmentShader = /* glsl */ `
 export default function Grass() {
   const meshRef = useRef()
 
-  const { windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Grass', {
-    bladeCount: { value: 4000, min: 100, max: MAX_BLADES, step: 100 },
-    thickness: { value: 0.08, min: 0.005, max: 0.2, step: 0.005 },
-    windSpeed: { value: 2.0, min: 0, max: 10, step: 0.1 },
-    windStrength: { value: 0.12, min: 0, max: 0.5, step: 0.01 },
-    bladeMinHeight: { value: 0.3, min: 0.01, max: 1.0, step: 0.01 },
-    bladeMaxHeight: { value: 0.8, min: 0.1, max: 2.0, step: 0.01 },
+  const { windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
+    Grass: folder({
+      bladeCount: { value: 4000, min: 100, max: MAX_BLADES, step: 100 },
+      thickness: { value: 0.08, min: 0.005, max: 0.2, step: 0.005 },
+      windSpeed: { value: 2.0, min: 0, max: 10, step: 0.1 },
+      windStrength: { value: 0.12, min: 0, max: 0.5, step: 0.01 },
+      bladeMinHeight: { value: 0.3, min: 0.01, max: 1.0, step: 0.01 },
+      bladeMaxHeight: { value: 0.8, min: 0.1, max: 2.0, step: 0.01 },
+    }, { collapsed: true }),
   }, [])
   const {
     dayColorBase,
@@ -155,15 +158,17 @@ export default function Grass() {
     sunsetColorBase,
     sunsetColorTip,
     sunsetColorDry,
-  } = useOptionalControls('Grass Day', {
-    dayColorBase: '#2E9E3A',
-    dayColorTip: '#8EE85A',
-    dayColorDry: '#D4CC44',
-    dayAmbientStrength: { value: 0.7, min: 0, max: 1.5, step: 0.01 },
-    dayShadowBrightness: { value: 1, min: 0, max: 1, step: 0.01 },
-    sunsetColorBase: '#4a5a30',
-    sunsetColorTip: '#7a8a50',
-    sunsetColorDry: '#8a7a44',
+  } = useOptionalControls('Game', {
+    'Grass Day': folder({
+      dayColorBase: '#2E9E3A',
+      dayColorTip: '#8EE85A',
+      dayColorDry: '#D4CC44',
+      dayAmbientStrength: { value: 0.7, min: 0, max: 1.5, step: 0.01 },
+      dayShadowBrightness: { value: 1, min: 0, max: 1, step: 0.01 },
+      sunsetColorBase: '#4a5a30',
+      sunsetColorTip: '#7a8a50',
+      sunsetColorDry: '#8a7a44',
+    }, { collapsed: true }),
   }, [])
   const {
     nightColorBase,
@@ -172,13 +177,15 @@ export default function Grass() {
     nightAmbientStrength,
     nightShadowBrightness,
     nightLightColor,
-  } = useOptionalControls('Grass Night', {
-    nightColorBase: '#000000',
-    nightColorTip: '#1a3a15',
-    nightColorDry: '#3a3510',
-    nightAmbientStrength: { value: 0.25, min: 0, max: 1.5, step: 0.01 },
-    nightShadowBrightness: { value: 0.2, min: 0, max: 1, step: 0.01 },
-    nightLightColor: '#334466',
+  } = useOptionalControls('Game', {
+    'Grass Night': folder({
+      nightColorBase: '#000000',
+      nightColorTip: '#1a3a15',
+      nightColorDry: '#3a3510',
+      nightAmbientStrength: { value: 0.25, min: 0, max: 1.5, step: 0.01 },
+      nightShadowBrightness: { value: 0.2, min: 0, max: 1, step: 0.01 },
+      nightLightColor: '#334466',
+    }, { collapsed: true }),
   }, [])
 
   const uniformsRef = useRef({

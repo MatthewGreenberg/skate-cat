@@ -39,7 +39,6 @@ export default function GameWorld({
   foliageSegmentCount = 2,
   trailTargetRef,
   musicRef,
-  onJumpTiming,
   onJumpSfx,
   onLogHit,
 }) {
@@ -59,7 +58,6 @@ export default function GameWorld({
             isTransitioning={isTransitioning}
             useOriginalMaterials={useOriginalMaterials}
             musicRef={musicRef}
-            onJumpTiming={onJumpTiming}
             onJumpSfx={onJumpSfx}
           />
         </group>

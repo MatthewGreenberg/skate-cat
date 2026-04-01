@@ -8,6 +8,8 @@ export const POST_CONTROL_LIMITS = {
   contrast: { min: -0.5, max: 0.5, step: 0.01 },
   hue: { min: -Math.PI, max: Math.PI, step: 0.01 },
   saturation: { min: -1, max: 1, step: 0.01 },
+  distortionX: { min: -0.2, max: 0.2, step: 0.001 },
+  distortionY: { min: -0.2, max: 0.2, step: 0.001 },
 }
 
 export const DEFAULT_GAME_POST_SETTINGS = {
@@ -18,16 +20,20 @@ export const DEFAULT_GAME_POST_SETTINGS = {
   contrast: 0.1,
   hue: 0,
   saturation: 0.15,
+  distortionX: 0,
+  distortionY: 0,
 }
 
 export const DEFAULT_INTRO_POST_SETTINGS = {
-  bloomIntensity: 0.5,
+  bloomIntensity: 0.75,
   bloomThreshold: 0,
   bloomSmoothing: 0.15,
   brightness: 0.0,
-  contrast: 0,
+  contrast: 0.08,
   hue: 0,
-  saturation: 0,
+  saturation: 0.08,
+  distortionX: 0,
+  distortionY: 0,
 }
 
 export function createPostProcessingControls(defaults) {
@@ -39,6 +45,8 @@ export function createPostProcessingControls(defaults) {
     contrast: { value: defaults.contrast, ...POST_CONTROL_LIMITS.contrast },
     hue: { value: defaults.hue, ...POST_CONTROL_LIMITS.hue },
     saturation: { value: defaults.saturation, ...POST_CONTROL_LIMITS.saturation },
+    distortionX: { value: defaults.distortionX, ...POST_CONTROL_LIMITS.distortionX },
+    distortionY: { value: defaults.distortionY, ...POST_CONTROL_LIMITS.distortionY },
   }
 }
 
@@ -51,5 +59,7 @@ export function interpolatePostSettings(from, to, alpha) {
     contrast: THREE.MathUtils.lerp(from.contrast, to.contrast, alpha),
     hue: THREE.MathUtils.lerp(from.hue, to.hue, alpha),
     saturation: THREE.MathUtils.lerp(from.saturation, to.saturation, alpha),
+    distortionX: THREE.MathUtils.lerp(from.distortionX, to.distortionX, alpha),
+    distortionY: THREE.MathUtils.lerp(from.distortionY, to.distortionY, alpha),
   }
 }

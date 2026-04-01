@@ -2,6 +2,7 @@ import { createRef } from "react";
 import * as THREE from "three";
 
 const DEFAULT_TIMING_OFFSET_SECONDS = null;
+export const MAX_RUN_LIVES = 2;
 const debugParams = new URLSearchParams(window.location.search);
 const qualityParam = debugParams.get("quality") || "auto";
 const validQualityModes = new Set(["high", "auto", "quiet"]);
@@ -31,6 +32,80 @@ export function createIdleGrindSparkState() {
   };
 }
 
+export function createAccuracyStats() {
+  return {
+    Perfect: 0,
+    Good: 0,
+    Sloppy: 0,
+  };
+}
+
+export function createEmptyScoringEvent() {
+  return {
+    id: 0,
+    points: 0,
+    grade: "Perfect",
+    multiplier: 1,
+    isRail: false,
+    trickName: "",
+    label: "",
+  };
+}
+
+export function getAccuracyPercent(stats = createAccuracyStats()) {
+  const perfect = stats?.Perfect || 0;
+  const good = stats?.Good || 0;
+  const sloppy = stats?.Sloppy || 0;
+  const total = perfect + good + sloppy;
+  if (total <= 0) return 0;
+
+  const weightedHits = perfect + good * 0.72 + sloppy * 0.4;
+  return Math.round((weightedHits / total) * 100);
+}
+
+export function formatFailReason(reason) {
+  switch (reason) {
+    case "late jump":
+      return "Late Jump";
+    case "low jump":
+      return "Low Jump";
+    case "missed rail hold":
+      return "Missed Rail Hold";
+    default:
+      return "Collision";
+  }
+}
+
+export function getRunRank(summary) {
+  if (!summary) return "F";
+
+  const accuracyRatio = (summary.accuracyPercent || 0) / 100;
+  if (summary.outcome === "complete") {
+    if (
+      summary.progressScore >= 48 &&
+      accuracyRatio >= 0.88 &&
+      summary.bestStreak >= 10 &&
+      summary.remainingLives >= 1
+    ) {
+      return "S";
+    }
+    if (summary.progressScore >= 34 && accuracyRatio >= 0.76 && summary.bestStreak >= 6) {
+      return "A";
+    }
+    if (summary.progressScore >= 24 && accuracyRatio >= 0.62) {
+      return "B";
+    }
+    if (summary.progressScore >= 14) {
+      return "C";
+    }
+    return "D";
+  }
+
+  if (summary.progressScore >= 20 && accuracyRatio >= 0.65) return "C";
+  if (summary.progressScore >= 10 || summary.totalScore >= 12) return "D";
+  return "F";
+}
+
 // Shared mutable game state (refs avoid re-renders)
 export const gameState = {
   speed: createRef(),
@@ -41,6 +116,7 @@ export const gameState = {
   jumping: false,
   gameOver: false,
   score: 0,
+  progressScore: 0,
   onGameOver: null, // callback to trigger React re-render
   onHudScoreChange: null,
   onRestart: null,
@@ -65,6 +141,17 @@ export const gameState = {
   timingOffsetSeconds: createRef(),
   obstacleHitDelaySeconds: createRef(),
   runDifficultyProgress: createRef(),
+  phaseSpeedBonus: createRef(),
+  remainingLives: createRef(),
+  groundSpinCount: createRef(),
+  railCount: createRef(),
+  bestStreak: createRef(),
+  accuracyStats: createRef(),
+  lastFailReason: createRef(),
+  tutorialPrompt: createRef(),
+  runPhase: createRef(),
+  phaseAnnouncement: createRef(),
+  lastRunSummary: createRef(),
 };
 gameState.speed.current = 0;
 gameState.kickflip.current = { triggered: false, position: [0, 0, 0] };
@@ -81,20 +168,25 @@ gameState.grindSpark.current = createIdleGrindSparkState();
 gameState.timeScale.current = 1;
 gameState.grindCooldownObstacleId.current = 0;
 gameState.catHeight.current = 0.05;
-gameState.lastScoringEvent.current = {
-  id: 0,
-  points: 0,
-  grade: "Perfect",
-  multiplier: 1,
-  isRail: false,
-  trickName: "",
-};
+gameState.lastScoringEvent.current = createEmptyScoringEvent();
 gameState.comboEnergy.current = 1;
 gameState.timeOfDay.current = 0;
 gameState.nightContrast.current = 0;
 gameState.timingOffsetSeconds.current = DEFAULT_TIMING_OFFSET_SECONDS;
 gameState.obstacleHitDelaySeconds.current = 0;
 gameState.runDifficultyProgress.current = 0;
+gameState.progressScore = 0;
+gameState.phaseSpeedBonus.current = 0;
+gameState.remainingLives.current = MAX_RUN_LIVES;
+gameState.groundSpinCount.current = 0;
+gameState.railCount.current = 0;
+gameState.bestStreak.current = 0;
+gameState.accuracyStats.current = createAccuracyStats();
+gameState.lastFailReason.current = "";
+gameState.tutorialPrompt.current = "";
+gameState.runPhase.current = "early";
+gameState.phaseAnnouncement.current = "";
+gameState.lastRunSummary.current = null;
 
 export function emitHudScoreChange() {
   if (!gameState.onHudScoreChange) return;
@@ -102,8 +194,33 @@ export function emitHudScoreChange() {
     score: gameState.score,
     streak: gameState.streak.current,
     multiplier: gameState.scoreMultiplier.current,
+    remainingLives: gameState.remainingLives.current,
+    maxLives: MAX_RUN_LIVES,
+    tutorialPrompt: gameState.tutorialPrompt.current,
+    runPhase: gameState.runPhase.current,
+    phaseAnnouncement: gameState.phaseAnnouncement.current,
     lastScoringEvent: gameState.lastScoringEvent.current,
   });
+}
+
+export function buildRunSummary({ outcome = "failed" } = {}) {
+  const accuracyStats = gameState.accuracyStats.current || createAccuracyStats();
+  const summary = {
+    outcome,
+    totalScore: gameState.score,
+    progressScore: gameState.progressScore,
+    bestStreak: gameState.bestStreak.current || 0,
+    railCount: gameState.railCount.current || 0,
+    groundSpinCount: gameState.groundSpinCount.current || 0,
+    remainingLives: gameState.remainingLives.current ?? MAX_RUN_LIVES,
+    maxLives: MAX_RUN_LIVES,
+    accuracyStats,
+    accuracyPercent: getAccuracyPercent(accuracyStats),
+    failReason: formatFailReason(gameState.lastFailReason.current),
+  };
+
+  summary.rank = getRunRank(summary);
+  return summary;
 }
 
 export function resetObstacleTargets() {
@@ -140,9 +257,8 @@ export function getScoreMultiplier(streak) {
 }
 
 export function getTargetRunSpeed() {
-  return gameState.baseSpeed + (
-    gameState.speedBoostActive ? gameState.postMilestoneSpeedBoost : 0
-  );
+  // Obstacle density can ramp independently, but world scroll speed should stay fixed.
+  return gameState.baseSpeed;
 }
 
 export function getGameDelta(delta) {

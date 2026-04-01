@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import {
   gameState,
@@ -19,9 +20,11 @@ export default function DayNightController({ isRunning }) {
   const hemiRef = useRef()
   const { scene } = useThree()
   const shadowMapSize = qualityMode === 'high' ? 1024 : qualityMode === 'quiet' ? 256 : 512
-  const { timeOfDay, paused } = useOptionalControls('Day/Night', {
-    timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },
-    paused: false,
+  const { timeOfDay, paused } = useOptionalControls('Game', {
+    'Day/Night': folder({
+      timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },
+      paused: false,
+    }, { collapsed: true }),
   }, [])
 
   useFrame((_, delta) => {

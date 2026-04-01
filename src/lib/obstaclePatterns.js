@@ -16,6 +16,8 @@ export const MAX_DIFFICULTY_SCORE_EQUIVALENT = 72
 export const MIN_SCORE_FOR_RAILS = 8
 export const MIN_MEASURES_BETWEEN_RAILS = 1
 export const FORCE_RAIL_AFTER_MEASURES = 4
+const EARLY_PHASE_MEASURES = 2
+const MID_PHASE_MEASURES = 6
 
 export const PATTERN_LIBRARY = {
   anchor: { offsets: [1], chain: false, dense: false },
@@ -69,6 +71,59 @@ export const PLACEMENT_LIBRARY = {
   ],
 }
 
+const PHASE_PATTERN_ALLOWLIST = {
+  early: new Set(['anchor', 'push']),
+  mid: new Set(['anchor', 'push', 'doubleQuarter', 'latePush', 'staircase']),
+  late: null,
+}
+
+const PHASE_RAIL_ALLOWLIST = {
+  early: new Set([]),
+  mid: new Set(['railLeftSetup', 'railRightSetup', 'lateRailCenter']),
+  late: null,
+}
+
+const PHASE_PLACEMENT_ALLOWLIST = {
+  early: new Set(['centerSingle', 'leftSingle', 'rightSingle', 'leftRight', 'rightLeft', 'centerLeft', 'centerRight']),
+  mid: new Set([
+    'centerSingle',
+    'leftSingle',
+    'rightSingle',
+    'leftRight',
+    'rightLeft',
+    'centerLeft',
+    'centerRight',
+    'leftCenter',
+    'rightCenter',
+    'sweepLeft',
+    'sweepRight',
+    'bounceLeft',
+    'bounceRight',
+  ]),
+  late: null,
+}
+
+const RAIL_PHASE_SETTINGS = {
+  early: {
+    minProgressScore: 999,
+    minMeasuresBetweenRails: 3,
+    forceRailAfterMeasures: 6,
+    chanceScale: 0.15,
+  },
+  mid: {
+    minProgressScore: 6,
+    minMeasuresBetweenRails: 1,
+    forceRailAfterMeasures: 2,
+    chanceScale: 1.05,
+  },
+  late: {
+    minProgressScore: 10,
+    minMeasuresBetweenRails: MIN_MEASURES_BETWEEN_RAILS,
+    forceRailAfterMeasures: 2,
+    chanceScale: 1.4,
+  },
+}
+
 export function clamp01(value) {
   return Math.min(Math.max(value, 0), 1)
 }
@@ -92,8 +147,15 @@ export function rampWeight(score, startScore, fullScore, maxWeight) {
   return clamp01((score - startScore) / (fullScore - startScore)) * maxWeight
 }
 
-export function getRunDifficultyProgress(score, referenceBeat = MEASURE_PHASE_OFFSET_BEATS) {
-  const scoreProgress = clamp01(score / MAX_RAMP_SCORE)
+export function getRunPhase(referenceBeat = MEASURE_PHASE_OFFSET_BEATS) {
+  const elapsedMeasures = Math.max(0, referenceBeat - getStartupMeasureCursor(0)) / MEASURE_LENGTH_BEATS
+  if (elapsedMeasures < EARLY_PHASE_MEASURES) return 'early'
+  if (elapsedMeasures < MID_PHASE_MEASURES) return 'mid'
+  return 'late'
+}
+
+export function getRunDifficultyProgress(progressScore, referenceBeat = MEASURE_PHASE_OFFSET_BEATS) {
+  const scoreProgress = clamp01(progressScore / MAX_RAMP_SCORE)
   const beatProgress = clamp01(
     Math.max(0, referenceBeat - getStartupMeasureCursor(0)) / (MAX_RUN_DIFFICULTY_MEASURES * MEASURE_LENGTH_BEATS)
   )
@@ -108,9 +170,10 @@ export function getStartupMeasureCursor(musicTimeSeconds = 0) {
   return minBeat + phaseDelta
 }
 
-export function getWeightedPatternPool(score, minOffset = 0, difficultyProgress = 0) {
+export function getWeightedPatternPool(score, minOffset = 0, difficultyProgress = 0, runPhase = getRunPhase()) {
   const normalizedDifficulty = clamp01(difficultyProgress)
   const effectiveScore = Math.max(score, normalizedDifficulty * MAX_DIFFICULTY_SCORE_EQUIVALENT)
+  const phaseAllowlist = PHASE_PATTERN_ALLOWLIST[runPhase] || null
   const pool = [
     { name: 'anchor', weight: Math.max(0.2, 3.15 - effectiveScore * 0.1) },
     { name: 'push', weight: 1.1 + rampWeight(effectiveScore, 0, 10, 1.45) - rampWeight(effectiveScore, 42, 70, 0.8) },
@@ -138,7 +201,11 @@ export function getWeightedPatternPool(score, minOffset = 0, difficultyProgress 
         weight,
       }
     })
-    .filter((entry) => entry.weight > 0.05 && PATTERN_LIBRARY[entry.name]?.offsets.every((offset) => offset > minOffset))
+    .filter((entry) => (
+      entry.weight > 0.05 &&
+      (!phaseAllowlist || phaseAllowlist.has(entry.name)) &&
+      PATTERN_LIBRARY[entry.name]?.offsets.every((offset) => offset > minOffset)
+    ))
 }
 
 export function pickWeightedPattern(pool) {
@@ -167,23 +234,40 @@ export function pickWeightedEntry(pool) {
   return pool[pool.length - 1] || null
 }
 
-export function shouldUseRail(score, measuresSinceRail, measureAnalysis = null, analysisBlend = 0, difficultyProgress = 0) {
+export function shouldUseRail(
+  score,
+  measuresSinceRail,
+  measureAnalysis = null,
+  analysisBlend = 0,
+  difficultyProgress = 0,
+  runPhase = getRunPhase(),
+) {
   const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
-  if (effectiveScore < MIN_SCORE_FOR_RAILS) return false
-  if (measuresSinceRail < MIN_MEASURES_BETWEEN_RAILS) return false
-  if (measuresSinceRail >= FORCE_RAIL_AFTER_MEASURES) return true
+  const phaseSettings = RAIL_PHASE_SETTINGS[runPhase] || RAIL_PHASE_SETTINGS.late
+  if (effectiveScore < phaseSettings.minProgressScore) return false
+  if (measuresSinceRail < phaseSettings.minMeasuresBetweenRails) return false
+  if (measuresSinceRail >= phaseSettings.forceRailAfterMeasures) return true
 
   const baseChance = (effectiveScore < 18 ? 0.24 : effectiveScore < 36 ? 0.38 : 0.54) + difficultyProgress * 0.18
   const urgencyBonus = measuresSinceRail >= 3 ? 0.16 : measuresSinceRail >= 2 ? 0.08 : 0
   const analysisChanceDelta = getRailAnalysisChanceDelta(measureAnalysis) * clampRange(analysisBlend, 0, 1.5)
-  return Math.random() < clampRange(baseChance + urgencyBonus + analysisChanceDelta, 0, 0.92)
+  return Math.random() < clampRange((baseChance + urgencyBonus + analysisChanceDelta) * phaseSettings.chanceScale, 0, 0.92)
 }
 
-export function getWeightedRailPatternPool(score, recentPatternName = '', measureAnalysis = null, analysisBlend = 0, difficultyProgress = 0) {
+export function getWeightedRailPatternPool(
+  score,
+  recentPatternName = '',
+  measureAnalysis = null,
+  analysisBlend = 0,
+  difficultyProgress = 0,
+  runPhase = getRunPhase(),
+) {
   const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
+  const phaseAllowlist = PHASE_RAIL_ALLOWLIST[runPhase] || null
   let pool = RAIL_PATTERN_LIBRARY.filter((entry) => {
     if (typeof entry.minScore === 'number' && effectiveScore < entry.minScore) return false
     if (typeof entry.maxScore === 'number' && effectiveScore > entry.maxScore) return false
+    if (phaseAllowlist && !phaseAllowlist.has(entry.name)) return false
     return entry.weight > 0.05
   })
 
@@ -220,13 +304,16 @@ export function getPlacementPool({
   measureAnalysis = null,
   analysisBlend = 0,
   difficultyProgress = 0,
+  runPhase = getRunPhase(),
 }) {
   const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
+  const phaseAllowlist = PHASE_PLACEMENT_ALLOWLIST[runPhase] || null
   let pool = (PLACEMENT_LIBRARY[count] || PLACEMENT_LIBRARY[1]).filter((entry) => {
     if (typeof entry.minScore === 'number' && effectiveScore < entry.minScore) return false
     if (typeof entry.maxScore === 'number' && effectiveScore > entry.maxScore) return false
     if (entry.denseOnly && !dense) return false
     if (entry.sparseOnly && dense) return false
+    if (phaseAllowlist && !phaseAllowlist.has(entry.name)) return false
     return true
   })
 

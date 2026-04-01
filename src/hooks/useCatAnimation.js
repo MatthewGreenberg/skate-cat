@@ -92,7 +92,6 @@ export default function useCatAnimation({
   blinkStateRef,
   musicRef,
   controlsEnabled,
-  onJumpTiming,
   onJumpSfx,
   catRotX,
   catRotY,
@@ -182,28 +181,41 @@ export default function useCatAnimation({
     spinState.current.time = 0
   }, [])
 
+  const markPendingSpinTrick = useCallback(() => {
+    const pendingTiming = gameState.pendingJumpTiming.current
+    if (!pendingTiming || pendingTiming.trickAwarded || pendingTiming.trickName === '360') return false
+    gameState.pendingJumpTiming.current = {
+      ...pendingTiming,
+      trickName: '360',
+    }
+    return true
+  }, [])
+
   const triggerSpinTrick = useCallback(() => {
     if (jumpState.current.didSpinTrick) return false
     jumpState.current.didSpinTrick = true
-    if (gameState.pendingJumpTiming.current) {
-      gameState.pendingJumpTiming.current = {
-        ...gameState.pendingJumpTiming.current,
-        trickName: '360',
-      }
-    }
+    markPendingSpinTrick()
     triggerCatSpin()
     return true
-  }, [triggerCatSpin])
+  }, [markPendingSpinTrick, triggerCatSpin])
+
+  const triggerGrindSpin = useCallback(() => {
+    markPendingSpinTrick()
+    triggerCatSpin()
+    return true
+  }, [markPendingSpinTrick, triggerCatSpin])
 
   const triggerGroundSpin = useCallback(() => {
     gameState.score += GROUND_SPIN_POINTS
+    gameState.groundSpinCount.current = (gameState.groundSpinCount.current || 0) + 1
     gameState.lastScoringEvent.current = {
       id: performance.now(),
       points: GROUND_SPIN_POINTS,
-      grade: 'Spin',
+      grade: 'Trick',
       multiplier: gameState.scoreMultiplier.current,
       isRail: false,
       trickName: '360',
+      label: '360',
     }
     emitHudScoreChange()
     triggerCatSpin()
@@ -329,7 +341,7 @@ export default function useCatAnimation({
     jumpState.current.endY = 0.05
     jumpState.current.arcHeight = fromGrind ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
     jumpState.current.doesFlip = false
-    jumpState.current.canSpinTrick = !fromGrind
+    jumpState.current.canSpinTrick = true
     jumpState.current.didSpinTrick = false
 
     if (onJumpSfx) onJumpSfx()
@@ -340,7 +352,7 @@ export default function useCatAnimation({
       jumpState.current.targetX = jumpPlan.targetX
       jumpState.current.arcHeight = jumpPlan.isRailJump ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
       jumpState.current.doesFlip = jumpPlan.shouldKickflip
-      jumpState.current.canSpinTrick = !jumpPlan.isRailJump
+      jumpState.current.canSpinTrick = true
       gameState.pendingJumpTiming.current = {
         obstacleIds: jumpPlan.coveredObstacleIds,
         primaryObstacleId: jumpPlan.nearestTarget?.id ?? null,
@@ -353,7 +365,6 @@ export default function useCatAnimation({
       }
       if (jumpPlan.shouldKickflip) triggerKickflipEffect()
       primeJumpTakeoffPose()
-      if (onJumpTiming) onJumpTiming(jumpPlan.timingLabel)
       return
     }
 
@@ -362,7 +373,7 @@ export default function useCatAnimation({
       triggerKickflipEffect()
     }
     primeJumpTakeoffPose()
-  }, [getJumpPlan, groupRef, musicRef, onJumpSfx, onJumpTiming, primeJumpTakeoffPose, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
+  }, [getJumpPlan, groupRef, musicRef, onJumpSfx, primeJumpTakeoffPose, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
 
   const resetPoseToBoard = () => {
     resetContactEffects()
@@ -447,6 +458,7 @@ export default function useCatAnimation({
 
   // --- Keyboard input ---
   useEffect(() => {
+    const heldKeys = heldJumpKeys.current
     const getControlCode = (event) => event.code || event.key
     const isJumpControl = (event) => JUMP_KEY_CODES.has(getControlCode(event))
     const isSpinControl = (event) => SPIN_KEY_CODES.has(getControlCode(event))
@@ -455,7 +467,7 @@ export default function useCatAnimation({
       if (!controlsEnabled) return
       if (isJumpControl(e)) {
         e.preventDefault()
-        heldJumpKeys.current.add(getControlCode(e))
+        heldKeys.add(getControlCode(e))
         gameState.upArrowHeld.current = true
         if (e.repeat) return
       }
@@ -478,10 +490,16 @@ export default function useCatAnimation({
           !jumpState.current.didSpinTrick &&
           !spinState.current.active
         )
+        const canTriggerGrindSpin = (
+          gameState.activeGrind.current.active &&
+          !spinState.current.active
+        )
         if (canTriggerGroundSpin) {
           triggerGroundSpin()
         } else if (canTriggerSpinTrick) {
           triggerSpinTrick()
+        } else if (canTriggerGrindSpin) {
+          triggerGrindSpin()
         } else {
           spinInputBuffer.current = SPIN_INPUT_BUFFER_DURATION
         }
@@ -490,11 +508,11 @@ export default function useCatAnimation({
     const onKeyUp = (e) => {
       if (!isJumpControl(e)) return
       e.preventDefault()
-      heldJumpKeys.current.delete(getControlCode(e))
-      gameState.upArrowHeld.current = heldJumpKeys.current.size > 0
+      heldKeys.delete(getControlCode(e))
+      gameState.upArrowHeld.current = heldKeys.size > 0
     }
     const onBlur = () => {
-      heldJumpKeys.current.clear()
+      heldKeys.clear()
       gameState.upArrowHeld.current = false
     }
 
@@ -505,10 +523,10 @@ export default function useCatAnimation({
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
-      heldJumpKeys.current.clear()
+      heldKeys.clear()
       gameState.upArrowHeld.current = false
     }
-  }, [controlsEnabled, startJump, triggerGroundSpin, triggerSpinTrick])
+  }, [controlsEnabled, startJump, triggerGrindSpin, triggerGroundSpin, triggerSpinTrick])
 
   // --- Main animation useFrame ---
   useFrame((state, delta) => {
@@ -648,7 +666,7 @@ export default function useCatAnimation({
     // Buffered spin input
     if (spinInputBuffer.current > 0) {
       spinInputBuffer.current = Math.max(0, spinInputBuffer.current - gameDelta)
-      if (jump.active && jump.canSpinTrick && !jump.didSpinTrick && !spin.active && !isGrinding && !deathState.current.active) {
+      if (jump.active && jump.canSpinTrick && !jump.didSpinTrick && !spin.active && !deathState.current.active) {
         triggerSpinTrick()
         spinInputBuffer.current = 0
       }
@@ -668,7 +686,6 @@ export default function useCatAnimation({
         beginGrindEntry(activeGrind)
       }
       if (jump.active) { jump.active = false; jump.time = 0 }
-      if (spin.active) { spin.active = false; spin.time = 0 }
       powerslide.direction = activeGrind.x < 0 ? -1 : 1
     } else if (wasGrinding.current && !jump.active) {
       triggerLandingEffects({ fromGrind: true, direction: powerslide.direction })
@@ -684,7 +701,7 @@ export default function useCatAnimation({
     let catSpinRotationY = 0
     let catSpinJustFinished = false
 
-    if (spin.active && !isGrinding) {
+    if (spin.active) {
       spin.time += gameDelta
       const spinT = Math.min(spin.time / SPIN_DURATION, 1)
       catSpinRotationY = spinT * Math.PI * 2

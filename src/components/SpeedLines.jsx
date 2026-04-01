@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta, getNightFactor } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
@@ -55,13 +56,15 @@ export default function SpeedLines({ active = true }) {
   const meshRef = useRef()
   const energyRef = useRef(1)
 
-  const { color, slots, lineWidth, scrollSpeed, opacity, height } = useOptionalControls('Speed Lines', {
-    color: '#ffffff',
-    slots: { value: 38, min: 5, max: 100, step: 1 },
-    lineWidth: { value: 0.11, min: 0.01, max: 0.3, step: 0.01 },
-    scrollSpeed: { value: 1.4, min: 0.2, max: 8, step: 0.1 },
-    opacity: { value: 0.2, min: 0, max: 1, step: 0.05 },
-    height: { value: 0.56, min: 0, max: 1, step: 0.01 },
+  const { color, slots, lineWidth, scrollSpeed, opacity, height } = useOptionalControls('Game', {
+    'Speed Lines': folder({
+      color: '#ffffff',
+      slots: { value: 38, min: 5, max: 100, step: 1 },
+      lineWidth: { value: 0.11, min: 0.01, max: 0.3, step: 0.01 },
+      scrollSpeed: { value: 1.4, min: 0.2, max: 8, step: 0.1 },
+      opacity: { value: 0.2, min: 0, max: 1, step: 0.05 },
+      height: { value: 0.56, min: 0, max: 1, step: 0.01 },
+    }, { collapsed: true }),
   }, [])
 
   const uniforms = useMemo(() => ({

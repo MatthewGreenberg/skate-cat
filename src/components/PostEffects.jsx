@@ -1,8 +1,14 @@
-import { useEffect, useMemo } from 'react'
+/* eslint-disable react-hooks/refs */
+import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { EffectComposer } from '@react-three/postprocessing'
-import { BloomEffect, BrightnessContrastEffect, HueSaturationEffect } from 'postprocessing'
+import {
+  BloomEffect,
+  BrightnessContrastEffect,
+  HueSaturationEffect,
+  LensDistortionEffect,
+} from 'postprocessing'
 import TransitionEffect from './TransitionEffect'
 import { gameState, getNightFactor } from '../store'
 import { interpolatePostSettings } from '../lib/postProcessing'
@@ -30,26 +36,48 @@ export default function PostEffects({
   runActive,
   introTexture,
 }) {
-  const bloom = useMemo(() => new BloomEffect({
-    intensity: introSettings.bloomIntensity,
-    luminanceThreshold: introSettings.bloomThreshold,
-    luminanceSmoothing: introSettings.bloomSmoothing,
-    mipmapBlur: true,
-  }), [introSettings.bloomIntensity, introSettings.bloomSmoothing, introSettings.bloomThreshold])
-  const brightnessContrast = useMemo(() => new BrightnessContrastEffect({
-    brightness: introSettings.brightness,
-    contrast: introSettings.contrast,
-  }), [introSettings.brightness, introSettings.contrast])
-  const hueSaturation = useMemo(() => new HueSaturationEffect({
-    hue: introSettings.hue,
-    saturation: introSettings.saturation,
-  }), [introSettings.hue, introSettings.saturation])
+  const bloomRef = useRef(null)
+  const brightnessContrastRef = useRef(null)
+  const hueSaturationRef = useRef(null)
+  const lensDistortionRef = useRef(null)
+
+  if (bloomRef.current == null) {
+    bloomRef.current = new BloomEffect({
+      intensity: introSettings.bloomIntensity,
+      luminanceThreshold: introSettings.bloomThreshold,
+      luminanceSmoothing: introSettings.bloomSmoothing,
+      mipmapBlur: true,
+    })
+  }
+  if (brightnessContrastRef.current == null) {
+    brightnessContrastRef.current = new BrightnessContrastEffect({
+      brightness: introSettings.brightness,
+      contrast: introSettings.contrast,
+    })
+  }
+  if (hueSaturationRef.current == null) {
+    hueSaturationRef.current = new HueSaturationEffect({
+      hue: introSettings.hue,
+      saturation: introSettings.saturation,
+    })
+  }
+  if (lensDistortionRef.current == null) {
+    lensDistortionRef.current = new LensDistortionEffect({
+      distortion: new THREE.Vector2(introSettings.distortionX, introSettings.distortionY),
+    })
+  }
+
+  const bloom = bloomRef.current
+  const brightnessContrast = brightnessContrastRef.current
+  const hueSaturation = hueSaturationRef.current
+  const lensDistortion = lensDistortionRef.current
 
   useEffect(() => () => {
-    bloom.dispose()
-    brightnessContrast.dispose()
-    hueSaturation.dispose()
-  }, [bloom, brightnessContrast, hueSaturation])
+    bloomRef.current?.dispose()
+    brightnessContrastRef.current?.dispose()
+    hueSaturationRef.current?.dispose()
+    lensDistortionRef.current?.dispose()
+  }, [])
 
   useFrame(() => {
     const transitionMix = isTransitioning
@@ -61,6 +89,10 @@ export default function PostEffects({
     brightnessContrast.contrast = activeSettings.contrast
     hueSaturation.hue = activeSettings.hue
     hueSaturation.saturation = activeSettings.saturation
+    lensDistortion.distortion.set(
+      activeSettings.distortionX,
+      activeSettings.distortionY
+    )
     bloom.luminanceMaterial.threshold = activeSettings.bloomThreshold
     bloom.luminanceMaterial.smoothing = activeSettings.bloomSmoothing
 
@@ -87,6 +119,7 @@ export default function PostEffects({
       )}
       <primitive object={brightnessContrast} />
       <primitive object={hueSaturation} />
+      <primitive object={lensDistortion} />
     </EffectComposer>
   )
 }

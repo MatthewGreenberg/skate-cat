@@ -1,5 +1,6 @@
 import { memo, useRef, useState, useCallback, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import { useProgress } from '@react-three/drei'
 import IntroScene from './components/IntroScene'
@@ -18,12 +19,17 @@ import TimingDebugHud from './components/TimingDebugHud'
 import ObstacleSpacingDebugHud from './components/ObstacleSpacingDebugHud'
 import { createBufferedMusicTransport } from './audioTransport'
 import {
+  buildRunSummary,
   gameState,
+  createAccuracyStats,
+  createEmptyScoringEvent,
   createIdleGrindState,
   createIdleGrindSparkState,
   emitHudScoreChange,
+  getTargetRunSpeed,
   isObstacleSpacingDebug,
   isTimingDebug,
+  MAX_RUN_LIVES,
   qualityMode,
   resetObstacleTargets,
 } from './store'
@@ -36,7 +42,6 @@ import {
 } from './rhythm'
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
-const EMPTY_SCORING_EVENT = { id: 0, points: 0, grade: 'Perfect', multiplier: 1, isRail: false, trickName: '' }
 const AUTO_DPR = [1, 1.25]
 const HIGH_DPR = [1, 2]
 const QUIET_DPR = [1, 1]
@@ -57,7 +62,6 @@ const SceneCanvas = memo(function SceneCanvas({
   useOriginalMaterials,
   trailTargetRef,
   musicRef,
-  onJumpTiming,
   onJumpSfx,
   onLogHit,
   isWarmingGameWorld,
@@ -112,7 +116,6 @@ const SceneCanvas = memo(function SceneCanvas({
           useOriginalMaterials={useOriginalMaterials}
           trailTargetRef={trailTargetRef}
           musicRef={musicRef}
-          onJumpTiming={onJumpTiming}
           onJumpSfx={onJumpSfx}
           onLogHit={onLogHit}
           foliageSegmentCount={foliageSegmentCount}
@@ -151,6 +154,7 @@ export default function App() {
   const jump2SfxRef = useRef(null)
   const dieSfxRef = useRef(null)
   const hasStartedMusicRef = useRef(false)
+  const handleSongCompleteRef = useRef(() => {})
   const shouldCaptureIntroRef = useRef(false)
   const introSnapshotTextureRef = useRef(null)
   const hasQueuedWarmupRef = useRef(false)
@@ -160,7 +164,7 @@ export default function App() {
   const [isGameWorldPrimed, setIsGameWorldPrimed] = useState(false)
   const [hasCompletedBootReveal, setHasCompletedBootReveal] = useState(false)
   const [isGameOver, setIsGameOver] = useState(false)
-  const [timingFeedback, setTimingFeedback] = useState({ label: '', id: 0 })
+  const [runOutcome, setRunOutcome] = useState(null)
   const [hasConfirmedMusicStart, setHasConfirmedMusicStart] = useState(false)
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownText, setCountdownText] = useState('')
@@ -184,15 +188,21 @@ export default function App() {
     event.currentTarget.blur()
   }, [])
 
-  const resetRunState = useCallback(({ speed = 0, speedLinesOn = false } = {}) => {
+  const resetRunState = useCallback(({ speed = 0, speedLinesOn = false, speedBoostActive = false } = {}) => {
     gameState.gameOver = false
     gameState.score = 0
+    gameState.progressScore = 0
     gameState.speed.current = speed
-    gameState.speedBoostActive = speed > 0
+    gameState.speedBoostActive = speedBoostActive
     gameState.speedLinesOn = speedLinesOn
     gameState.jumping = false
     gameState.streak.current = 0
     gameState.scoreMultiplier.current = 1
+    gameState.remainingLives.current = MAX_RUN_LIVES
+    gameState.groundSpinCount.current = 0
+    gameState.railCount.current = 0
+    gameState.bestStreak.current = 0
+    gameState.accuracyStats.current = createAccuracyStats()
     gameState.pendingJumpTiming.current = null
     resetObstacleTargets()
     gameState.upArrowHeld.current = false
@@ -201,11 +211,17 @@ export default function App() {
     gameState.timeScale.current = 1
     gameState.grindCooldownObstacleId.current = 0
     gameState.catHeight.current = 0.05
-    gameState.lastScoringEvent.current = EMPTY_SCORING_EVENT
+    gameState.lastScoringEvent.current = createEmptyScoringEvent()
     gameState.screenShake.current = 0
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
     gameState.runDifficultyProgress.current = 0
+    gameState.phaseSpeedBonus.current = 0
+    gameState.lastFailReason.current = ''
+    gameState.tutorialPrompt.current = ''
+    gameState.runPhase.current = 'early'
+    gameState.phaseAnnouncement.current = ''
+    gameState.lastRunSummary.current = null
     emitHudScoreChange()
   }, [])
 
@@ -224,53 +240,58 @@ export default function App() {
     setRunActive(false)
     setShowGameWorld(false)
     setIsGameOver(false)
+    setRunOutcome(null)
     setHasConfirmedMusicStart(false)
     setIsCountdownActive(false)
     setCountdownText('')
     setIsTransitionCapturePending(false)
     setIsTransitioning(false)
-    setTimingFeedback({ label: '', id: 0 })
   }, [resetRunState])
 
   const introPost = useOptionalControls(
-    'Intro Post Processing',
-    createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS)
+    'Intro',
+    { 'Post Processing': folder(createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS)) }
   )
   const gamePost = useOptionalControls(
-    'Post Processing',
-    createPostProcessingControls(DEFAULT_GAME_POST_SETTINGS)
+    'Game',
+    { 'Post Processing': folder(createPostProcessingControls(DEFAULT_GAME_POST_SETTINGS), { collapsed: true }) }
   )
-  const transitionSettings = useOptionalControls('Intro Transition', {
-    duration: { value: 2.4, min: 0.3, max: 4.5, step: 0.05, label: 'Duration' },
-    revealCurve: { value: 0.86, min: 0.2, max: 2.2, step: 0.01, label: 'Curve' },
-    thresholdStart: { value: 0.12, min: -0.3, max: 0.3, step: 0.01, label: 'Start' },
-    thresholdEnd: { value: 0.97, min: 0.2, max: 1.2, step: 0.01, label: 'End' },
-    bandBefore: { value: 0.01, min: 0.005, max: 0.2, step: 0.005, label: 'Edge In' },
-    bandAfter: { value: 0.2, min: 0.005, max: 0.2, step: 0.005, label: 'Edge Out' },
-    glowInnerOffset: { value: 0.08, min: 0, max: 0.08, step: 0.005, label: 'Glow In' },
-    glowOuterOffset: { value: 0.25, min: 0.01, max: 0.25, step: 0.005, label: 'Glow Out' },
-    glowIntensity: { value: 0.65, min: 0, max: 2, step: 0.05, label: 'Glow' },
-    glowColor: { value: '#3dd5e8', label: 'Color' },
-    noiseScaleA: { value: 8.5, min: 1, max: 24, step: 0.5, label: 'Noise A' },
-    noiseScaleB: { value: 8.0, min: 1, max: 32, step: 0.5, label: 'Noise B' },
-    noiseAmpA: { value: 0.0, min: 0, max: 0.6, step: 0.01, label: 'Noise Amt A' },
-    noiseAmpB: { value: 0.18, min: 0, max: 0.4, step: 0.01, label: 'Noise Amt B' },
-    diffuseSpread: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'Diffuse Spread' },
-    dollyAmount: { value: 0.4, min: 0, max: 0.8, step: 0.01, label: 'Dolly' },
-    dollyStart: { value: 0.2, min: 0, max: 0.2, step: 0.005, label: 'Dolly Start' },
-    flashStrength: { value: 1, min: 0, max: 1, step: 0.05, label: 'Flash' },
+  const transitionSettings = useOptionalControls('Intro', {
+    Transition: folder({
+      duration: { value: 2.4, min: 0.3, max: 4.5, step: 0.05, label: 'Duration' },
+      revealCurve: { value: 0.86, min: 0.2, max: 2.2, step: 0.01, label: 'Curve' },
+      thresholdStart: { value: 0.12, min: -0.3, max: 0.3, step: 0.01, label: 'Start' },
+      thresholdEnd: { value: 0.97, min: 0.2, max: 1.2, step: 0.01, label: 'End' },
+      bandBefore: { value: 0.01, min: 0.005, max: 0.2, step: 0.005, label: 'Edge In' },
+      bandAfter: { value: 0.2, min: 0.005, max: 0.2, step: 0.005, label: 'Edge Out' },
+      glowInnerOffset: { value: 0.08, min: 0, max: 0.08, step: 0.005, label: 'Glow In' },
+      glowOuterOffset: { value: 0.25, min: 0.01, max: 0.25, step: 0.005, label: 'Glow Out' },
+      glowIntensity: { value: 0.65, min: 0, max: 2, step: 0.05, label: 'Glow' },
+      glowColor: { value: '#3dd5e8', label: 'Color' },
+      noiseScaleA: { value: 8.5, min: 1, max: 24, step: 0.5, label: 'Noise A' },
+      noiseScaleB: { value: 8.0, min: 1, max: 32, step: 0.5, label: 'Noise B' },
+      noiseAmpA: { value: 0.0, min: 0, max: 0.6, step: 0.01, label: 'Noise Amt A' },
+      noiseAmpB: { value: 0.18, min: 0, max: 0.4, step: 0.01, label: 'Noise Amt B' },
+      diffuseSpread: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'Diffuse Spread' },
+      dollyAmount: { value: 0.4, min: 0, max: 0.8, step: 0.01, label: 'Dolly' },
+      dollyStart: { value: 0.2, min: 0, max: 0.2, step: 0.005, label: 'Dolly Start' },
+      flashStrength: { value: 1, min: 0, max: 1, step: 0.05, label: 'Flash' },
+    }),
   })
-  const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useOptionalControls('Timing Debug', {
-    timingOffsetMs: { value: 0, min: -300, max: 180, step: 1 },
-    obstacleHitDelayMs: { value: 0, min: -180, max: 180, step: 1 },
-    debugPlaybackRate: {
-      value: 1,
-      options: { '1x': 1, '0.75x': 0.75, '0.5x': 0.5, '0.25x': 0.25 },
-    },
+  const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useOptionalControls('Debug', {
+    'Timing Debug': folder({
+      timingOffsetMs: { value: 0, min: -300, max: 180, step: 1 },
+      obstacleHitDelayMs: { value: 0, min: -180, max: 180, step: 1 },
+      debugPlaybackRate: {
+        value: 1,
+        options: { '1x': 1, '0.75x': 0.75, '0.5x': 0.5, '0.25x': 0.25 },
+      },
+    }, { collapsed: true }),
   }, [])
 
   useEffect(() => {
     const music = createBufferedMusicTransport('/skate-cat-2.mp3')
+    music.onEnded = () => handleSongCompleteRef.current()
     musicRef.current = music
     void music.preload().catch(() => { })
 
@@ -329,7 +350,21 @@ export default function App() {
   }, [handleReturnToIntro, isTransitionBusy, runActive])
 
   useEffect(() => {
-    gameState.onGameOver = () => setIsGameOver(true)
+    gameState.onGameOver = (payload = {}) => {
+      if (payload.reason) {
+        gameState.lastFailReason.current = payload.reason
+      }
+      gameState.lastRunSummary.current = payload.summary || buildRunSummary({ outcome: payload.outcome || 'failed' })
+      setRunOutcome(payload.outcome || 'failed')
+      setIsGameOver(true)
+      setRunActive(false)
+    }
+
+    return () => {
+      if (gameState.onGameOver) {
+        gameState.onGameOver = null
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -425,12 +460,12 @@ export default function App() {
   }, [])
 
   const activateRun = useCallback(() => {
-    gameState.speed.current = 8
-    gameState.speedBoostActive = true
+    gameState.speed.current = getTargetRunSpeed()
+    gameState.speedBoostActive = false
     gameState.speedLinesOn = true
     setIsGameOver(false)
+    setRunOutcome(null)
     setRunActive(true)
-    setTimingFeedback({ label: '', id: 0 })
   }, [])
 
   const handleGameWorldPrimed = useCallback(() => {
@@ -441,12 +476,12 @@ export default function App() {
   const handleStart = useCallback(() => {
     if (!isGameWorldPrimed || isTransitionBusy) return
 
-    resetRunState({ speed: 8, speedLinesOn: false })
+    resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
     transitionProgressRef.current = 0
     setRunActive(false)
     setIsGameOver(false)
+    setRunOutcome(null)
     setUseOriginalMaterials(false)
-    setTimingFeedback({ label: '', id: 0 })
     shouldCaptureIntroRef.current = true
     setIsTransitionCapturePending(true)
   }, [isGameWorldPrimed, isTransitionBusy, resetRunState])
@@ -464,19 +499,27 @@ export default function App() {
     activateRun()
   }, [activateRun])
 
+  const handleSongComplete = useCallback(() => {
+    if (!runActive || isGameOver || isTransitioning) return
+    gameState.lastRunSummary.current = buildRunSummary({ outcome: 'complete' })
+    setRunOutcome('complete')
+    setIsGameOver(true)
+    setRunActive(false)
+  }, [isGameOver, isTransitioning, runActive])
+
+  useEffect(() => {
+    handleSongCompleteRef.current = handleSongComplete
+  }, [handleSongComplete])
+
   const handleRestart = useCallback(() => {
-    resetRunState({ speed: 8, speedLinesOn: true })
+    resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
     setIsGameOver(false)
+    setRunOutcome(null)
     setRunActive(true)
     setShowGameWorld(true)
     setUseOriginalMaterials(false)
-    setTimingFeedback({ label: '', id: 0 })
     startMusicPlayback()
   }, [resetRunState, startMusicPlayback])
-
-  const handleJumpTiming = useCallback((label) => {
-    setTimingFeedback({ label, id: performance.now() })
-  }, [])
 
   const playJumpSfx = useCallback(() => {
     const jump = jumpSfxRef.current
@@ -696,8 +739,8 @@ export default function App() {
           />
         </div>
       )}
-      <GameHud musicRef={musicRef} visible={runActive && !isGameOver} timingFeedback={timingFeedback} />
-      <GameOverScreen visible={isGameOver} onRestart={handleRestart} />
+      <GameHud musicRef={musicRef} visible={runActive && !isGameOver} />
+      <GameOverScreen visible={isGameOver} outcome={runOutcome || 'failed'} onRestart={handleRestart} />
       <SceneCanvas
         hasCompletedBootReveal={hasCompletedBootReveal}
         canvasDpr={canvasDpr}
@@ -714,7 +757,6 @@ export default function App() {
         useOriginalMaterials={useOriginalMaterials}
         trailTargetRef={trailTarget}
         musicRef={musicRef}
-        onJumpTiming={handleJumpTiming}
         onJumpSfx={playJumpSfx}
         onLogHit={playDieSfx}
         isWarmingGameWorld={isWarmingGameWorld}

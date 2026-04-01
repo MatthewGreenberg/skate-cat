@@ -1,8 +1,10 @@
 import { useEffect, useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Text, useGLTF } from '@react-three/drei'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import {
+  buildRunSummary,
   createIdleGrindState,
   emitHudScoreChange,
   gameState,
@@ -24,7 +26,7 @@ import {
   MEASURE_LENGTH_BEATS, MEASURE_PHASE_OFFSET_BEATS, STARTUP_SAFE_BEATS,
   COUNTDOWN_BEATS, TIMING_POINTS, SPIN_TRICK_BONUS_POINTS, MAX_RAMP_SCORE,
   MAX_DIFFICULTY_SCORE_EQUIVALENT, PATTERN_LIBRARY,
-  clamp01, getStartupMeasureCursor, getRunDifficultyProgress,
+  clamp01, getStartupMeasureCursor, getRunDifficultyProgress, getRunPhase,
   getWeightedPatternPool, pickWeightedPattern, pickWeightedEntry,
   shouldUseRail, getWeightedRailPatternPool, getPlacementPool,
   getPatternAnalysisMultiplier, getBlendedWeightMultiplier,
@@ -47,8 +49,8 @@ import {
 const POOL_SIZE = 20
 const LOOKAHEAD_BEATS = 10
 const DESPAWN_BEHIND_SECONDS = 0.6
-const SPEED_BOOST_SCORE_THRESHOLD = 12
-const SPEED_LINES_SCORE_THRESHOLD = 24
+const SPEED_BOOST_SCORE_THRESHOLD = 8
+const SPEED_LINES_SCORE_THRESHOLD = 16
 const BURST_CLUSTER_GAP_BEATS = 0.75
 const CONTACT_SHADOW_Y = 0.018
 const CONTACT_SHADOW_LOG_OPACITY = 0.62
@@ -85,6 +87,20 @@ const DEBUG_RECENT_OBSTACLE_RETENTION_BEATS = 6
 const OBSTACLE_HIT_DISTANCE_CORRECTION_FAR = 4.5
 const OBSTACLE_HIT_DISTANCE_CORRECTION_MID = 2.25
 const OBSTACLE_HIT_DISTANCE_CORRECTION_NEAR = 0.8
+const HIT_RECOVERY_SECONDS = 1.05
+const HIT_SLOW_SPEED_FACTOR = 0.58
+const LATE_JUMP_FAIL_OFFSET_SECONDS = 0.045
+const JUMP_TUTORIAL_PROMPT = 'SPACE / W / D TO JUMP ON THE BEAT'
+const SPIN_TUTORIAL_PROMPT = 'A / S FOR 360'
+const PHASE_SPEED_BONUS = {
+  early: 0,
+  mid: 1.1,
+  late: 2.2,
+}
+const PHASE_ANNOUNCEMENTS = {
+  mid: 'PICKING UP',
+  late: 'FINAL STRETCH',
+}
 const TIMING_DEBUG_PATTERN_LIBRARY = [
   { name: 'centerSingle', offsets: [1], lanes: ['center'] },
   { name: 'leftSingle', offsets: [1], lanes: ['left'] },
@@ -143,6 +159,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
   const recentDebugObstacles = useRef(new Map())
   const worldScrollDistance = useRef(0)
   const needsCursorSync = useRef(true)
+  const lastRunPhase = useRef('early')
   const trackAnalysisLookups = useRef(buildTrackAnalysisLookups(null))
   const railLogGeometry = useMemo(() => {
     const geometry = new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, false)
@@ -156,9 +173,11 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
   const {
     useTrackAnalysis,
     analysisBlend,
-  } = useOptionalControls('Music Analysis', {
-    useTrackAnalysis: true,
-    analysisBlend: { value: 0.8, min: 0, max: 1.5, step: 0.05 },
+  } = useOptionalControls('Game', {
+    'Music Analysis': folder({
+      useTrackAnalysis: true,
+      analysisBlend: { value: 0.8, min: 0, max: 1.5, step: 0.05 },
+    }, { collapsed: true }),
   }, [])
 
   const {
@@ -171,16 +190,18 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     logSteps,
     logShadowBrightness,
     logBrightness,
-  } = useOptionalControls('Obstacles', {
-    logScale: { value: 0.8, min: 0.1, max: 3, step: 0.1 },
-    logColor: '#905634',
-    logLightX: { value: 4.0, min: -20, max: 20, step: 0.5 },
-    logLightY: { value: -7.5, min: -20, max: 20, step: 0.5 },
-    logLightZ: { value: 3.0, min: -20, max: 20, step: 0.5 },
-    logGlossiness: { value: 1, min: 1, max: 100, step: 1 },
-    logSteps: { value: 3, min: 1, max: 8, step: 1 },
-    logShadowBrightness: { value: 0.2, min: 0, max: 1, step: 0.05 },
-    logBrightness: { value: 1.7, min: 0.5, max: 4, step: 0.05 },
+  } = useOptionalControls('Game', {
+    Obstacles: folder({
+      logScale: { value: 0.8, min: 0.1, max: 3, step: 0.1 },
+      logColor: '#905634',
+      logLightX: { value: 4.0, min: -20, max: 20, step: 0.5 },
+      logLightY: { value: -7.5, min: -20, max: 20, step: 0.5 },
+      logLightZ: { value: 3.0, min: -20, max: 20, step: 0.5 },
+      logGlossiness: { value: 1, min: 1, max: 100, step: 1 },
+      logSteps: { value: 3, min: 1, max: 8, step: 1 },
+      logShadowBrightness: { value: 0.2, min: 0, max: 1, step: 0.05 },
+      logBrightness: { value: 1.7, min: 0.5, max: 4, step: 0.05 },
+    }, { collapsed: true }),
   }, [])
 
   const {
@@ -196,19 +217,21 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     railShadowOffsetZ,
     railShadowScaleX,
     railShadowScaleZ,
-  } = useOptionalControls('Obstacle Shadows', {
-    shadowColor: '#040201',
-    shadowY: { value: CONTACT_SHADOW_Y, min: 0, max: 0.08, step: 0.001 },
-    logShadowOpacity: { value: CONTACT_SHADOW_LOG_OPACITY, min: 0, max: 1, step: 0.01 },
-    logShadowOffsetX: { value: -0.01, min: -0.3, max: 0.3, step: 0.01 },
-    logShadowOffsetZ: { value: 0.15, min: -0.3, max: 0.5, step: 0.01 },
-    logShadowScaleX: { value: 2.15, min: 0.5, max: 4, step: 0.05 },
-    logShadowScaleZ: { value: 0.82, min: 0.2, max: 2.5, step: 0.05 },
-    railShadowOpacity: { value: CONTACT_SHADOW_RAIL_OPACITY, min: 0, max: 1, step: 0.01 },
-    railShadowOffsetX: { value: 0.02, min: -0.3, max: 0.3, step: 0.01 },
-    railShadowOffsetZ: { value: 0.06, min: -0.3, max: 0.5, step: 0.01 },
-    railShadowScaleX: { value: 2.45, min: 0.5, max: 4, step: 0.05 },
-    railShadowScaleZ: { value: 0.52, min: 0.2, max: 3, step: 0.05 },
+  } = useOptionalControls('Game', {
+    'Obstacle Shadows': folder({
+      shadowColor: '#040201',
+      shadowY: { value: CONTACT_SHADOW_Y, min: 0, max: 0.08, step: 0.001 },
+      logShadowOpacity: { value: CONTACT_SHADOW_LOG_OPACITY, min: 0, max: 1, step: 0.01 },
+      logShadowOffsetX: { value: -0.01, min: -0.3, max: 0.3, step: 0.01 },
+      logShadowOffsetZ: { value: 0.15, min: -0.3, max: 0.5, step: 0.01 },
+      logShadowScaleX: { value: 2.15, min: 0.5, max: 4, step: 0.05 },
+      logShadowScaleZ: { value: 0.82, min: 0.2, max: 2.5, step: 0.05 },
+      railShadowOpacity: { value: CONTACT_SHADOW_RAIL_OPACITY, min: 0, max: 1, step: 0.01 },
+      railShadowOffsetX: { value: 0.02, min: -0.3, max: 0.3, step: 0.01 },
+      railShadowOffsetZ: { value: 0.06, min: -0.3, max: 0.5, step: 0.01 },
+      railShadowScaleX: { value: 2.45, min: 0.5, max: 4, step: 0.05 },
+      railShadowScaleZ: { value: 0.52, min: 0.2, max: 3, step: 0.05 },
+    }, { collapsed: true }),
   }, [])
 
   const logMaterial = useMemo(
@@ -248,6 +271,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
 
   const wasGameOver = useRef(false)
   const graceTimer = useRef(3.0) // invincibility grace period at start
+  const hitRecoveryTimer = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -311,6 +335,45 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     }
   }
 
+  const setTutorialPrompt = (nextPrompt) => {
+    if (gameState.tutorialPrompt.current === nextPrompt) return
+    gameState.tutorialPrompt.current = nextPrompt
+    emitHudScoreChange()
+  }
+
+  const updateTutorialPrompt = (currentBeat) => {
+    let nextPrompt = ''
+    if (currentBeat < STARTUP_SAFE_BEATS + 8 && gameState.progressScore <= 0) {
+      nextPrompt = JUMP_TUTORIAL_PROMPT
+    } else if (
+      gameState.progressScore >= TIMING_POINTS.Perfect &&
+      gameState.groundSpinCount.current <= 0 &&
+      currentBeat < STARTUP_SAFE_BEATS + 24
+    ) {
+      nextPrompt = SPIN_TUTORIAL_PROMPT
+    }
+    setTutorialPrompt(nextPrompt)
+  }
+
+  const getFailureReason = ({
+    obstacle,
+    matchedTiming,
+    hasLogClearance,
+    isGrindingThisObstacle,
+    grindHeightThreshold,
+  }) => {
+    if (obstacle.isVertical) {
+      if (gameState.jumping && !gameState.upArrowHeld.current) return 'missed rail hold'
+      if (gameState.jumping && gameState.catHeight.current < grindHeightThreshold) return 'low jump'
+      if (matchedTiming?.offset > LATE_JUMP_FAIL_OFFSET_SECONDS) return 'late jump'
+      return 'collision'
+    }
+
+    if (gameState.jumping && !hasLogClearance) return 'low jump'
+    if (matchedTiming?.offset > LATE_JUMP_FAIL_OFFSET_SECONDS && !isGrindingThisObstacle) return 'late jump'
+    return 'collision'
+  }
+
   useEffect(() => {
     if (isActive) return
 
@@ -338,7 +401,14 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     gameState.upArrowHeld.current = false
     gameState.grindCooldownObstacleId.current = 0
     gameState.runDifficultyProgress.current = 0
+    gameState.phaseSpeedBonus.current = 0
+    gameState.phaseAnnouncement.current = ''
+    gameState.runPhase.current = 'early'
     worldScrollDistance.current = 0
+    graceTimer.current = 3.0
+    hitRecoveryTimer.current = 0
+    gameState.tutorialPrompt.current = ''
+    lastRunPhase.current = 'early'
     stopGrinding()
   }, [isActive])
 
@@ -396,12 +466,12 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     }
   }
 
-  const choosePatternType = (minOffset = 0, measureAnalysis = null, difficultyProgress = 0) => {
-    const score = gameState.score
-    const effectiveScore = Math.max(score, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
+  const choosePatternType = (minOffset = 0, measureAnalysis = null, difficultyProgress = 0, runPhase = getRunPhase()) => {
+    const progressScore = gameState.progressScore
+    const effectiveScore = Math.max(progressScore, clamp01(difficultyProgress) * MAX_DIFFICULTY_SCORE_EQUIVALENT)
     const rampProgress = Math.min(effectiveScore / MAX_RAMP_SCORE, 1)
     const recent = patternHistory.current
-    let pool = getWeightedPatternPool(score, minOffset, difficultyProgress)
+    let pool = getWeightedPatternPool(progressScore, minOffset, difficultyProgress, runPhase)
 
     if (consecutiveDensePatterns.current >= (difficultyProgress >= 0.65 ? 3 : 2)) {
       pool = pool.filter(({ name }) => !PATTERN_LIBRARY[name].dense)
@@ -484,17 +554,32 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       return
     }
 
-    const score = gameState.score
-    const difficultyProgress = getRunDifficultyProgress(score, measureStartBeat)
+    const progressScore = gameState.progressScore
+    const difficultyProgress = getRunDifficultyProgress(progressScore, measureStartBeat)
+    const runPhase = getRunPhase(measureStartBeat)
     const measureAnalysis = useTrackAnalysis
       ? getMeasureAnalysis(trackAnalysisLookups.current, measureStartBeat)
       : null
     const recentPatternName = patternHistory.current[patternHistory.current.length - 1] || ''
-    const useRail = shouldUseRail(score, measuresSinceRail.current, measureAnalysis, analysisBlend, difficultyProgress)
+    const useRail = shouldUseRail(
+      progressScore,
+      measuresSinceRail.current,
+      measureAnalysis,
+      analysisBlend,
+      difficultyProgress,
+      runPhase,
+    )
 
     if (useRail) {
       const railPattern = pickWeightedEntry(
-        getWeightedRailPatternPool(score, recentPatternName, measureAnalysis, analysisBlend, difficultyProgress)
+        getWeightedRailPatternPool(
+          progressScore,
+          recentPatternName,
+          measureAnalysis,
+          analysisBlend,
+          difficultyProgress,
+          runPhase,
+        )
       )
       if (railPattern) {
         let clusterId = 0
@@ -540,7 +625,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     }
 
     const blockedOffset = Math.max(0, logBlockedUntilBeat.current - measureStartBeat)
-    const patternType = choosePatternType(blockedOffset, measureAnalysis, difficultyProgress)
+    const patternType = choosePatternType(blockedOffset, measureAnalysis, difficultyProgress, runPhase)
     const patternMeta = patternType ? (PATTERN_LIBRARY[patternType] || null) : null
 
     if (!patternMeta) {
@@ -554,11 +639,12 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     const placementPool = getPlacementPool({
       count: pattern.length,
       dense: patternMeta.dense,
-      score,
+      score: progressScore,
       recentPlacementName: placementHistory.current[placementHistory.current.length - 1] || '',
       measureAnalysis,
       analysisBlend,
       difficultyProgress,
+      runPhase,
     })
     const placement = pickWeightedEntry(placementPool) || { name: 'fallback', lanes: Array(pattern.length).fill('center') }
     let clusterId = 0
@@ -671,7 +757,13 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       gameState.upArrowHeld.current = false
       gameState.grindCooldownObstacleId.current = 0
       gameState.runDifficultyProgress.current = 0
+      gameState.phaseSpeedBonus.current = 0
       worldScrollDistance.current = 0
+      hitRecoveryTimer.current = 0
+      gameState.tutorialPrompt.current = ''
+      gameState.phaseAnnouncement.current = ''
+      gameState.runPhase.current = 'early'
+      lastRunPhase.current = 'early'
       stopGrinding()
       graceTimer.current = 3.0
       wasGameOver.current = false
@@ -683,7 +775,11 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
       recentDebugObstacles.current.clear()
       gameState.grindCooldownObstacleId.current = 0
       gameState.runDifficultyProgress.current = 0
+      gameState.phaseSpeedBonus.current = 0
       worldScrollDistance.current = 0
+      hitRecoveryTimer.current = 0
+      gameState.tutorialPrompt.current = ''
+      gameState.phaseAnnouncement.current = ''
       stopGrinding()
       wasGameOver.current = true
       return
@@ -694,6 +790,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     const gameDelta = getGameDelta(delta)
     const targetSpeed = getTargetRunSpeed()
     if (graceTimer.current > 0) graceTimer.current -= gameDelta
+    if (hitRecoveryTimer.current > 0) hitRecoveryTimer.current -= gameDelta
     const music = musicRef?.current
     const isMusicRunning = Boolean(music && !music.paused)
     const musicTime = isMusicRunning ? getPerceivedMusicTime(music.currentTime) : 0
@@ -708,7 +805,16 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
         needsCursorSync.current = false
       }
       const currentBeat = Math.floor(musicTime / BEAT_INTERVAL)
-      gameState.runDifficultyProgress.current = getRunDifficultyProgress(gameState.score, currentBeat)
+      const currentPhase = getRunPhase(currentBeat)
+      if (lastRunPhase.current !== currentPhase) {
+        lastRunPhase.current = currentPhase
+        gameState.runPhase.current = currentPhase
+        gameState.phaseAnnouncement.current = PHASE_ANNOUNCEMENTS[currentPhase] || ''
+        emitHudScoreChange()
+      }
+      gameState.phaseSpeedBonus.current = PHASE_SPEED_BONUS[currentPhase] || 0
+      gameState.runDifficultyProgress.current = getRunDifficultyProgress(gameState.progressScore, currentBeat)
+      updateTutorialPrompt(currentBeat)
       const hasClearedCountdown = currentBeat >= COUNTDOWN_BEATS
       const lookaheadBeat = hasClearedCountdown && currentBeat < STARTUP_SAFE_BEATS
         ? currentBeat + LOOKAHEAD_BEATS + STARTUP_SAFE_BEATS
@@ -720,14 +826,21 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
         }
       }
     }
+    if (!isMusicRunning && gameState.tutorialPrompt.current) {
+      setTutorialPrompt('')
+    }
+
+    if (gameState.activeGrind.current?.active && !gameState.upArrowHeld.current) {
+      stopGrinding()
+    }
 
     // Collision detection — cat is at z=0, check if log is near
-    if (canCollide && graceTimer.current <= 0) {
+    if (canCollide && graceTimer.current <= 0 && hitRecoveryTimer.current <= 0) {
+      collisionLoop:
       for (let i = 0; i < POOL_SIZE; i++) {
         const ob = active.current[i]
         if (!ob.visible) continue
         const activeGrind = gameState.activeGrind.current
-        const isGrindingThisObstacle = activeGrind?.active && activeGrind.obstacleId === ob.id
         const obstacleWindowMinZ = ob.isVertical ? getGrindEntryMinZ(ob) : -LOG_COLLISION_ENTRY_DISTANCE
         const obstacleWindowMaxZ = ob.isVertical ? getGrindExitZ(ob) : LOG_COLLISION_EXIT_DISTANCE
         const grindMagnetEntryMinZ = obstacleWindowMinZ - GRIND_MAGNET_ENTRY_BACK_BUFFER
@@ -748,33 +861,60 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
         if (canStartGrind) {
           startGrinding(ob)
         }
+        const currentActiveGrind = gameState.activeGrind.current
+        const isGrindingThisObstacle = currentActiveGrind?.active && currentActiveGrind.obstacleId === ob.id
         const hasLogClearance = !ob.isVertical &&
           gameState.jumping &&
           gameState.catHeight.current >= LOG_CLEARANCE_HEIGHT
+        const pendingTiming = gameState.pendingJumpTiming.current
+        const matchedTiming = pendingTiming && pendingTiming.obstacleIds?.includes(ob.id)
+          ? pendingTiming
+          : null
 
         if (ob.z > obstacleWindowMinZ && ob.z < obstacleWindowMaxZ && !ob.scored) {
           if (((!ob.isVertical && !hasLogClearance) || (ob.isVertical && !isGrindingThisObstacle)) && !isDebug) {
-            // HIT — game over
-            gameState.gameOver = true
-            gameState.speed.current = 0
-            gameState.speedLinesOn = false
-            gameState.screenShake.current = 0.8
+            const failReason = getFailureReason({
+              obstacle: ob,
+              matchedTiming,
+              hasLogClearance,
+              isGrindingThisObstacle,
+              grindHeightThreshold,
+            })
+
+            gameState.lastFailReason.current = failReason
+            gameState.remainingLives.current = Math.max(0, (gameState.remainingLives.current ?? 1) - 1)
             gameState.streak.current = 0
             gameState.scoreMultiplier.current = 1
+            gameState.speed.current = Math.max(gameState.baseSpeed * HIT_SLOW_SPEED_FACTOR, speed * HIT_SLOW_SPEED_FACTOR)
             gameState.comboEnergy.current = 0
             gameState.pendingJumpTiming.current = null
             gameState.upArrowHeld.current = false
+            gameState.screenShake.current = 0.8
+            deactivateObstacleSlot(ob)
             emitHudScoreChange()
             stopGrinding()
             if (onLogHit) onLogHit()
-            if (gameState.onGameOver) gameState.onGameOver()
-            return
-          }
+            if (gameState.remainingLives.current <= 0) {
+              gameState.gameOver = true
+              gameState.speed.current = 0
+              gameState.speedLinesOn = false
+              gameState.tutorialPrompt.current = ''
+              gameState.phaseAnnouncement.current = ''
+              gameState.lastRunSummary.current = buildRunSummary({ outcome: 'failed' })
+              if (gameState.onGameOver) {
+                gameState.onGameOver({
+                  outcome: 'failed',
+                  reason: failReason,
+                  summary: gameState.lastRunSummary.current,
+                })
+              }
+              return
+            }
 
-          const pendingTiming = gameState.pendingJumpTiming.current
-          const matchedTiming = pendingTiming && pendingTiming.obstacleIds?.includes(ob.id)
-            ? pendingTiming
-            : null
+            hitRecoveryTimer.current = HIT_RECOVERY_SECONDS
+            graceTimer.current = Math.max(graceTimer.current, HIT_RECOVERY_SECONDS)
+            break collisionLoop
+          }
           const timingGrade = matchedTiming?.grade || 'Sloppy'
           const nextStreak = timingGrade === 'Perfect'
             ? gameState.streak.current + 1
@@ -784,16 +924,26 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
           const landedSpinTrick = (
             timingGrade === 'Perfect' &&
             matchedTiming?.trickName === '360' &&
-            !matchedTiming?.trickAwarded &&
-            !ob.isVertical
+            !matchedTiming?.trickAwarded
           )
           const trickBonusPoints = landedSpinTrick ? SPIN_TRICK_BONUS_POINTS * multiplier : 0
           const points = TIMING_POINTS[timingGrade] * multiplier + trickBonusPoints
 
           ob.scored = true
           gameState.streak.current = nextStreak
+          gameState.bestStreak.current = Math.max(gameState.bestStreak.current || 0, nextStreak)
           gameState.scoreMultiplier.current = multiplier
+          gameState.progressScore += points
           gameState.score += points
+          if (ob.isVertical) {
+            gameState.railCount.current = (gameState.railCount.current || 0) + 1
+          }
+          if (landedSpinTrick) {
+            gameState.groundSpinCount.current = (gameState.groundSpinCount.current || 0) + 1
+          }
+          const accuracyStats = gameState.accuracyStats.current || { Perfect: 0, Good: 0, Sloppy: 0 }
+          accuracyStats[timingGrade] = (accuracyStats[timingGrade] || 0) + 1
+          gameState.accuracyStats.current = accuracyStats
           gameState.comboEnergy.current = timingGrade === 'Sloppy'
             ? 0
             : timingGrade === 'Good'
@@ -806,6 +956,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
             multiplier,
             isRail: Boolean(ob.isVertical),
             trickName: landedSpinTrick ? '360' : '',
+            label: landedSpinTrick ? '360' : ob.isVertical ? 'Rail' : timingGrade,
           }
           removeObstacleTarget(ob.id)
           emitHudScoreChange()
@@ -819,10 +970,10 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
               }
               : null
           }
-          if (gameState.score >= SPEED_BOOST_SCORE_THRESHOLD && !gameState.speedBoostActive) {
+          if (gameState.progressScore >= SPEED_BOOST_SCORE_THRESHOLD && !gameState.speedBoostActive) {
             gameState.speedBoostActive = true
           }
-          if (gameState.score >= SPEED_LINES_SCORE_THRESHOLD && !gameState.speedLinesOn) {
+          if (gameState.progressScore >= SPEED_LINES_SCORE_THRESHOLD && !gameState.speedLinesOn) {
             gameState.speedLinesOn = true
           }
         }

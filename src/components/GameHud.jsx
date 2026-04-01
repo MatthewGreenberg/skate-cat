@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { gameState } from '../store'
+import { gameState, MAX_RUN_LIVES } from '../store'
 import { BEAT_INTERVAL, getPerceivedMusicTime } from '../rhythm'
 
 const hudStyle = {
@@ -63,6 +63,60 @@ const multiplierBadgeStyle = {
   letterSpacing: '0.08em',
 }
 
+const lifeRowStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.35rem',
+}
+
+const lifePillStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.25rem',
+  padding: '0.18rem 0.5rem',
+  borderRadius: '999px',
+  background: 'rgba(0, 0, 0, 0.18)',
+  border: '1px solid rgba(255, 255, 255, 0.14)',
+}
+
+const lifeDotStyle = (active) => ({
+  width: '0.7rem',
+  height: '0.7rem',
+  borderRadius: '999px',
+  background: active ? '#fff3d1' : 'rgba(255, 255, 255, 0.18)',
+  boxShadow: active ? '0 0 10px rgba(255, 209, 102, 0.55)' : 'none',
+  border: `2px solid ${active ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.2)'}`,
+})
+
+const popToneStyles = {
+  Perfect: {
+    color: '#fff',
+    shadow: '2px 2px 0 #FF6B35, 4px 4px 0 rgba(255, 107, 53, 0.28), 0 0 22px rgba(255, 107, 53, 0.5)',
+  },
+  Good: {
+    color: '#FFD166',
+    shadow: '2px 2px 0 rgba(200, 140, 0, 0.5), 0 0 20px rgba(255, 209, 102, 0.4)',
+  },
+  Sloppy: {
+    color: '#FF8BA5',
+    shadow: '2px 2px 0 rgba(180, 60, 80, 0.5), 0 0 20px rgba(255, 139, 165, 0.35)',
+  },
+  Rail: {
+    color: '#AEEBFF',
+    shadow: '2px 2px 0 rgba(25, 60, 90, 0.45), 0 0 18px rgba(138, 228, 255, 0.35)',
+  },
+  Trick: {
+    color: '#FFF3B1',
+    shadow: '2px 2px 0 rgba(80, 90, 20, 0.42), 0 0 18px rgba(255, 243, 177, 0.28)',
+  },
+}
+
+const judgementToneStyles = {
+  Perfect: popToneStyles.Perfect,
+  Good: popToneStyles.Good,
+  Sloppy: popToneStyles.Sloppy,
+}
+
 function getDotStyle(isActive, isAnchorBeat) {
   return {
     width: isActive ? '1.3rem' : '0.9rem',
@@ -77,27 +131,20 @@ function getDotStyle(isActive, isAnchorBeat) {
   }
 }
 
-const JUDGEMENT_STYLES = {
-  PERFECT: {
-    color: '#fff',
-    shadow: '2px 2px 0 #FF6B35, 4px 4px 0 rgba(255, 107, 53, 0.4), 0 0 30px rgba(255, 107, 53, 0.5), 0 0 60px rgba(255, 175, 72, 0.2)',
-  },
-  GOOD: {
-    color: '#FFD166',
-    shadow: '2px 2px 0 rgba(200, 140, 0, 0.5), 0 0 20px rgba(255, 209, 102, 0.4), 0 0 40px rgba(255, 209, 102, 0.15)',
-  },
-  SLOPPY: {
-    color: '#FF8BA5',
-    shadow: '2px 2px 0 rgba(180, 60, 80, 0.5), 0 0 20px rgba(255, 139, 165, 0.4), 0 0 40px rgba(255, 139, 165, 0.15)',
-  },
+function formatJudgementLabel(grade) {
+  if (!grade) return ''
+  return grade === 'Sloppy' ? 'SLOPPY...' : `${grade.toUpperCase()}!`
 }
 
-function getJudgementStyle(label, shouldAnimate) {
-  const normalizedLabel = label.replace(/[!.]/g, '')
-  const style = JUDGEMENT_STYLES[normalizedLabel] || { color: '#fff', shadow: 'none' }
+function isTimingGrade(grade) {
+  return grade === 'Perfect' || grade === 'Good' || grade === 'Sloppy'
+}
+
+function getJudgementStyle(tone, shouldAnimate) {
+  const style = judgementToneStyles[tone] || judgementToneStyles.Perfect
   return {
     position: 'fixed',
-    top: '5rem',
+    top: '4.9rem',
     left: '50%',
     transform: 'translateX(-50%) scale(0.85)',
     opacity: 0,
@@ -113,23 +160,30 @@ function getJudgementStyle(label, shouldAnimate) {
   }
 }
 
-export default function GameHud({ musicRef, visible, timingFeedback }) {
+export default function GameHud({ musicRef, visible }) {
   const [score, setScore] = useState(gameState.score)
   const [multiplier, setMultiplier] = useState(gameState.scoreMultiplier.current)
   const [activeBeat, setActiveBeat] = useState(0)
   const [streak, setStreak] = useState(0)
-  const [streakKey, setStreakKey] = useState(0)
-  const [showPlus, setShowPlus] = useState(false)
-  const [plusKey, setPlusKey] = useState(0)
-  const [plusText, setPlusText] = useState('+1')
-  const [plusGrade, setPlusGrade] = useState('Perfect')
+  const [remainingLives, setRemainingLives] = useState(gameState.remainingLives.current || 0)
+  const [maxLives, setMaxLives] = useState(MAX_RUN_LIVES)
+  const [tutorialPrompt, setTutorialPrompt] = useState(gameState.tutorialPrompt.current || '')
+  const [judgementText, setJudgementText] = useState('')
+  const [judgementTone, setJudgementTone] = useState('Perfect')
+  const [judgementKey, setJudgementKey] = useState(0)
+  const [showJudgement, setShowJudgement] = useState(false)
+  const [pointsText, setPointsText] = useState('+0')
+  const [pointsTone, setPointsTone] = useState('Perfect')
+  const [pointsKey, setPointsKey] = useState(0)
+  const [showPoints, setShowPoints] = useState(false)
   const [showTrick, setShowTrick] = useState(false)
   const [trickKey, setTrickKey] = useState(0)
   const [trickText, setTrickText] = useState('360!')
+  const [phaseBanner, setPhaseBanner] = useState('')
+  const [phaseKey, setPhaseKey] = useState(0)
+  const [streakKey, setStreakKey] = useState(0)
   const lastScoringEventId = useRef(gameState.lastScoringEvent.current?.id || 0)
-  const judgement = timingFeedback?.label
-    ? `${timingFeedback.label.toUpperCase()}${timingFeedback.label === 'Sloppy' ? '...' : '!'}`
-    : ''
+  const lastPhaseAnnouncement = useRef('')
 
   useEffect(() => {
     if (!visible) return
@@ -139,9 +193,13 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
       const nextStreak = snapshot.streak ?? gameState.streak.current
       const nextMultiplier = snapshot.multiplier ?? gameState.scoreMultiplier.current
       const scoringEvent = snapshot.lastScoringEvent ?? gameState.lastScoringEvent.current
+      const nextPhaseAnnouncement = snapshot.phaseAnnouncement ?? gameState.phaseAnnouncement.current ?? ''
 
       setScore(nextScore)
       setMultiplier(nextMultiplier)
+      setRemainingLives(snapshot.remainingLives ?? gameState.remainingLives.current ?? 0)
+      setMaxLives(snapshot.maxLives ?? MAX_RUN_LIVES)
+      setTutorialPrompt(snapshot.tutorialPrompt ?? gameState.tutorialPrompt.current ?? '')
       setStreak((prev) => {
         if (prev !== nextStreak && nextStreak >= 2) setStreakKey(performance.now())
         return nextStreak
@@ -149,15 +207,38 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
 
       if (scoringEvent?.id && scoringEvent.id !== lastScoringEventId.current) {
         lastScoringEventId.current = scoringEvent.id
-        setPlusText(`+${scoringEvent.points}`)
-        setPlusGrade(scoringEvent.grade)
-        setPlusKey((k) => k + 1)
-        setShowPlus(true)
+        if (isTimingGrade(scoringEvent.grade)) {
+          setJudgementText(formatJudgementLabel(scoringEvent.grade))
+          setJudgementTone(scoringEvent.grade)
+          setJudgementKey((prev) => prev + 1)
+          setShowJudgement(true)
+        }
+        if (scoringEvent.points > 0) {
+          const pointsTone = isTimingGrade(scoringEvent.grade)
+            ? scoringEvent.grade
+            : scoringEvent.trickName
+              ? 'Trick'
+              : scoringEvent.isRail
+                ? 'Rail'
+                : 'Perfect'
+          setPointsText(`+${scoringEvent.points}`)
+          setPointsTone(pointsTone)
+          setPointsKey((prev) => prev + 1)
+          setShowPoints(true)
+        }
         if (scoringEvent.trickName) {
           setTrickText(`${scoringEvent.trickName}!`)
-          setTrickKey((k) => k + 1)
+          setTrickKey((prev) => prev + 1)
           setShowTrick(true)
         }
+      }
+
+      if (nextPhaseAnnouncement && nextPhaseAnnouncement !== lastPhaseAnnouncement.current) {
+        lastPhaseAnnouncement.current = nextPhaseAnnouncement
+        setPhaseBanner(nextPhaseAnnouncement)
+        setPhaseKey((prev) => prev + 1)
+      } else if (!nextPhaseAnnouncement) {
+        lastPhaseAnnouncement.current = ''
       }
     }
 
@@ -166,6 +247,10 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
       score: gameState.score,
       streak: gameState.streak.current,
       multiplier: gameState.scoreMultiplier.current,
+      remainingLives: gameState.remainingLives.current,
+      maxLives: MAX_RUN_LIVES,
+      tutorialPrompt: gameState.tutorialPrompt.current,
+      phaseAnnouncement: gameState.phaseAnnouncement.current,
       lastScoringEvent: gameState.lastScoringEvent.current,
     })
 
@@ -198,19 +283,33 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
 
   if (!visible) return null
 
+  const pointsStyle = popToneStyles[pointsTone] || popToneStyles.Perfect
+  const trickStyle = popToneStyles.Trick
+
   return (
     <>
-      <div
-        key={timingFeedback?.id || judgement}
-        style={getJudgementStyle(judgement, Boolean(visible && judgement))}
-      >
-        {judgement}
-      </div>
+      {showJudgement && judgementText && (
+        <div
+          key={`judgement-${judgementKey}`}
+          onAnimationEnd={() => setShowJudgement(false)}
+          style={getJudgementStyle(judgementTone, showJudgement)}
+        >
+          {judgementText}
+        </div>
+      )}
       <div style={hudStyle}>
         <div style={dotRowStyle}>
           {[0, 1, 2, 3].map((beat) => (
             <span key={beat} style={getDotStyle(activeBeat === beat, beat === 1 || beat === 3)} />
           ))}
+        </div>
+        <div style={lifeRowStyle}>
+          <span style={scoreLabelStyle}>LIVES</span>
+          <div style={lifePillStyle}>
+            {Array.from({ length: maxLives }).map((_, index) => (
+              <span key={index} style={lifeDotStyle(index < remainingLives)} />
+            ))}
+          </div>
         </div>
         <div style={{
           width: '1px',
@@ -224,6 +323,55 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
           <span style={multiplierBadgeStyle}>x{multiplier}</span>
         </div>
       </div>
+      {showPoints && pointsText && (
+        <div
+          key={`points-${pointsKey}`}
+          onAnimationEnd={() => setShowPoints(false)}
+          style={{
+            position: 'fixed',
+            top: '3.5rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            fontFamily: 'Knewave',
+            fontSize: '1.8rem',
+            letterSpacing: '0.06em',
+            color: pointsStyle.color,
+            textShadow: pointsStyle.shadow,
+            pointerEvents: 'none',
+            zIndex: 62,
+            animation: 'scorePopFloat 550ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
+          }}
+        >
+          {pointsText}
+        </div>
+      )}
+      {phaseBanner && (
+        <div
+          key={`phase-${phaseKey}`}
+          onAnimationEnd={() => setPhaseBanner('')}
+          style={{
+            position: 'fixed',
+            top: '7rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '0.45rem 0.9rem',
+            borderRadius: '999px',
+            background: 'rgba(255, 209, 102, 0.12)',
+            border: '1px solid rgba(255, 209, 102, 0.22)',
+            color: '#FFD166',
+            fontFamily: 'Nunito, sans-serif',
+            fontWeight: 900,
+            fontSize: '0.8rem',
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            pointerEvents: 'none',
+            zIndex: 62,
+            animation: 'hudJudgementPop 820ms cubic-bezier(0.17, 0.9, 0.35, 1) both',
+          }}
+        >
+          {phaseBanner}
+        </div>
+      )}
       {streak >= 2 && (
         <div
           key={streakKey}
@@ -262,14 +410,13 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
             fontFamily: 'Knewave',
             fontSize: '1.9rem',
             letterSpacing: '0.1em',
-            color: '#fff6a8',
+            color: trickStyle.color,
             WebkitTextStroke: '1.5px #10283b',
             textShadow: `
               2px 2px 0 #10283b,
               4px 4px 0 #2f6d92,
               -3px -3px 0 rgba(255, 255, 255, 0.75),
-              0 0 18px rgba(138, 228, 255, 0.45),
-              0 0 34px rgba(255, 245, 168, 0.3)
+              ${trickStyle.shadow}
             `,
             padding: '0.08rem 0.45rem',
             background: 'radial-gradient(circle at center, rgba(255,255,255,0.18) 0%, rgba(138,228,255,0.12) 45%, rgba(138,228,255,0) 78%)',
@@ -282,30 +429,29 @@ export default function GameHud({ musicRef, visible, timingFeedback }) {
           {trickText}
         </div>
       )}
-      {showPlus && (
+      {tutorialPrompt && (
         <div
-          key={`plus-${plusKey}`}
-          onAnimationEnd={() => setShowPlus(false)}
           style={{
             position: 'fixed',
-            top: '3.5rem',
+            bottom: '6.2rem',
             left: '50%',
             transform: 'translateX(-50%)',
-            fontFamily: 'Knewave',
-            fontSize: '1.8rem',
-            letterSpacing: '0.06em',
-            color: plusGrade === 'Sloppy' ? '#FF8BA5' : plusGrade === 'Good' ? '#FFD166' : '#fff',
-            textShadow: plusGrade === 'Sloppy'
-              ? '1px 1px 0 rgba(180, 60, 80, 0.5), 0 0 16px rgba(255, 139, 165, 0.35)'
-              : plusGrade === 'Good'
-                ? '1px 1px 0 rgba(200, 140, 0, 0.5), 0 0 16px rgba(255, 209, 102, 0.35)'
-                : '1px 1px 0 #FF6B35, 0 0 16px rgba(255, 107, 53, 0.5)',
+            padding: '0.6rem 1rem',
+            borderRadius: '999px',
+            background: 'rgba(8, 14, 22, 0.72)',
+            border: '2px solid rgba(255, 255, 255, 0.14)',
+            color: 'rgba(255, 255, 255, 0.9)',
+            fontFamily: 'Nunito, sans-serif',
+            fontWeight: 900,
+            fontSize: '0.78rem',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            boxShadow: '0 10px 28px rgba(0, 0, 0, 0.24)',
             pointerEvents: 'none',
             zIndex: 62,
-            animation: 'scorePopFloat 550ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
           }}
         >
-          {plusText}
+          {tutorialPrompt}
         </div>
       )}
     </>

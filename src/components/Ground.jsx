@@ -1,5 +1,6 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import Grass from './Grass'
 import Pebbles from './Pebbles'
@@ -97,19 +98,21 @@ export default function Ground({ active = true, foliageSegmentCount = 2 }) {
     baseSpeed, roadColor, roadDetail, edgeColor,
     toonSteps, shadowBrightness, grainAmount, grainScale,
     gradientStrength, edgeLineWidth, centerLineOpacity, vignetteStrength,
-  } = useOptionalControls('Road', {
-    baseSpeed: { value: 5, min: 0, max: 30, step: 0.5 },
-    roadColor: '#c49468',
-    roadDetail: '#8B6B4A',
-    edgeColor: '#F5E6D0',
-    toonSteps: { value: 2, min: 1, max: 6, step: 1 },
-    shadowBrightness: { value: 0.55, min: 0, max: 1, step: 0.05 },
-    grainAmount: { value: 0.03, min: 0, max: 0.15, step: 0.005 },
-    grainScale: { value: 400, min: 50, max: 1000, step: 10 },
-    gradientStrength: { value: 0.08, min: 0, max: 0.3, step: 0.01 },
-    edgeLineWidth: { value: 0.15, min: 0, max: 0.3, step: 0.01 },
-    centerLineOpacity: { value: 0.3, min: 0, max: 1, step: 0.05 },
-    vignetteStrength: { value: 0.27, min: 0, max: 0.3, step: 0.01 },
+  } = useOptionalControls('Game', {
+    Road: folder({
+      baseSpeed: { value: 10, min: 0, max: 30, step: 0.5 },
+      roadColor: '#c49468',
+      roadDetail: '#8B6B4A',
+      edgeColor: '#F5E6D0',
+      toonSteps: { value: 2, min: 1, max: 6, step: 1 },
+      shadowBrightness: { value: 0.55, min: 0, max: 1, step: 0.05 },
+      grainAmount: { value: 0.03, min: 0, max: 0.15, step: 0.005 },
+      grainScale: { value: 400, min: 50, max: 1000, step: 10 },
+      gradientStrength: { value: 0.08, min: 0, max: 0.3, step: 0.01 },
+      edgeLineWidth: { value: 0.15, min: 0, max: 0.3, step: 0.01 },
+      centerLineOpacity: { value: 0.3, min: 0, max: 1, step: 0.05 },
+      vignetteStrength: { value: 0.27, min: 0, max: 0.3, step: 0.01 },
+    }, { collapsed: true }),
   }, [])
 
   const roadMaterial = useMemo(() => {

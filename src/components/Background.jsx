@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import { folder } from 'leva'
 import * as THREE from 'three'
 import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
@@ -193,13 +194,15 @@ export default function Background({ active = true }) {
     layerSeparation,
     hazeStrength,
     cloudStreakStrength,
-  } = useOptionalControls('Background', {
-    brightness: { value: 0.9, min: 0.4, max: 1.6, step: 0.01 },
-    saturation: { value: 0.82, min: 0, max: 1.6, step: 0.01 },
-    parallaxStrength: { value: 0.48, min: 0, max: 1.5, step: 0.01 },
-    layerSeparation: { value: 0.82, min: 0.5, max: 1.8, step: 0.01 },
-    hazeStrength: { value: 0.14, min: 0, max: 1.4, step: 0.01 },
-    cloudStreakStrength: { value: 0.08, min: 0, max: 1.5, step: 0.01 },
+  } = useOptionalControls('Game', {
+    Background: folder({
+      brightness: { value: 0.9, min: 0.4, max: 1.6, step: 0.01 },
+      saturation: { value: 0.82, min: 0, max: 1.6, step: 0.01 },
+      parallaxStrength: { value: 0.48, min: 0, max: 1.5, step: 0.01 },
+      layerSeparation: { value: 0.82, min: 0.5, max: 1.8, step: 0.01 },
+      hazeStrength: { value: 0.14, min: 0, max: 1.4, step: 0.01 },
+      cloudStreakStrength: { value: 0.08, min: 0, max: 1.5, step: 0.01 },
+    }, { collapsed: true }),
   }, [])
   const {
     daySkyTop,
@@ -210,15 +213,17 @@ export default function Background({ active = true }) {
     dayMidColor,
     dayNearColor,
     dayCloudColor,
-  } = useOptionalControls('Background Day', {
-    daySkyTop: '#88b6e8',
-    daySkyMid: '#c7def0',
-    dayHorizon: '#f4e3c8',
-    dayBelowHorizon: '#b7c0a1',
-    dayFarColor: '#92a9bf',
-    dayMidColor: '#75867f',
-    dayNearColor: '#4f5b62',
-    dayCloudColor: '#f5efe6',
+  } = useOptionalControls('Game', {
+    'Background Day': folder({
+      daySkyTop: '#88b6e8',
+      daySkyMid: '#c7def0',
+      dayHorizon: '#f4e3c8',
+      dayBelowHorizon: '#b7c0a1',
+      dayFarColor: '#92a9bf',
+      dayMidColor: '#75867f',
+      dayNearColor: '#4f5b62',
+      dayCloudColor: '#f5efe6',
+    }, { collapsed: true }),
   }, [])
   const {
     nightSkyTop,
@@ -230,16 +235,18 @@ export default function Background({ active = true }) {
     nightNearColor,
     moonColor,
     starColor,
-  } = useOptionalControls('Background Night', {
-    nightSkyTop: '#09112b',
-    nightSkyMid: '#1a2950',
-    nightHorizon: '#25305a',
-    nightBelowHorizon: '#10182a',
-    nightFarColor: '#1a2241',
-    nightMidColor: '#151b32',
-    nightNearColor: '#0d1020',
-    moonColor: '#d9e6ff',
-    starColor: '#9ed3ff',
+  } = useOptionalControls('Game', {
+    'Background Night': folder({
+      nightSkyTop: '#09112b',
+      nightSkyMid: '#1a2950',
+      nightHorizon: '#25305a',
+      nightBelowHorizon: '#10182a',
+      nightFarColor: '#1a2241',
+      nightMidColor: '#151b32',
+      nightNearColor: '#0d1020',
+      moonColor: '#d9e6ff',
+      starColor: '#9ed3ff',
+    }, { collapsed: true }),
   }, [])
 
   const uniforms = useMemo(() => ({
