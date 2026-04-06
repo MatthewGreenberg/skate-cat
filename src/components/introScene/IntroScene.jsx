@@ -8,6 +8,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
 import { useOptionalControls } from '../../lib/debugControls'
+import { configureKTX2Loader } from '../../lib/ktx2Loader'
 import { createContactShadowTexture } from '../../lib/toonMaterials'
 import {
   DEFAULT_CAT,
@@ -21,8 +22,16 @@ import { prepareAsset } from './prepareAsset'
 import { createFloorTexture, createWallTexture } from './textures'
 import { TvScreen } from './TvScreen'
 
-export default function IntroScene({ onStart, disabled = false, buttonLabel = 'PRESS START' }) {
-  const { camera } = useThree()
+export default function IntroScene({
+  onStart,
+  onDismiss,
+  disabled = false,
+  buttonLabel = 'PRESS START',
+  screenMode = 'title',
+  summary = null,
+  showDismissButton = false,
+}) {
+  const { camera, gl } = useThree()
   const tvGlowRef = useRef()
   const accentLightRef = useRef()
   const heroSpotlightRef = useRef()
@@ -30,16 +39,48 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
   const sweepSpotlightTargetRef = useRef()
   const boardGlowRef = useRef()
   const shadowTargetRef = useRef()
-  const { scene: tvScene } = useGLTF('/crt_tv.glb')
+  const { scene: tvScene } = useGLTF(
+    '/crt_tv_compressed.glb',
+    false,
+    false,
+    (loader) => configureKTX2Loader(loader, gl)
+  )
   const { scene: catScene } = useGLTF('/maxwell_the_cat_dingus/scene.gltf')
-  const { scene: chairScene } = useGLTF('/intro/sofa_chair.glb')
+  const { scene: chairScene } = useGLTF(
+    '/office_chair_compressed.glb',
+    false,
+    false,
+    (loader) => configureKTX2Loader(loader, gl)
+  )
+  const { scene: cartridgeScene } = useGLTF(
+    '/duck_hunt_cartridge_compressed.glb',
+    false,
+    false,
+    (loader) => configureKTX2Loader(loader, gl)
+  )
+  const { scene: skateboardScene } = useGLTF(
+    '/skateboard_compressed.glb',
+    false,
+    false,
+    (loader) => configureKTX2Loader(loader, gl)
+  )
+  const { scene: canScene } = useGLTF(
+    '/can_compressed.glb',
+    false,
+    false,
+    (loader) => configureKTX2Loader(loader, gl)
+  )
   const tv = useMemo(() => prepareAsset(tvScene, { screenMaterialName: 'TVScreen' }), [tvScene])
   const cat = useMemo(() => prepareAsset(catScene), [catScene])
   const chair = useMemo(() => prepareAsset(chairScene), [chairScene])
+  const cartridge = useMemo(() => prepareAsset(cartridgeScene), [cartridgeScene])
+  const skateboard = useMemo(() => prepareAsset(skateboardScene), [skateboardScene])
+  const can = useMemo(() => prepareAsset(canScene), [canScene])
   const { diffusion: woodDiffuse, normal: woodNormal } = useTexture({
     diffusion: '/wood/diffusion.webp',
     normal: '/wood/normal.webp',
   })
+  const posterTexture = useTexture('/poster.webp')
   const floorTexture = useMemo(() => createFloorTexture(), [])
   const wallTexture = useMemo(() => createWallTexture(), [])
   const floorY = 0
@@ -64,11 +105,11 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
 
   const chairCtrl = useOptionalControls('Intro', {
     Chair: folder({
-      chairPosX: { value: -1.3, min: -5, max: 5, step: 0.01 },
+      chairPosX: { value: -0.8, min: -5, max: 5, step: 0.01 },
       chairPosY: { value: 0, min: -5, max: 5, step: 0.01 },
       chairPosZ: { value: -0.1, min: -5, max: 5, step: 0.01 },
       chairRotY: { value: 0.81, min: -Math.PI, max: Math.PI, step: 0.01 },
-      chairScale: { value: 1.12, min: 0.1, max: 3, step: 0.01 },
+      chairScale: { value: 1.79, min: 0.1, max: 3, step: 0.01 },
     }),
   }, [])
 
@@ -83,6 +124,24 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
       catScale: { value: DEFAULT_CAT.scale, min: 0.005, max: 1, step: 0.001 },
     }),
   }, [])
+
+  const cartridgeCtrl = useOptionalControls('Intro', {
+    Cartridge: folder({
+      cartridgePosX: { value: 0.83, min: -5, max: 5, step: 0.01 },
+      cartridgePosY: { value: 0.06, min: -5, max: 5, step: 0.01 },
+      cartridgePosZ: { value: 0, min: -5, max: 5, step: 0.01 },
+      cartridgeRotX: { value: -1.2, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
+      cartridgeRotY: { value: 0, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
+      cartridgeRotZ: { value: -0.8, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
+      cartridgeScale: { value: 0.00008, min: 0.00001, max: 0.01, step: 0.00001 },
+    }),
+  }, [])
+  const skateboardPosition = [0.31, floorY + 1.99, -1.0]
+  const skateboardRotation = [0.35, -4.5, 0]
+  const skateboardScale = 0.24 * 0.01
+  const canPosition = [-0.1, floorY + 2.0, -1.2]
+  const canRotation = [0, 0.12, 0.01]
+  const canScale = 8.1 * 0.01
 
   const tvUiCtrl = useOptionalControls('Intro', {
     'TV UI': folder({
@@ -119,6 +178,19 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
       crtVignetteStart: { value: DEFAULT_TV_CRT.vignetteStart, min: 0, max: 0.8, step: 0.01 },
       crtBrightness: { value: DEFAULT_TV_CRT.brightness, min: 0.6, max: 1.6, step: 0.01 },
       crtBlackLevel: { value: DEFAULT_TV_CRT.blackLevel, min: 0, max: 0.08, step: 0.001 },
+      crtPowerOnDuration: { value: DEFAULT_TV_CRT.powerOnDuration, min: 0.05, max: 2, step: 0.01 },
+    }),
+  }, [])
+  const posterCtrl = useOptionalControls('Intro', {
+    Poster: folder({
+      posterVisible: true,
+      posterPosX: { value: 2.54, min: -5, max: 5, step: 0.01 },
+      posterPosY: { value: -0.18, min: -2, max: 2.5, step: 0.01 },
+      posterPosZ: { value: 0.07, min: -0.2, max: 0.25, step: 0.001 },
+      posterRotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.001 },
+      posterScale: { value: 1.08, min: 0.4, max: 2.5, step: 0.01 },
+      posterMaxWidth: { value: 1.08, min: 0.3, max: 2.4, step: 0.01 },
+      posterMaxHeight: { value: 1.48, min: 0.4, max: 3.2, step: 0.01 },
     }),
   }, [])
 
@@ -224,6 +296,25 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
     const depth = Math.max(catWorldSize.z * 2.35, 1.6)
     return [width, depth]
   }, [catWorldSize])
+  const posterAspect = useMemo(() => {
+    const image = posterTexture?.image
+    if (!image?.width || !image?.height) return 0.72
+    return image.width / image.height
+  }, [posterTexture])
+
+  useEffect(() => {
+    if (!posterTexture) return
+
+    /* eslint-disable react-hooks/immutability -- Three.js textures are mutable GPU resources configured after load. */
+    posterTexture.colorSpace = THREE.SRGBColorSpace
+    posterTexture.wrapS = THREE.ClampToEdgeWrapping
+    posterTexture.wrapT = THREE.ClampToEdgeWrapping
+    posterTexture.minFilter = THREE.LinearMipmapLinearFilter
+    posterTexture.magFilter = THREE.LinearFilter
+    posterTexture.anisotropy = Math.min(gl.capabilities.getMaxAnisotropy(), 8)
+    posterTexture.needsUpdate = true
+    /* eslint-enable react-hooks/immutability */
+  }, [gl, posterTexture])
 
   useEffect(() => {
     return () => {
@@ -375,6 +466,14 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
         tvPanelCenterY={tvPanelCenterY}
         backWallZ={backWallZ}
         lampCtrl={lampCtrl}
+        posterTexture={posterTexture}
+        posterAspect={posterAspect}
+        posterVisible={posterCtrl.posterVisible}
+        posterPosition={[posterCtrl.posterPosX, posterCtrl.posterPosY, posterCtrl.posterPosZ]}
+        posterRotationZ={posterCtrl.posterRotZ}
+        posterScale={posterCtrl.posterScale}
+        posterMaxWidth={posterCtrl.posterMaxWidth}
+        posterMaxHeight={posterCtrl.posterMaxHeight}
       />
 
       {/* Chair GLTF */}
@@ -384,6 +483,49 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
         rotation={[0, chairCtrl.chairRotY, 0]}
         scale={chairCtrl.chairScale}
       />
+
+      <group
+        position={[
+          cartridgeCtrl.cartridgePosX,
+          floorY + cartridgeCtrl.cartridgePosY,
+          cartridgeCtrl.cartridgePosZ,
+        ]}
+        rotation={[
+          cartridgeCtrl.cartridgeRotX,
+          cartridgeCtrl.cartridgeRotY,
+          cartridgeCtrl.cartridgeRotZ,
+        ]}
+        scale={cartridgeCtrl.cartridgeScale}
+      >
+        <primitive
+          object={cartridge.root}
+          position={[-cartridge.center.x, -cartridge.min.y, -cartridge.center.z]}
+        />
+      </group>
+
+      {/* Skateboard on floor */}
+      <group
+        position={skateboardPosition}
+        rotation={skateboardRotation}
+        scale={skateboardScale}
+      >
+        <primitive
+          object={skateboard.root}
+          position={[-skateboard.center.x, -skateboard.min.y, -skateboard.center.z]}
+        />
+      </group>
+
+      {/* Can on floor */}
+      <group
+        position={canPosition}
+        rotation={canRotation}
+        scale={canScale}
+      >
+        <primitive
+          object={can.root}
+          position={[-can.center.x, -can.min.y, -can.center.z]}
+        />
+      </group>
 
       {/* CRT model + curved UI screen (canvas → CRT shader) */}
       <group position={[tvPosition.x, tvPosition.y, tvPosition.z]} rotation={[0, tvCtrl.tvRotY, 0]} scale={tvCtrl.tvScale}>
@@ -416,10 +558,15 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
             vignetteStart: tvCrtCtrl.crtVignetteStart,
             brightness: tvCrtCtrl.crtBrightness,
             blackLevel: tvCrtCtrl.crtBlackLevel,
+            powerOnDuration: tvCrtCtrl.crtPowerOnDuration,
           }}
           onStart={onStart}
+          onDismiss={onDismiss}
           disabled={disabled}
           buttonLabel={buttonLabel}
+          screenMode={screenMode}
+          summary={summary}
+          showDismissButton={showDismissButton}
         />
       </group>
 
@@ -437,6 +584,5 @@ export default function IntroScene({ onStart, disabled = false, buttonLabel = 'P
   )
 }
 
-useGLTF.preload('/crt_tv.glb')
 useGLTF.preload('/maxwell_the_cat_dingus/scene.gltf')
-useGLTF.preload('/intro/sofa_chair.glb')
+useTexture.preload('/poster.webp')

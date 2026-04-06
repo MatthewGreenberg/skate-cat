@@ -2,10 +2,9 @@ import { memo, useRef, useState, useCallback, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
-import { useProgress } from '@react-three/drei'
+import { useProgress, StatsGl, useDetectGPU } from '@react-three/drei'
 import IntroScene from './components/IntroScene'
 import CameraRig from './components/CameraRig'
-import GameOverScreen from './components/GameOverScreen'
 import GameHud from './components/GameHud'
 import GameWorld, { GameWorldWarmup } from './components/GameWorld'
 import PostEffects, { TransitionAnimator } from './components/PostEffects'
@@ -32,6 +31,7 @@ import {
   MAX_RUN_LIVES,
   qualityMode,
   resetObstacleTargets,
+  debugControlsEnabled,
 } from './store'
 import { useOptionalControls } from './lib/debugControls'
 import {
@@ -45,12 +45,26 @@ const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 const AUTO_DPR = [1, 1.25]
 const HIGH_DPR = [1, 2]
 const QUIET_DPR = [1, 1]
+const PHASE_INTRO = 'intro'
+const PHASE_LAUNCHING = 'launching'
+const PHASE_RUNNING = 'running'
+const PHASE_END_GLITCH = 'endGlitch'
+const PHASE_RETURNING = 'returning'
+const PHASE_RESULTS = 'results'
+const CAPTURE_MODE_LAUNCH = 'launch'
+const CAPTURE_MODE_RETURN = 'return'
+const RETURN_SCREEN_TITLE = 'title'
+const RETURN_SCREEN_SUMMARY = 'summary'
+const END_GLITCH_DURATION_MS = 900
 
 const SceneCanvas = memo(function SceneCanvas({
+  phase,
+  transitionCaptureMode,
   hasCompletedBootReveal,
   canvasDpr,
   showGameWorld,
   isTransitioning,
+  transitionDirection,
   runActive,
   transitionProgressRef,
   introDisabled,
@@ -70,11 +84,19 @@ const SceneCanvas = memo(function SceneCanvas({
   onTransitionComplete,
   introPost,
   gamePost,
-  introSnapshotTextureRef,
-  capturedIntroTexture,
-  shouldCaptureIntroRef,
-  onIntroCaptured,
+  transitionSnapshotTextureRef,
+  capturedTransitionTexture,
+  shouldCaptureSceneRef,
+  onSceneCaptured,
   foliageSegmentCount,
+  introScreenMode,
+  introSummary,
+  introButtonLabel,
+  gpuTier,
+  chromaticSpike,
+  cameraMode,
+  onDismissIntroScreen,
+  showIntroDismissButton,
 }) {
   return (
     <Canvas
@@ -85,24 +107,31 @@ const SceneCanvas = memo(function SceneCanvas({
         opacity: hasCompletedBootReveal ? 1 : 0,
       }}
       gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-      shadows={{ type: qualityMode === 'quiet' ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
+      shadows={{ type: (gpuTier?.tier ?? 3) <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
     >
+      {debugControlsEnabled && <StatsGl />}
       <SceneCapture
-        shouldCaptureRef={shouldCaptureIntroRef}
-        snapshotTextureRef={introSnapshotTextureRef}
-        onCaptured={onIntroCaptured}
+        shouldCaptureRef={shouldCaptureSceneRef}
+        snapshotTextureRef={transitionSnapshotTextureRef}
+        onCaptured={onSceneCaptured}
       />
       <CameraRig
         runActive={runActive}
         showGameWorld={showGameWorld}
         isTransitioning={isTransitioning}
         transitionProgressRef={transitionProgressRef}
+        transitionDirection={transitionDirection}
+        cameraMode={cameraMode}
       />
-      {!showGameWorld && !isTransitioning && (
+      {!showGameWorld && phase !== PHASE_LAUNCHING && (
         <IntroScene
           onStart={onStart}
+          onDismiss={onDismissIntroScreen}
           disabled={introDisabled}
-          buttonLabel="PRESS START"
+          buttonLabel={introButtonLabel}
+          screenMode={introScreenMode}
+          summary={introSummary}
+          showDismissButton={showIntroDismissButton}
         />
       )}
       {shouldMountGameWorld && (
@@ -114,6 +143,7 @@ const SceneCanvas = memo(function SceneCanvas({
           isCountdownActive={isCountdownActive}
           isTransitioning={isTransitioning}
           useOriginalMaterials={useOriginalMaterials}
+          freezeMotion={phase === PHASE_END_GLITCH || transitionCaptureMode === CAPTURE_MODE_RETURN || phase === PHASE_RETURNING}
           trailTargetRef={trailTargetRef}
           musicRef={musicRef}
           onJumpSfx={onJumpSfx}
@@ -130,7 +160,7 @@ const SceneCanvas = memo(function SceneCanvas({
       <TransitionAnimator
         progressRef={transitionProgressRef}
         isTransitioning={isTransitioning}
-        duration={transitionSettings.duration}
+        duration={transitionDirection === 'reverse' ? transitionSettings.reverseDuration : transitionSettings.duration}
         onComplete={onTransitionComplete}
       />
       <PostEffects
@@ -139,9 +169,12 @@ const SceneCanvas = memo(function SceneCanvas({
         transitionSettings={transitionSettings}
         transitionProgressRef={transitionProgressRef}
         isTransitioning={isTransitioning}
+        transitionDirection={transitionDirection}
         showGameWorld={showGameWorld}
         runActive={runActive}
-        introTexture={capturedIntroTexture}
+        capturedTexture={capturedTransitionTexture}
+        gpuTier={gpuTier}
+        chromaticSpike={chromaticSpike}
       />
     </Canvas>
   )
@@ -154,35 +187,75 @@ export default function App() {
   const jump2SfxRef = useRef(null)
   const dieSfxRef = useRef(null)
   const hasStartedMusicRef = useRef(false)
-  const handleSongCompleteRef = useRef(() => {})
-  const shouldCaptureIntroRef = useRef(false)
-  const introSnapshotTextureRef = useRef(null)
-  const hasQueuedWarmupRef = useRef(false)
-  const [capturedIntroTexture, setCapturedIntroTexture] = useState(null)
-  const [showGameWorld, setShowGameWorld] = useState(false)
-  const [runActive, setRunActive] = useState(false)
+  const handleSongCompleteRef = useRef(() => { })
+  const endGlitchTimeoutRef = useRef(0)
+  const shouldCaptureSceneRef = useRef(false)
+  const transitionSnapshotTextureRef = useRef(null)
+  const transitionCaptureModeRef = useRef(null)
+  const [capturedTransitionTexture, setCapturedTransitionTexture] = useState(null)
+  const [phase, setPhase] = useState(PHASE_INTRO)
+  const [transitionDirection, setTransitionDirection] = useState('forward')
+  const [transitionCaptureMode, setTransitionCaptureMode] = useState(null)
+  const [returnScreenMode, setReturnScreenMode] = useState(RETURN_SCREEN_SUMMARY)
+  const [isEndingLocked, setIsEndingLocked] = useState(false)
   const [isGameWorldPrimed, setIsGameWorldPrimed] = useState(false)
+  const [showDeathFullscreen, setShowDeathFullscreen] = useState(false)
   const [hasCompletedBootReveal, setHasCompletedBootReveal] = useState(false)
-  const [isGameOver, setIsGameOver] = useState(false)
-  const [runOutcome, setRunOutcome] = useState(null)
   const [hasConfirmedMusicStart, setHasConfirmedMusicStart] = useState(false)
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownText, setCountdownText] = useState('')
   const [countdownAnimationKey, setCountdownAnimationKey] = useState(0)
   const [volume, setVolume] = useState(0.5)
-  const [useOriginalMaterials, setUseOriginalMaterials] = useState(true)
-  const [isTransitionCapturePending, setIsTransitionCapturePending] = useState(false)
-  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [useOriginalMaterials] = useState(false)
   const transitionProgressRef = useRef(0)
+  const returnFreezeDurationRef = useRef(0.2)
   const { active: isLoadingAssets, progress: loadingProgress } = useProgress()
   const isAssetLoadComplete = !isLoadingAssets && loadingProgress >= 100
   const showLoadingOverlay = !hasCompletedBootReveal
-  const shouldMountGameWorld = isAssetLoadComplete || isGameWorldPrimed || showGameWorld || runActive || isTransitioning
-  const isWarmingGameWorld = showGameWorld && !isGameWorldPrimed && !runActive && !isTransitioning
-  const sceneActive = runActive || isTransitioning
-  const isTransitionBusy = isTransitionCapturePending || isTransitioning
-  const canvasDpr = qualityMode === 'high' ? HIGH_DPR : qualityMode === 'quiet' ? QUIET_DPR : AUTO_DPR
-  const foliageSegmentCount = qualityMode === 'quiet' ? 1 : 2
+  const isPreReturnGlitching = phase === PHASE_END_GLITCH
+  const isTransitioning = phase === PHASE_LAUNCHING || phase === PHASE_RETURNING
+  const isTransitionBusy = transitionCaptureMode !== null || isTransitioning || isPreReturnGlitching
+  const runActive = phase === PHASE_RUNNING && !isEndingLocked
+  const showGameWorld = (
+    phase === PHASE_END_GLITCH ||
+    phase === PHASE_LAUNCHING ||
+    phase === PHASE_RUNNING ||
+    transitionCaptureMode === CAPTURE_MODE_RETURN
+  )
+  const shouldMountGameWorld = isAssetLoadComplete || isGameWorldPrimed || phase !== PHASE_INTRO || transitionCaptureMode === CAPTURE_MODE_RETURN
+  const isWarmingGameWorld = isAssetLoadComplete && !isGameWorldPrimed
+  const sceneActive = phase === PHASE_LAUNCHING || (phase === PHASE_RUNNING && !isEndingLocked)
+  const isGameOver = isEndingLocked || isPreReturnGlitching || phase === PHASE_RETURNING || phase === PHASE_RESULTS
+  const gpuTier = useDetectGPU()
+  // GPU-aware quality: URL param overrides auto-detection
+  const effectiveQuality = qualityMode !== 'auto'
+    ? qualityMode
+    : gpuTier.tier === 0 ? 'quiet'
+      : gpuTier.tier === 1 ? 'quiet'
+        : gpuTier.tier === 2 ? 'auto'
+          : 'high'
+  const canvasDpr = effectiveQuality === 'high' ? HIGH_DPR : effectiveQuality === 'quiet' ? QUIET_DPR : AUTO_DPR
+  const foliageSegmentCount = effectiveQuality === 'quiet' ? 1 : 2
+  const currentRunSummary = gameState.lastRunSummary.current
+  const currentOutcome = currentRunSummary?.outcome ?? null
+  const isReturnScreenActive = phase === PHASE_RETURNING || phase === PHASE_RESULTS
+  const introScreenMode = isReturnScreenActive ? returnScreenMode : RETURN_SCREEN_TITLE
+  const introButtonLabel = introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
+  const introSummary = introScreenMode === RETURN_SCREEN_SUMMARY ? currentRunSummary : null
+  const chromaticSpike = isPreReturnGlitching ? 1 : 0
+  const cameraMode = isReturnScreenActive
+    ? introScreenMode === RETURN_SCREEN_SUMMARY
+      ? currentOutcome === 'failed'
+        ? showDeathFullscreen ? 'death' : 'intro'
+        : 'results'
+      : 'intro'
+    : 'intro'
+  const canDismissDeathFullscreen = (
+    phase === PHASE_RESULTS &&
+    introScreenMode === RETURN_SCREEN_SUMMARY &&
+    currentOutcome === 'failed' &&
+    showDeathFullscreen
+  )
 
   const handleVolumePointerDone = useCallback((event) => {
     event.currentTarget.blur()
@@ -225,28 +298,77 @@ export default function App() {
     emitHudScoreChange()
   }, [])
 
-  const handleReturnToIntro = useCallback(() => {
+  const clearPlaybackState = useCallback(() => {
     hasStartedMusicRef.current = false
-    shouldCaptureIntroRef.current = false
-    setCapturedIntroTexture(null)
     if (musicRef.current) {
       musicRef.current.pause()
+    }
+    setHasConfirmedMusicStart(false)
+    setIsCountdownActive(false)
+    setCountdownText('')
+  }, [])
+
+  const queueReturnToIntro = useCallback(({ summary = null, screenMode = RETURN_SCREEN_SUMMARY } = {}) => {
+    if (phase !== PHASE_RUNNING || isGameOver || isTransitionBusy || isEndingLocked) return
+
+    setReturnScreenMode(screenMode)
+    gameState.lastRunSummary.current = screenMode === RETURN_SCREEN_SUMMARY ? summary : null
+    transitionProgressRef.current = 0
+    setTransitionDirection('reverse')
+    setIsEndingLocked(true)
+    setShowDeathFullscreen(screenMode === RETURN_SCREEN_SUMMARY && summary?.outcome === 'failed')
+    clearPlaybackState()
+
+    window.clearTimeout(endGlitchTimeoutRef.current)
+    if (screenMode === RETURN_SCREEN_SUMMARY && summary?.outcome === 'failed') {
+      setPhase(PHASE_END_GLITCH)
+      endGlitchTimeoutRef.current = window.setTimeout(() => {
+        shouldCaptureSceneRef.current = true
+        transitionCaptureModeRef.current = CAPTURE_MODE_RETURN
+        setTransitionCaptureMode(CAPTURE_MODE_RETURN)
+      }, END_GLITCH_DURATION_MS)
+      return
+    }
+
+    const returnFreezeDurationMs = Math.max(0, returnFreezeDurationRef.current * 1000)
+    if (returnFreezeDurationMs > 0) {
+      endGlitchTimeoutRef.current = window.setTimeout(() => {
+        shouldCaptureSceneRef.current = true
+        transitionCaptureModeRef.current = CAPTURE_MODE_RETURN
+        setTransitionCaptureMode(CAPTURE_MODE_RETURN)
+      }, returnFreezeDurationMs)
+      return
+    }
+
+    shouldCaptureSceneRef.current = true
+    transitionCaptureModeRef.current = CAPTURE_MODE_RETURN
+    setTransitionCaptureMode(CAPTURE_MODE_RETURN)
+  }, [clearPlaybackState, isEndingLocked, isGameOver, isTransitionBusy, phase])
+
+  const handleReturnToIntro = useCallback(() => {
+    window.clearTimeout(endGlitchTimeoutRef.current)
+    clearPlaybackState()
+    shouldCaptureSceneRef.current = false
+    transitionCaptureModeRef.current = null
+    setTransitionCaptureMode(null)
+    setCapturedTransitionTexture(null)
+    if (musicRef.current) {
       musicRef.current.currentTime = 0
     }
 
     resetRunState()
 
     transitionProgressRef.current = 0
-    setRunActive(false)
-    setShowGameWorld(false)
-    setIsGameOver(false)
-    setRunOutcome(null)
-    setHasConfirmedMusicStart(false)
-    setIsCountdownActive(false)
-    setCountdownText('')
-    setIsTransitionCapturePending(false)
-    setIsTransitioning(false)
-  }, [resetRunState])
+    setTransitionDirection('forward')
+    setReturnScreenMode(RETURN_SCREEN_SUMMARY)
+    setIsEndingLocked(false)
+    setShowDeathFullscreen(false)
+    setPhase(PHASE_INTRO)
+  }, [clearPlaybackState, resetRunState])
+
+  useEffect(() => () => {
+    window.clearTimeout(endGlitchTimeoutRef.current)
+  }, [])
 
   const introPost = useOptionalControls(
     'Intro',
@@ -277,6 +399,21 @@ export default function App() {
       dollyStart: { value: 0.2, min: 0, max: 0.2, step: 0.005, label: 'Dolly Start' },
       flashStrength: { value: 1, min: 0, max: 1, step: 0.05, label: 'Flash' },
     }),
+    'Return Transition': folder({
+      reverseDuration: { value: 1.50, min: 0.1, max: 4.5, step: 0.05, label: 'Duration' },
+      returnFreezeDuration: { value: 0.2, min: 0, max: 2, step: 0.01, label: 'Freeze Hold' },
+      returnGlowColor: { value: '#3dd5e8', label: 'Glow Color' },
+      returnGlowIntensity: { value: 0.85, min: 0, max: 3, step: 0.05, label: 'Glow Intensity' },
+      returnRevealCurve: { value: 2.05, min: 0.2, max: 2.8, step: 0.01, label: 'Curve' },
+      returnThresholdStart: { value: 0.12, min: -0.3, max: 0.3, step: 0.01, label: 'Start' },
+      returnThresholdEnd: { value: 0.97, min: 0.2, max: 1.2, step: 0.01, label: 'End' },
+      returnBandBefore: { value: 0.02, min: 0.005, max: 0.2, step: 0.005, label: 'Edge In' },
+      returnBandAfter: { value: 0.16, min: 0.005, max: 0.3, step: 0.005, label: 'Edge Out' },
+      returnGlowInnerOffset: { value: 0.04, min: 0, max: 0.12, step: 0.005, label: 'Glow In' },
+      returnGlowOuterOffset: { value: 0.14, min: 0.01, max: 0.3, step: 0.005, label: 'Glow Out' },
+      returnDiffuseSpread: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'Diffuse Spread' },
+      returnFlashStrength: { value: 0.6, min: 0, max: 1, step: 0.05, label: 'Flash' },
+    }),
   })
   const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useOptionalControls('Debug', {
     'Timing Debug': folder({
@@ -288,6 +425,10 @@ export default function App() {
       },
     }, { collapsed: true }),
   }, [])
+
+  useEffect(() => {
+    returnFreezeDurationRef.current = transitionSettings.returnFreezeDuration
+  }, [transitionSettings.returnFreezeDuration])
 
   useEffect(() => {
     const music = createBufferedMusicTransport('/skate-cat-2.mp3')
@@ -305,19 +446,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!isAssetLoadComplete || isGameWorldPrimed || hasQueuedWarmupRef.current) return
-
-    hasQueuedWarmupRef.current = true
-    setUseOriginalMaterials(false)
-    setShowGameWorld(true)
-  }, [isAssetLoadComplete, isGameWorldPrimed])
-
-  useEffect(() => {
     if (
       hasCompletedBootReveal ||
       !isGameWorldPrimed ||
-      showGameWorld ||
-      isTransitioning
+      phase !== PHASE_INTRO ||
+      isTransitionBusy
     ) {
       return
     }
@@ -334,30 +467,46 @@ export default function App() {
       window.cancelAnimationFrame(revealFrameA)
       window.cancelAnimationFrame(revealFrameB)
     }
-  }, [hasCompletedBootReveal, isGameWorldPrimed, isTransitioning, showGameWorld])
+  }, [hasCompletedBootReveal, isGameWorldPrimed, isTransitionBusy, phase])
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.repeat) return
-      if (!event.shiftKey || event.key.toLowerCase() !== 'r') return
-      if (!runActive && !isTransitionBusy) return
+      if (canDismissDeathFullscreen && event.key.toLowerCase() === 'x') {
+        event.preventDefault()
+        setShowDeathFullscreen(false)
+        return
+      }
+
+      const isResetShortcut = (
+        event.key.toLowerCase() === 'r' &&
+        (event.metaKey || event.ctrlKey || event.shiftKey)
+      )
+      if (!isResetShortcut) return
+
+      if (isTransitionBusy || phase === PHASE_RESULTS) {
+        event.preventDefault()
+        handleReturnToIntro()
+        return
+      }
+
+      if (!runActive) return
+
       event.preventDefault()
-      handleReturnToIntro()
+      queueReturnToIntro({ screenMode: RETURN_SCREEN_TITLE })
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleReturnToIntro, isTransitionBusy, runActive])
+  }, [canDismissDeathFullscreen, handleReturnToIntro, isTransitionBusy, phase, queueReturnToIntro, runActive])
 
   useEffect(() => {
     gameState.onGameOver = (payload = {}) => {
       if (payload.reason) {
         gameState.lastFailReason.current = payload.reason
       }
-      gameState.lastRunSummary.current = payload.summary || buildRunSummary({ outcome: payload.outcome || 'failed' })
-      setRunOutcome(payload.outcome || 'failed')
-      setIsGameOver(true)
-      setRunActive(false)
+      const summary = payload.summary || buildRunSummary({ outcome: payload.outcome || 'failed' })
+      queueReturnToIntro({ summary, screenMode: RETURN_SCREEN_SUMMARY })
     }
 
     return () => {
@@ -365,7 +514,7 @@ export default function App() {
         gameState.onGameOver = null
       }
     }
-  }, [])
+  }, [queueReturnToIntro])
 
   useEffect(() => {
     gameState.timingOffsetSeconds.current = isTimingDebug
@@ -383,23 +532,20 @@ export default function App() {
     if (musicRef.current) {
       musicRef.current.playbackRate = playbackRate
     }
-  }, [debugPlaybackRate, runActive])
+  }, [debugPlaybackRate, phase])
 
   useEffect(() => {
     if (!musicRef.current) return
-    if (!runActive || isGameOver) {
+    if ((phase !== PHASE_RUNNING && phase !== PHASE_LAUNCHING) || isGameOver) {
       musicRef.current.pause()
       hasStartedMusicRef.current = false
-      setHasConfirmedMusicStart(false)
-      setIsCountdownActive(false)
-      setCountdownText('')
       return
     }
 
     if (hasStartedMusicRef.current) {
       musicRef.current.play().catch(() => { })
     }
-  }, [isGameOver, runActive])
+  }, [isGameOver, phase])
 
   useEffect(() => {
     if (!musicRef.current) return
@@ -463,14 +609,12 @@ export default function App() {
     gameState.speed.current = getTargetRunSpeed()
     gameState.speedBoostActive = false
     gameState.speedLinesOn = true
-    setIsGameOver(false)
-    setRunOutcome(null)
-    setRunActive(true)
+    setIsEndingLocked(false)
+    setPhase(PHASE_RUNNING)
   }, [])
 
   const handleGameWorldPrimed = useCallback(() => {
     setIsGameWorldPrimed(true)
-    setShowGameWorld(false)
   }, [])
 
   const handleStart = useCallback(() => {
@@ -478,34 +622,51 @@ export default function App() {
 
     resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
     transitionProgressRef.current = 0
-    setRunActive(false)
-    setIsGameOver(false)
-    setRunOutcome(null)
-    setUseOriginalMaterials(false)
-    shouldCaptureIntroRef.current = true
-    setIsTransitionCapturePending(true)
+    setIsEndingLocked(false)
+    setCapturedTransitionTexture(null)
+    setTransitionDirection('forward')
+    shouldCaptureSceneRef.current = true
+    transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
+    setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
   }, [isGameWorldPrimed, isTransitionBusy, resetRunState])
 
-  const handleIntroCaptured = useCallback((introTexture) => {
-    setCapturedIntroTexture(introTexture)
-    setIsTransitionCapturePending(false)
-    setShowGameWorld(true)
-    setIsTransitioning(true)
-    startMusicPlayback()
+  const handleSceneCaptured = useCallback((sceneTexture) => {
+    const captureMode = transitionCaptureModeRef.current
+    setCapturedTransitionTexture(sceneTexture)
+    transitionCaptureModeRef.current = null
+    setTransitionCaptureMode(null)
+
+    if (captureMode === CAPTURE_MODE_LAUNCH) {
+      setPhase(PHASE_LAUNCHING)
+      startMusicPlayback()
+      return
+    }
+
+    if (captureMode === CAPTURE_MODE_RETURN) {
+      setPhase(PHASE_RETURNING)
+    }
   }, [startMusicPlayback])
 
   const handleTransitionComplete = useCallback(() => {
-    setIsTransitioning(false)
+    if (transitionDirection === 'reverse') {
+      if (returnScreenMode === RETURN_SCREEN_TITLE) {
+        handleReturnToIntro()
+        return
+      }
+      setPhase(PHASE_RESULTS)
+      setIsEndingLocked(false)
+      return
+    }
+
     activateRun()
-  }, [activateRun])
+  }, [activateRun, handleReturnToIntro, returnScreenMode, transitionDirection])
 
   const handleSongComplete = useCallback(() => {
-    if (!runActive || isGameOver || isTransitioning) return
-    gameState.lastRunSummary.current = buildRunSummary({ outcome: 'complete' })
-    setRunOutcome('complete')
-    setIsGameOver(true)
-    setRunActive(false)
-  }, [isGameOver, isTransitioning, runActive])
+    queueReturnToIntro({
+      summary: buildRunSummary({ outcome: 'complete' }),
+      screenMode: RETURN_SCREEN_SUMMARY,
+    })
+  }, [queueReturnToIntro])
 
   useEffect(() => {
     handleSongCompleteRef.current = handleSongComplete
@@ -513,13 +674,17 @@ export default function App() {
 
   const handleRestart = useCallback(() => {
     resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
-    setIsGameOver(false)
-    setRunOutcome(null)
-    setRunActive(true)
-    setShowGameWorld(true)
-    setUseOriginalMaterials(false)
-    startMusicPlayback()
-  }, [resetRunState, startMusicPlayback])
+    transitionProgressRef.current = 0
+    setCapturedTransitionTexture(null)
+    setTransitionDirection('forward')
+    setIsEndingLocked(false)
+    setShowDeathFullscreen(false)
+    setPhase(PHASE_INTRO)
+    gameState.lastRunSummary.current = null
+    shouldCaptureSceneRef.current = true
+    transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
+    setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
+  }, [resetRunState])
 
   const playJumpSfx = useCallback(() => {
     const jump = jumpSfxRef.current
@@ -547,7 +712,7 @@ export default function App() {
   }, [])
 
   const loadingLabel = isAssetLoadComplete ? 'WARMING UP' : 'LOADING'
-  const introDisabled = !isGameWorldPrimed || isTransitionBusy
+  const introDisabled = !isGameWorldPrimed || isTransitionBusy || phase === PHASE_RETURNING
 
   return (
     <>
@@ -659,7 +824,7 @@ export default function App() {
           visible={runActive && !isGameOver}
         />
       )}
-      {(runActive || isTransitioning) && (
+      {(runActive || phase === PHASE_LAUNCHING) && (
         <button
           onClick={handleReturnToIntro}
           style={{
@@ -740,16 +905,18 @@ export default function App() {
         </div>
       )}
       <GameHud musicRef={musicRef} visible={runActive && !isGameOver} />
-      <GameOverScreen visible={isGameOver} outcome={runOutcome || 'failed'} onRestart={handleRestart} />
       <SceneCanvas
+        phase={phase}
+        transitionCaptureMode={transitionCaptureMode}
         hasCompletedBootReveal={hasCompletedBootReveal}
         canvasDpr={canvasDpr}
         showGameWorld={showGameWorld}
         isTransitioning={isTransitioning}
+        transitionDirection={transitionDirection}
         runActive={runActive}
         transitionProgressRef={transitionProgressRef}
         introDisabled={introDisabled}
-        onStart={handleStart}
+        onStart={phase === PHASE_RESULTS ? handleRestart : handleStart}
         shouldMountGameWorld={shouldMountGameWorld}
         sceneActive={sceneActive}
         isGameOver={isGameOver}
@@ -765,11 +932,19 @@ export default function App() {
         onTransitionComplete={handleTransitionComplete}
         introPost={introPost}
         gamePost={gamePost}
-        introSnapshotTextureRef={introSnapshotTextureRef}
-        capturedIntroTexture={capturedIntroTexture}
-        shouldCaptureIntroRef={shouldCaptureIntroRef}
-        onIntroCaptured={handleIntroCaptured}
+        transitionSnapshotTextureRef={transitionSnapshotTextureRef}
+        capturedTransitionTexture={capturedTransitionTexture}
+        shouldCaptureSceneRef={shouldCaptureSceneRef}
+        onSceneCaptured={handleSceneCaptured}
         foliageSegmentCount={foliageSegmentCount}
+        introScreenMode={introScreenMode}
+        introSummary={introSummary}
+        introButtonLabel={phase === PHASE_RESULTS ? 'PLAY AGAIN' : introButtonLabel}
+        gpuTier={gpuTier}
+        chromaticSpike={chromaticSpike}
+        cameraMode={cameraMode}
+        onDismissIntroScreen={() => setShowDeathFullscreen(false)}
+        showIntroDismissButton={canDismissDeathFullscreen}
       />
     </>
   )

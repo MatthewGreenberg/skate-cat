@@ -12,10 +12,18 @@ function getDefaultValue(config) {
   return config
 }
 
+function getSchemaEntries(schema) {
+  return Object.entries(schema).flatMap(([key, config]) => {
+    if (config?.type === 'FOLDER' && config.schema) {
+      return getSchemaEntries(config.schema)
+    }
+
+    return [[key, getDefaultValue(config)]]
+  })
+}
+
 export function getControlDefaults(schema) {
-  return Object.fromEntries(
-    Object.entries(schema).map(([key, config]) => [key, getDefaultValue(config)])
-  )
+  return Object.fromEntries(getSchemaEntries(schema))
 }
 
 export function useOptionalControls(folder, schema) {

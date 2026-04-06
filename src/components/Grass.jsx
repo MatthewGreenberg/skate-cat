@@ -298,6 +298,7 @@ export default function Grass() {
       ref={(el) => {
         meshRef.current = el
         if (el) {
+          el.userData.cannotReceiveAO = true
           updateInstanceMatrices(el, bladeMinHeight, bladeMaxHeight)
         }
       }}

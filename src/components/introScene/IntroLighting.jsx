@@ -2,6 +2,8 @@
  * Intro room atmosphere: background color, fog, and the full light rig (TV glow, hero/sweep spots, lamp, fills, rim).
  */
 
+import { folder } from 'leva'
+import { useOptionalControls } from '../../lib/debugControls'
 import { ROOM_BACKGROUND, SCREEN_CYAN, WALL_EDGE_COOL } from './constants'
 
 export function IntroLighting({
@@ -23,34 +25,36 @@ export function IntroLighting({
   lampCtrl,
   motionFxCtrl,
 }) {
+  const wallEdgeCoolLight = useOptionalControls('Intro', {
+    'Wall edge cool': folder({
+      x: { value: 0.04, min: -5, max: 8, step: 0.01 },
+      y: { value: 1.19, min: -2, max: 6, step: 0.01 },
+      z: { value: 0.43, min: -6, max: 6, step: 0.01 },
+      intensity: { value: 3.3, min: 0, max: 24, step: 0.05 },
+      distance: { value: 12.0, min: 0, max: 20, step: 0.1 },
+      decay: { value: 1.97, min: 0, max: 3, step: 0.01 },
+    }),
+  })
+
   return (
     <>
       {/* Scene backdrop + depth cue */}
       <color attach="background" args={[ROOM_BACKGROUND]} />
-      <fog attach="fog" args={[ROOM_BACKGROUND, 4, 13]} />
 
-      <ambientLight intensity={0.16} color="#251922" />
-      <hemisphereLight args={['#8e7464', '#08070b', 0.15]} />
+      <ambientLight intensity={75.16} color="#251922" />
+      {/* <hemisphereLight args={['#8e7464', '#08070b', 1.15]} /> */}
       {/* Spotlight targets (updated in IntroScene useFrame) */}
       <object3D ref={shadowTargetRef} position={[catPosition.x, floorY, catPosition.z]} />
       <object3D ref={sweepSpotlightTargetRef} position={screenWorld.toArray()} />
 
       {/* TV: primary glow + warm bounce under the cabinet */}
       <pointLight
-        ref={tvGlowRef}
-        position={[screenWorld.x + tvForward.x * 0.5, screenWorld.y, screenWorld.z + tvForward.z * 0.5]}
-        intensity={21.5}
-        distance={11.5}
-        decay={1.7}
-        color={SCREEN_CYAN}
-      />
-      <pointLight
         ref={accentLightRef}
         position={[screenWorld.x + tvForward.x * 0.85, floorY + 0.28, screenWorld.z + tvForward.z * 0.9]}
         intensity={6.4}
         distance={7.8}
         decay={1.85}
-        color="#ff9f68"
+        color="#fff"
       />
 
       {/* Cat hero key + room sweep (intensities/positions animated in parent) */}
@@ -63,24 +67,13 @@ export function IntroLighting({
         distance={motionFxCtrl.heroSpotDistance}
         decay={1.65}
         color={motionFxCtrl.heroColor}
-        castShadow={true}
+        castShadow={false}
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-near={0.1}
         shadow-camera-far={20}
         shadow-bias={-0.00035}
         shadow-normalBias={0.025}
-      />
-      <spotLight
-        ref={sweepSpotlightRef}
-        position={[screenWorld.x - 2.4, catHeroTarget.y + 1.95, screenWorld.z + 1.85]}
-        intensity={motionFxCtrl.sweepSpotIntensity}
-        angle={motionFxCtrl.sweepSpotAngle}
-        penumbra={0.85}
-        distance={motionFxCtrl.sweepSpotDistance}
-        decay={1.75}
-        color={motionFxCtrl.sweepColor}
-        castShadow={false}
       />
 
       {/* Skateboard rim highlight */}
@@ -100,7 +93,7 @@ export function IntroLighting({
         angle={0.78}
         penumbra={0.8}
         distance={12}
-        decay={1.7}
+        decay={1}
         color="#ffd6a0"
         castShadow={false}
       />
@@ -118,21 +111,22 @@ export function IntroLighting({
         decay={1.9}
         color="#ffd4a8"
       />
-      <pointLight
-        position={[3.55, 2.45, -2.0]}
-        intensity={2.6}
-        distance={6.8}
-        decay={2}
-        color={WALL_EDGE_COOL}
-      />
-      <pointLight position={[lampCtrl.lampPosX, lampCtrl.lampPosY + 1.66 * lampCtrl.lampScale, lampCtrl.lampPosZ]} intensity={4.6} distance={6.4} decay={1.7} color="#ffd8ac" />
 
+      <pointLight
+        position={[-wallEdgeCoolLight.x, wallEdgeCoolLight.y, wallEdgeCoolLight.z]}
+        intensity={wallEdgeCoolLight.intensity}
+        distance={wallEdgeCoolLight.distance}
+        decay={wallEdgeCoolLight.decay}
+        color={'pink'}
+      />
+
+      {/* <pointLight position={[lampCtrl.lampPosX, lampCtrl.lampPosY + 1.66 * lampCtrl.lampScale, lampCtrl.lampPosZ]} intensity={4.6} distance={6.4} decay={1.7} color="#ffd8ac" /> */}
       {/* Fill / rim / key on the cat (static positions) */}
-      <spotLight position={[0.7, 2.6, 3.2]} intensity={0.6} color="#ffd9b4" distance={6.4} decay={2} castShadow={false} />
+      {/* <spotLight position={[0.7, 2.6, 3.2]} intensity={0.6} color="#ffd9b4" distance={6.4} decay={2} castShadow={false} />
 
       <pointLight position={[0.2, 1.7, -3.1]} intensity={1.35} distance={4.8} decay={2} color="#7e5f79" />
 
-      <pointLight position={[1.85, 0.72, 0.72]} intensity={2.4} distance={4.1} decay={1.95} color="#ffc996" />
+      <pointLight position={[1.85, 0.72, 0.72]} intensity={2.4} distance={4.1} decay={1.95} color="#ffc996" /> */}
     </>
   )
 }

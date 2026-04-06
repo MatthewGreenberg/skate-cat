@@ -36,6 +36,7 @@ export default function GameWorld({
   isCountdownActive,
   isTransitioning,
   useOriginalMaterials,
+  freezeMotion = false,
   foliageSegmentCount = 2,
   trailTargetRef,
   musicRef,
@@ -44,8 +45,7 @@ export default function GameWorld({
 }) {
   return (
     <>
-      {visible && <fog attach="fog" args={['#c4d4b8', 55, 130]} />}
-      {visible && <color attach="background" args={['#000000']} />}
+      <color attach="background" args={['#000000']} />
       <group visible={visible}>
         <DayNightController isRunning={sceneActive && !isGameOver} />
         <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} />
@@ -57,6 +57,7 @@ export default function GameWorld({
             controlsEnabled={runActive && !isGameOver && !isCountdownActive}
             isTransitioning={isTransitioning}
             useOriginalMaterials={useOriginalMaterials}
+            freezeMotion={freezeMotion}
             musicRef={musicRef}
             onJumpSfx={onJumpSfx}
           />

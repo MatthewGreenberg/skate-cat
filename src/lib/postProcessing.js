@@ -1,4 +1,4 @@
-import * as THREE from 'three'
+import * as THREE from "three";
 
 export const POST_CONTROL_LIMITS = {
   bloomIntensity: { min: 0, max: 10, step: 0.1 },
@@ -10,7 +10,7 @@ export const POST_CONTROL_LIMITS = {
   saturation: { min: -1, max: 1, step: 0.01 },
   distortionX: { min: -0.2, max: 0.2, step: 0.001 },
   distortionY: { min: -0.2, max: 0.2, step: 0.001 },
-}
+};
 
 export const DEFAULT_GAME_POST_SETTINGS = {
   bloomIntensity: 2.1,
@@ -22,7 +22,7 @@ export const DEFAULT_GAME_POST_SETTINGS = {
   saturation: 0.15,
   distortionX: 0,
   distortionY: 0,
-}
+};
 
 export const DEFAULT_INTRO_POST_SETTINGS = {
   bloomIntensity: 0.75,
@@ -34,32 +34,65 @@ export const DEFAULT_INTRO_POST_SETTINGS = {
   saturation: 0.08,
   distortionX: 0,
   distortionY: 0,
-}
+};
 
 export function createPostProcessingControls(defaults) {
   return {
-    bloomIntensity: { value: defaults.bloomIntensity, ...POST_CONTROL_LIMITS.bloomIntensity },
-    bloomThreshold: { value: defaults.bloomThreshold, ...POST_CONTROL_LIMITS.bloomThreshold },
-    bloomSmoothing: { value: defaults.bloomSmoothing, ...POST_CONTROL_LIMITS.bloomSmoothing },
-    brightness: { value: defaults.brightness, ...POST_CONTROL_LIMITS.brightness },
+    bloomIntensity: {
+      value: defaults.bloomIntensity,
+      ...POST_CONTROL_LIMITS.bloomIntensity,
+    },
+    bloomThreshold: {
+      value: defaults.bloomThreshold,
+      ...POST_CONTROL_LIMITS.bloomThreshold,
+    },
+    bloomSmoothing: {
+      value: defaults.bloomSmoothing,
+      ...POST_CONTROL_LIMITS.bloomSmoothing,
+    },
+    brightness: {
+      value: defaults.brightness,
+      ...POST_CONTROL_LIMITS.brightness,
+    },
     contrast: { value: defaults.contrast, ...POST_CONTROL_LIMITS.contrast },
     hue: { value: defaults.hue, ...POST_CONTROL_LIMITS.hue },
-    saturation: { value: defaults.saturation, ...POST_CONTROL_LIMITS.saturation },
-    distortionX: { value: defaults.distortionX, ...POST_CONTROL_LIMITS.distortionX },
-    distortionY: { value: defaults.distortionY, ...POST_CONTROL_LIMITS.distortionY },
-  }
+    saturation: {
+      value: defaults.saturation,
+      ...POST_CONTROL_LIMITS.saturation,
+    },
+    distortionX: {
+      value: defaults.distortionX,
+      ...POST_CONTROL_LIMITS.distortionX,
+    },
+    distortionY: {
+      value: defaults.distortionY,
+      ...POST_CONTROL_LIMITS.distortionY,
+    },
+  };
 }
 
 export function interpolatePostSettings(from, to, alpha) {
   return {
-    bloomIntensity: THREE.MathUtils.lerp(from.bloomIntensity, to.bloomIntensity, alpha),
-    bloomThreshold: THREE.MathUtils.lerp(from.bloomThreshold, to.bloomThreshold, alpha),
-    bloomSmoothing: THREE.MathUtils.lerp(from.bloomSmoothing, to.bloomSmoothing, alpha),
+    bloomIntensity: THREE.MathUtils.lerp(
+      from.bloomIntensity,
+      to.bloomIntensity,
+      alpha,
+    ),
+    bloomThreshold: THREE.MathUtils.lerp(
+      from.bloomThreshold,
+      to.bloomThreshold,
+      alpha,
+    ),
+    bloomSmoothing: THREE.MathUtils.lerp(
+      from.bloomSmoothing,
+      to.bloomSmoothing,
+      alpha,
+    ),
     brightness: THREE.MathUtils.lerp(from.brightness, to.brightness, alpha),
     contrast: THREE.MathUtils.lerp(from.contrast, to.contrast, alpha),
     hue: THREE.MathUtils.lerp(from.hue, to.hue, alpha),
     saturation: THREE.MathUtils.lerp(from.saturation, to.saturation, alpha),
     distortionX: THREE.MathUtils.lerp(from.distortionX, to.distortionX, alpha),
     distortionY: THREE.MathUtils.lerp(from.distortionY, to.distortionY, alpha),
-  }
+  };
 }

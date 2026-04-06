@@ -9,7 +9,7 @@ export const CRT_VERTEX_SHADER = `
     vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
-`
+`;
 
 export const CRT_FRAGMENT_SHADER = `
   uniform sampler2D uMap;
@@ -60,11 +60,10 @@ export const CRT_FRAGMENT_SHADER = `
     float noise = (hash(floor(warpedUv * vec2(320.0, 220.0) + uTime * 24.0)) - 0.5) * uNoiseIntensity;
 
     color *= scanlines * grille;
-    color += roll;
-    color += noise;
-    color *= vignette;
+    // color += roll;
+    // color += noise;
     color *= uBrightness;
 
     gl_FragColor = vec4(color, 1.0);
   }
-`
+`;

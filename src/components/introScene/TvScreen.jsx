@@ -9,7 +9,7 @@ import * as THREE from 'three'
 import { DEFAULT_TV_CRT, SCREEN_CYAN } from './constants'
 import { CRT_FRAGMENT_SHADER, CRT_VERTEX_SHADER } from './crtShaders'
 import { createCurvedScreenGeometry } from './curvedScreenGeometry'
-import { drawTvScreen } from './tvScreenCanvas'
+import { drawTvScreen, getTvScreenActionAtPoint } from './tvScreenCanvas'
 
 export function TvScreen({
   position,
@@ -25,10 +25,14 @@ export function TvScreen({
   glowOffsetZ = -0.01,
   crt = DEFAULT_TV_CRT,
   onStart,
+  onDismiss,
   disabled = false,
   buttonLabel = 'PRESS START',
+  screenMode = 'title',
+  summary = null,
+  showDismissButton = false,
 }) {
-  const [hovered, setHovered] = useState(false)
+  const [hoveredAction, setHoveredAction] = useState(null)
   const screenWidth = size[0] * sizeScale[0]
   const screenHeight = size[1] * sizeScale[1]
   const glowWidth = screenWidth * glowScale[0]
@@ -83,10 +87,10 @@ export function TvScreen({
     return { canvas, texture, material }
   }, [])
 
-  useCursor(hovered && !disabled)
+  useCursor(Boolean(hoveredAction) && !disabled)
 
   useEffect(() => {
-    if (disabled) setHovered(false)
+    if (disabled) setHoveredAction(null)
   }, [disabled])
 
   useEffect(() => () => {
@@ -104,6 +108,11 @@ export function TvScreen({
     if (disabled) return undefined
     const onKeyDown = (event) => {
       if (event.repeat) return
+      if (showDismissButton && (event.key === 'x' || event.key === 'X')) {
+        event.preventDefault()
+        onDismiss?.()
+        return
+      }
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         onStart?.()
@@ -111,37 +120,80 @@ export function TvScreen({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [disabled, onStart])
+  }, [disabled, onDismiss, onStart, showDismissButton])
+
+  const resolveActionFromEvent = (event) => {
+    if (!event.uv || !gpu) return null
+    return getTvScreenActionAtPoint(
+      event.uv.x * gpu.canvas.width,
+      (1 - event.uv.y) * gpu.canvas.height,
+      gpu.canvas.width,
+      gpu.canvas.height,
+      {
+        screenMode,
+        disabled,
+        showDismissButton,
+      }
+    )
+  }
 
   const crtRef = useRef(crt)
   crtRef.current = crt
+  const powerOnRef = useRef(0)
+  const prevScreenModeRef = useRef(screenMode)
+  const summaryElapsedRef = useRef(0)
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
+    // Animate CRT power-on when returning to summary screen
+    if (screenMode === 'summary' && prevScreenModeRef.current !== 'summary') {
+      powerOnRef.current = 0
+      summaryElapsedRef.current = 0
+    }
+    prevScreenModeRef.current = screenMode
+    if (screenMode === 'summary') {
+      if (powerOnRef.current < 1) {
+        powerOnRef.current = Math.min(1, powerOnRef.current + delta / Math.max(crtRef.current.powerOnDuration ?? 0.4, 0.001))
+      }
+      summaryElapsedRef.current += delta
+    }
     if (!gpu) return
     const ctx = gpu.canvas.getContext('2d')
     if (!ctx) return
-    drawTvScreen(ctx, gpu.canvas, state.clock.elapsedTime, { hovered, disabled, buttonLabel })
+    drawTvScreen(ctx, gpu.canvas, state.clock.elapsedTime, {
+      hovered: hoveredAction === 'start',
+      disabled,
+      buttonLabel,
+      screenMode,
+      summary,
+      showDismissButton,
+      dismissHovered: hoveredAction === 'dismiss',
+      summaryElapsed: summaryElapsedRef.current,
+    })
     // Three.js marks canvas textures dirty for GPU upload
     // eslint-disable-next-line react-hooks/immutability -- texture.needsUpdate is required API
     gpu.texture.needsUpdate = true
     const uniforms = gpu.material.uniforms
     const c = crtRef.current
     uniforms.uTime.value = state.clock.elapsedTime
-    uniforms.uHover.value = hovered ? 1 : 0
+    uniforms.uHover.value = hoveredAction ? 1 : 0
     uniforms.uWarp.value = c.warp
     uniforms.uAberration.value = c.aberration
     uniforms.uEdgeAberration.value = c.edgeAberration
     uniforms.uHoverBoost.value = c.hoverBoost
-    uniforms.uScanlineIntensity.value = c.scanlineIntensity
+    // Power-on effect: ramp brightness, boost scanlines and noise during warm-up
+    const pwr = powerOnRef.current
+    const powerEase = pwr
+    const isPoweringOn = screenMode === 'summary' && pwr < 1
+    uniforms.uScanlineIntensity.value = c.scanlineIntensity + (isPoweringOn ? (1 - powerEase) * 0.4 : 0)
     uniforms.uScanlineDensity.value = c.scanlineDensity
     uniforms.uGrilleIntensity.value = c.grilleIntensity
     uniforms.uGrilleDensity.value = c.grilleDensity
     uniforms.uRollIntensity.value = c.rollIntensity
     uniforms.uRollSpeed.value = c.rollSpeed
-    uniforms.uNoiseIntensity.value = c.noiseIntensity
+    uniforms.uNoiseIntensity.value = c.noiseIntensity + (isPoweringOn ? (1 - powerEase) * 0.3 : 0)
     uniforms.uVignetteStrength.value = c.vignetteStrength
     uniforms.uVignetteStart.value = c.vignetteStart
-    uniforms.uBrightness.value = c.brightness
+    uniforms.uBrightness.value = c.brightness * (screenMode === 'summary' ? powerEase : 1)
     uniforms.uBlackLevel.value = c.blackLevel
   })
 
@@ -164,14 +216,25 @@ export function TvScreen({
             />
           </mesh>
         )}
-        <mesh
+          <mesh
           geometry={screenGeometry}
           renderOrder={4}
-          onPointerEnter={() => setHovered(true)}
-          onPointerLeave={() => setHovered(false)}
+          onPointerEnter={(event) => {
+            setHoveredAction(resolveActionFromEvent(event))
+          }}
+          onPointerMove={(event) => {
+            setHoveredAction(resolveActionFromEvent(event))
+          }}
+          onPointerLeave={() => setHoveredAction(null)}
           onPointerDown={(event) => {
             event.stopPropagation()
-            if (!disabled) onStart?.()
+            const action = resolveActionFromEvent(event)
+            if (disabled || !action) return
+            if (action === 'dismiss') {
+              onDismiss?.()
+              return
+            }
+            onStart?.()
           }}
         >
           <primitive object={gpu.material} attach="material" />

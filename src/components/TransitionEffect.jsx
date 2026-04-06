@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability */
 import { useEffect, useLayoutEffect, useMemo } from 'react'
 import { Pass } from 'postprocessing'
 import * as THREE from 'three'
@@ -137,7 +138,7 @@ class IntroTransitionPass extends Pass {
   constructor() {
     super('IntroTransitionPass')
     this.progressRef = null
-    this.introTexture = null
+    this.capturedTexture = null
     this.needsSwap = true
 
     this.pingPongA = null
@@ -240,7 +241,7 @@ class IntroTransitionPass extends Pass {
   render(renderer, inputBuffer, outputBuffer) {
     const progress = this.progressRef?.current ?? 0
 
-    if (!this.introTexture || progress >= 1.0) {
+    if (!this.capturedTexture || progress >= 1.0) {
       this.screen.material = this.compositeMaterial
       this.compositeMaterial.uniforms.inputBuffer.value = inputBuffer.texture
       this.compositeMaterial.uniforms.uProgress.value = 1.0
@@ -271,11 +272,11 @@ class IntroTransitionPass extends Pass {
     this.pingPongA = this.pingPongB
     this.pingPongB = temp
 
-    // --- Composite pass: blend using diffused mask ---
+    // --- Composite pass: blend using diffused mask (or wipe) ---
     this.screen.material = this.compositeMaterial
     const c = this.compositeMaterial.uniforms
     c.inputBuffer.value = inputBuffer.texture
-    c.uIntro.value = this.introTexture
+    c.uIntro.value = this.capturedTexture
     c.uDiffusedMask.value = this.pingPongA.texture
     c.uProgress.value = progress
 
@@ -294,41 +295,42 @@ class IntroTransitionPass extends Pass {
   }
 }
 
-export default function TransitionEffect({ introTexture, progressRef, settings }) {
+export default function TransitionEffect({ capturedTexture, progressRef, settings, direction = 'forward' }) {
   const pass = useMemo(() => new IntroTransitionPass(), [])
 
   useLayoutEffect(() => {
     pass.progressRef = progressRef
-    pass.introTexture = introTexture
+    pass.capturedTexture = capturedTexture
 
     return () => {
       pass.progressRef = null
-      pass.introTexture = null
+      pass.capturedTexture = null
     }
-  }, [introTexture, pass, progressRef])
+  }, [capturedTexture, pass, progressRef])
 
   useEffect(() => {
     const d = pass.diffusionMaterial.uniforms
-    d.uRevealCurve.value = settings.revealCurve
-    d.uThresholdStart.value = settings.thresholdStart
-    d.uThresholdEnd.value = settings.thresholdEnd
+    const isReverse = direction === 'reverse'
+    d.uRevealCurve.value = isReverse ? settings.returnRevealCurve : settings.revealCurve
+    d.uThresholdStart.value = isReverse ? settings.returnThresholdStart : settings.thresholdStart
+    d.uThresholdEnd.value = isReverse ? settings.returnThresholdEnd : settings.thresholdEnd
     d.uNoiseScaleA.value = settings.noiseScaleA
     d.uNoiseScaleB.value = settings.noiseScaleB
     d.uNoiseAmpA.value = settings.noiseAmpA
     d.uNoiseAmpB.value = settings.noiseAmpB
-    d.uDiffuseSpread.value = settings.diffuseSpread
+    d.uDiffuseSpread.value = isReverse ? settings.returnDiffuseSpread : settings.diffuseSpread
 
     const c = pass.compositeMaterial.uniforms
-    c.uBandBefore.value = settings.bandBefore
-    c.uBandAfter.value = settings.bandAfter
-    c.uGlowInnerOffset.value = settings.glowInnerOffset
-    c.uGlowOuterOffset.value = settings.glowOuterOffset
-    c.uGlowIntensity.value = settings.glowIntensity
-    c.uGlowColor.value.set(settings.glowColor)
-    c.uDollyAmount.value = settings.dollyAmount
+    c.uBandBefore.value = isReverse ? settings.returnBandBefore : settings.bandBefore
+    c.uBandAfter.value = isReverse ? settings.returnBandAfter : settings.bandAfter
+    c.uGlowInnerOffset.value = isReverse ? settings.returnGlowInnerOffset : settings.glowInnerOffset
+    c.uGlowOuterOffset.value = isReverse ? settings.returnGlowOuterOffset : settings.glowOuterOffset
+    c.uGlowIntensity.value = isReverse ? settings.returnGlowIntensity : settings.glowIntensity
+    c.uGlowColor.value.set(isReverse ? settings.returnGlowColor : settings.glowColor)
+    c.uDollyAmount.value = direction === 'reverse' ? 0 : settings.dollyAmount
     c.uDollyStart.value = settings.dollyStart ?? 0.06
-    c.uFlashStrength.value = settings.flashStrength ?? 0.6
-  }, [pass, settings])
+    c.uFlashStrength.value = isReverse ? settings.returnFlashStrength : (settings.flashStrength ?? 0.6)
+  }, [direction, pass, settings])
 
   useEffect(() => () => {
     pass.dispose()

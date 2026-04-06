@@ -18,12 +18,12 @@ export const DEFAULT_TV = {
 };
 
 export const DEFAULT_CAT = {
-  posX: 0.89,
-  posY: 0,
+  posX: -0.7,
+  posY: 0.87,
   posZ: -0.1,
-  rotX: 0,
-  rotY: -0.7,
-  rotZ: 0.18,
+  rotX: 0.05,
+  rotY: -0.1,
+  rotZ: 0.01,
   scale: 0.03,
 };
 
@@ -46,11 +46,11 @@ export const DEFAULT_TV_UI = {
 
 export const DEFAULT_TV_CRT = {
   warp: 0,
-  aberration: 0,
+  aberration: 0.005,
   edgeAberration: 0,
   hoverBoost: 0.25,
-  scanlineIntensity: 0.12,
-  scanlineDensity: 900,
+  scanlineIntensity: 0.2,
+  scanlineDensity: 860,
   grilleIntensity: 0.03,
   grilleDensity: 1400,
   rollIntensity: 0.08,
@@ -60,4 +60,5 @@ export const DEFAULT_TV_CRT = {
   vignetteStart: 0.18,
   brightness: 1.08,
   blackLevel: 0,
+  powerOnDuration: 0.7,
 };

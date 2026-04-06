@@ -8,6 +8,11 @@ import { useOptionalControls } from '../lib/debugControls'
 const INTRO_LERP_SPEED = 2.5
 const INTRO_FOV = 43
 const GAME_FOV = 75
+const DEATH_FOV = 46
+const INTRO_MOUSE_YAW_MAX = THREE.MathUtils.degToRad(4.5)
+const INTRO_MOUSE_PITCH_SHIFT = 0.14
+const INTRO_MOUSE_YAW_RESPONSE = 5
+const INTRO_MOUSE_LOOK_SHIFT = 0.18
 
 function transitionEase(t) {
   return 1 - (1 - t) * (1 - t)
@@ -15,6 +20,14 @@ function transitionEase(t) {
 
 const _vecA = new THREE.Vector3()
 const _vecB = new THREE.Vector3()
+const _vecC = new THREE.Vector3()
+const _vecD = new THREE.Vector3()
+const _vecE = new THREE.Vector3()
+const _vecF = new THREE.Vector3()
+const _vecG = new THREE.Vector3()
+const _vecH = new THREE.Vector3()
+const _vecI = new THREE.Vector3()
+const _worldUp = new THREE.Vector3(0, 1, 0)
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
 
@@ -31,11 +44,14 @@ export default function CameraRig({
   showGameWorld = false,
   isTransitioning = false,
   transitionProgressRef,
+  transitionDirection = 'forward',
+  cameraMode = 'intro',
 }) {
   const { camera } = useThree()
   const currentZoom = useRef(0)
   const jumpZoom = useRef(0)
   const shakeTime = useRef(0)
+  const introYaw = useRef(0)
 
   const posAtCapture = useRef(new THREE.Vector3())
   const lookAtCapture = useRef(new THREE.Vector3())
@@ -50,6 +66,44 @@ export default function CameraRig({
       introLookX: { value: 0.3, min: -5, max: 5, step: 0.1 },
       introLookY: { value: 0.8, min: -2, max: 5, step: 0.1 },
       introLookZ: { value: -1.6, min: -5, max: 5, step: 0.1 },
+    }),
+  }, [])
+
+  const {
+    resultsCamX,
+    resultsCamY,
+    resultsCamZ,
+    resultsLookX,
+    resultsLookY,
+    resultsLookZ,
+  } = useOptionalControls('Intro', {
+    'Results Camera': folder({
+      resultsCamX: { value: 0.52, min: -5, max: 5, step: 0.1 },
+      resultsCamY: { value: 1.08, min: -2, max: 5, step: 0.1 },
+      resultsCamZ: { value: 1.55, min: -5, max: 10, step: 0.1 },
+      resultsLookX: { value: 0.36, min: -5, max: 5, step: 0.1 },
+      resultsLookY: { value: 0.88, min: -2, max: 5, step: 0.1 },
+      resultsLookZ: { value: -1.22, min: -5, max: 5, step: 0.1 },
+    }),
+  }, [])
+
+  const {
+    deathCamX,
+    deathCamY,
+    deathCamZ,
+    deathLookX,
+    deathLookY,
+    deathLookZ,
+    deathFov,
+  } = useOptionalControls('Intro', {
+    'Death Camera': folder({
+      deathCamX: { value: 0.48, min: -5, max: 5, step: 0.01 },
+      deathCamY: { value: 1.1, min: -2, max: 5, step: 0.01 },
+      deathCamZ: { value: 1.2, min: -5, max: 10, step: 0.01 },
+      deathLookX: { value: 0.38, min: -5, max: 5, step: 0.01 },
+      deathLookY: { value: 0.9, min: -2, max: 5, step: 0.01 },
+      deathLookZ: { value: -1.2, min: -5, max: 5, step: 0.01 },
+      deathFov: { value: DEATH_FOV, min: 20, max: 60, step: 0.5 },
     }),
   }, [])
 
@@ -71,11 +125,28 @@ export default function CameraRig({
     }, { collapsed: true }),
   }, [])
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const gameDelta = getGameDelta(delta)
+    const targetIntroPos = _vecA.set(introCamX, introCamY, introCamZ)
+    const targetIntroLook = _vecB.set(introLookX, introLookY, introLookZ)
+    const targetResultsPos = _vecC.set(resultsCamX, resultsCamY, resultsCamZ)
+    const targetResultsLook = _vecD.set(resultsLookX, resultsLookY, resultsLookZ)
+    const deathTargetPos = _vecE.set(deathCamX, deathCamY, deathCamZ)
+    const deathTargetLook = _vecF.set(deathLookX, deathLookY, deathLookZ)
+    const idleTargetPos = cameraMode === 'death'
+      ? deathTargetPos
+      : cameraMode === 'results'
+        ? targetResultsPos
+        : targetIntroPos
+    const idleTargetLook = cameraMode === 'death'
+      ? deathTargetLook
+      : cameraMode === 'results'
+        ? targetResultsLook
+        : targetIntroLook
+    const idleTargetFov = cameraMode === 'death' ? deathFov : INTRO_FOV
 
     if (isTransitioning && !wasTransitioning.current) {
-      posAtCapture.current.copy(camPos.current)
+      posAtCapture.current.copy(camera.position)
       lookAtCapture.current.copy(camLook.current)
       fovAtCapture.current = camera.fov
     }
@@ -83,12 +154,13 @@ export default function CameraRig({
 
     if (isTransitioning) {
       const t = transitionEase(transitionProgressRef?.current ?? 0)
-      const nextFov = THREE.MathUtils.lerp(fovAtCapture.current, GAME_FOV, t)
+      const targetFov = transitionDirection === 'reverse' ? idleTargetFov : GAME_FOV
+      const nextFov = THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
+      const gameTargetPos = _vecA.set(posX, posY, posZ)
+      const gameTargetLook = _vecB.set(lookX, lookY, lookZ)
 
-      _vecA.set(posX, posY, posZ)
-      camPos.current.lerpVectors(posAtCapture.current, _vecA, t)
-      _vecB.set(lookX, lookY, lookZ)
-      camLook.current.lerpVectors(lookAtCapture.current, _vecB, t)
+      camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? idleTargetPos : gameTargetPos, t)
+      camLook.current.lerpVectors(lookAtCapture.current, transitionDirection === 'reverse' ? idleTargetLook : gameTargetLook, t)
       applyCameraPose(camera, camPos.current, camLook.current, nextFov)
       return
     }
@@ -100,13 +172,44 @@ export default function CameraRig({
       gameState.screenShake.current = 0
 
       if (showGameWorld) {
+        introYaw.current = THREE.MathUtils.lerp(introYaw.current, 0, gameDelta * INTRO_MOUSE_YAW_RESPONSE)
         camPos.current.set(posX, posY, posZ)
         camLook.current.set(lookX, lookY, lookZ)
         applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
       } else {
-        camPos.current.set(introCamX, introCamY, introCamZ)
-        camLook.current.set(introLookX, introLookY, introLookZ)
-        applyCameraPose(camera, camPos.current, camLook.current, INTRO_FOV)
+        const introYawTarget = cameraMode === 'intro'
+          ? state.pointer.x * INTRO_MOUSE_YAW_MAX
+          : 0
+        const introPitchTarget = cameraMode === 'intro'
+          ? state.pointer.y * INTRO_MOUSE_PITCH_SHIFT
+          : 0
+        introYaw.current = THREE.MathUtils.lerp(
+          introYaw.current,
+          introYawTarget,
+          gameDelta * INTRO_MOUSE_YAW_RESPONSE
+        )
+
+        const interactiveTargetPos = cameraMode === 'intro'
+          ? _vecG
+            .copy(idleTargetPos)
+            .sub(idleTargetLook)
+            .applyAxisAngle(_worldUp, introYaw.current)
+            .add(idleTargetLook)
+          : idleTargetPos
+        const interactiveTargetLook = cameraMode === 'intro'
+          ? _vecH.copy(idleTargetLook).add(
+            _vecI.set(
+              introYaw.current * INTRO_MOUSE_LOOK_SHIFT,
+              introPitchTarget,
+              0
+            )
+          )
+          : idleTargetLook
+
+        camPos.current.lerp(interactiveTargetPos, gameDelta * INTRO_LERP_SPEED)
+        camLook.current.lerp(interactiveTargetLook, gameDelta * INTRO_LERP_SPEED)
+        const nextFov = THREE.MathUtils.lerp(camera.fov, idleTargetFov, gameDelta * INTRO_LERP_SPEED)
+        applyCameraPose(camera, camPos.current, camLook.current, nextFov)
       }
       return
     }

@@ -23,7 +23,15 @@ function applyToonMaterials(root) {
   })
 }
 
-export default function SkateCat({ trailTargetRef, controlsEnabled = true, isTransitioning = false, useOriginalMaterials = false, musicRef, onJumpSfx }) {
+export default function SkateCat({
+  trailTargetRef,
+  controlsEnabled = true,
+  isTransitioning = false,
+  useOriginalMaterials = false,
+  freezeMotion = false,
+  musicRef,
+  onJumpSfx,
+}) {
   const { catRotX, catRotY, catRotZ } = useOptionalControls('Game', {
     Cat: folder({
       catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -175,6 +183,7 @@ export default function SkateCat({ trailTargetRef, controlsEnabled = true, isTra
     musicRef, controlsEnabled, onJumpSfx,
     catRotX, catRotY, catRotZ,
     isTransitioning,
+    freezeMotion,
   })
 
   useToonShaderSync({

@@ -97,6 +97,7 @@ export default function useCatAnimation({
   catRotY,
   catRotZ,
   isTransitioning,
+  freezeMotion,
 }) {
   // --- State refs ---
   const jumpState = useRef({
@@ -550,6 +551,11 @@ export default function useCatAnimation({
     }
     if (!isTransitioning && entranceTriggered.current && intro.phase === 'done') {
       entranceTriggered.current = false
+    }
+
+    if (freezeMotion) {
+      setGrindSparkInactive()
+      return
     }
 
     // Dropping: cat falls from above with a 360 spin onto the moving board
