@@ -2,6 +2,8 @@
  * 2D canvas drawing for the attract-mode TV UI (title, HUD pills, start button). Fed into a texture each frame.
  */
 
+const REFERENCE_SIZE = 1024;
+
 export function drawHudPill(
   ctx,
   x,
@@ -13,6 +15,7 @@ export function drawHudPill(
     fill = "rgba(45, 17, 62, 0.92)",
     stroke = "#ffd166",
     text = "#fff6d8",
+    // eslint-disable-next-line no-unused-vars
     glow = "rgba(255, 209, 102, 0.45)",
     font = '900 28px "Nunito", sans-serif',
   } = {},
@@ -21,13 +24,10 @@ export function drawHudPill(
   ctx.beginPath();
   ctx.roundRect(x - width / 2, y - height / 2, width, height, height / 2);
   ctx.fillStyle = fill;
-  ctx.shadowColor = glow;
-  ctx.shadowBlur = 16;
   ctx.fill();
   ctx.lineWidth = 4;
   ctx.strokeStyle = stroke;
   ctx.stroke();
-  ctx.shadowBlur = 0;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = text;
@@ -186,8 +186,6 @@ function drawScreenFrame(ctx, width, height) {
   ctx.roundRect(32, 32, width - 64, height - 64, 38);
   ctx.lineWidth = 8;
   ctx.strokeStyle = "rgba(255, 229, 163, 0.65)";
-  ctx.shadowColor = "rgba(255, 161, 92, 0.28)";
-  ctx.shadowBlur = 20;
   ctx.stroke();
   ctx.restore();
 }
@@ -210,11 +208,8 @@ function drawSummaryCard(ctx, x, y, width, height, label, value, accent) {
   ctx.fillStyle = "rgba(18, 10, 34, 0.82)";
   ctx.strokeStyle = accent;
   ctx.lineWidth = 4;
-  ctx.shadowColor = `${accent}55`;
-  ctx.shadowBlur = 14;
   ctx.fill();
   ctx.stroke();
-  ctx.shadowBlur = 0;
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(255, 245, 216, 0.72)";
   ctx.font = '900 21px "Nunito", sans-serif';
@@ -256,9 +251,6 @@ function drawActionButton(ctx, width, height, {
   ctx.fillStyle = "rgba(17, 10, 30, 0.82)";
   ctx.strokeStyle = "rgba(124, 247, 255, 0.5)";
   ctx.lineWidth = 5;
-  ctx.shadowColor =
-    hovered ? "rgba(124, 247, 255, 0.35)" : "rgba(255, 129, 181, 0.2)";
-  ctx.shadowBlur = hovered ? 22 : 14;
   ctx.fill();
   ctx.stroke();
 
@@ -284,9 +276,6 @@ function drawActionButton(ctx, width, height, {
     : "#ff5a9d",
   );
   ctx.fillStyle = btnGradient;
-  ctx.shadowColor =
-    hovered ? "rgba(255, 209, 102, 0.85)" : "rgba(255, 109, 183, 0.45)";
-  ctx.shadowBlur = hovered ? 28 : 18;
   ctx.fill();
 
   ctx.beginPath();
@@ -304,7 +293,6 @@ function drawActionButton(ctx, width, height, {
   ctx.strokeStyle = "rgba(255, 250, 240, 0.82)";
   ctx.stroke();
 
-  ctx.shadowBlur = 0;
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffff";
   ctx.font = '52px "Knewave", cursive';
@@ -350,7 +338,7 @@ function getActionButtonBounds(width, height, {
   };
 }
 
-function drawDismissButton(ctx, width, height, {
+function drawDismissButton(ctx, width, _height, {
   hovered = false,
   disabled = false,
 }) {
@@ -364,10 +352,6 @@ function drawDismissButton(ctx, width, height, {
   ctx.fillStyle = "rgba(18, 10, 34, 0.86)";
   ctx.strokeStyle = hovered && !disabled ? "#7cf7ff" : "rgba(255, 240, 210, 0.7)";
   ctx.lineWidth = 4;
-  ctx.shadowColor = hovered && !disabled
-    ? "rgba(124, 247, 255, 0.45)"
-    : "rgba(255, 141, 179, 0.24)";
-  ctx.shadowBlur = hovered && !disabled ? 24 : 14;
   ctx.fill();
   ctx.stroke();
 
@@ -410,10 +394,10 @@ function isPointInBounds(x, y, bounds) {
 }
 
 export function getTvScreenActionAtPoint(
-  x,
-  y,
-  width,
-  height,
+  rawX,
+  rawY,
+  rawWidth,
+  rawHeight,
   {
     screenMode = "title",
     disabled = false,
@@ -421,6 +405,13 @@ export function getTvScreenActionAtPoint(
   } = {},
 ) {
   if (disabled || screenMode === "boot") return null;
+
+  // Convert raw canvas coords to reference coordinate space
+  const scale = rawWidth / REFERENCE_SIZE;
+  const x = rawX / scale;
+  const y = rawY / scale;
+  const width = REFERENCE_SIZE;
+  const height = Math.round(rawHeight / scale);
 
   if (showDismissButton) {
     const dismissBounds = getDismissButtonBounds(width);
@@ -483,12 +474,10 @@ export function getTvScreenActionAtPoint(
 }
 
 function drawBootScreen(ctx, width, height, {
-  elapsed = 0,
   bootStatusLabel = "SYNCING STAGE",
   bootProgress = 0,
   bootReady = false,
 }) {
-  const glowPulse = 0.5 + Math.sin(elapsed * 2.6) * 0.5;
   const progressRatio = clamp01(bootProgress / 100);
   const diagnostics = [
     ["CARTRIDGE", progressRatio >= 0.72 ? "LOCKED" : "READING"],
@@ -523,11 +512,8 @@ function drawBootScreen(ctx, width, height, {
   ctx.fillStyle = "rgba(10, 21, 34, 0.92)";
   ctx.strokeStyle = bootReady ? "#ffd166" : "#7cf7ff";
   ctx.lineWidth = 4;
-  ctx.shadowColor = bootReady ? "rgba(255, 209, 102, 0.42)" : "rgba(124, 247, 255, 0.36)";
-  ctx.shadowBlur = 18 + glowPulse * 10;
   ctx.fill();
   ctx.stroke();
-  ctx.shadowBlur = 0;
   ctx.fillStyle = "#ffffff";
   ctx.font = '900 28px "Nunito", sans-serif';
   ctx.fillText(bootStatusLabel, 128, 292);
@@ -545,8 +531,6 @@ function drawBootScreen(ctx, width, height, {
   progressGradient.addColorStop(0.55, "#ffd166");
   progressGradient.addColorStop(1, "#ff8db3");
   ctx.fillStyle = progressGradient;
-  ctx.shadowColor = "rgba(124, 247, 255, 0.34)";
-  ctx.shadowBlur = 14;
   ctx.fill();
   ctx.restore();
 
@@ -587,8 +571,8 @@ function drawBootScreen(ctx, width, height, {
   ctx.restore();
 }
 
-function drawTitleScreen(ctx, width, height, { hovered, disabled, highScore = 0, highScoresHovered = false }) {
-  const hoverMix = hovered && !disabled ? 1 : 0;
+function drawTitleScreen(ctx, width, height, { highScore = 0, highScoresHovered = false }) {
+
 
   drawHudPill(ctx, width * 0.16, height * 0.09, 160, 56, "1UP", {
     fill: "rgba(54, 15, 64, 0.94)",
@@ -625,8 +609,6 @@ function drawTitleScreen(ctx, width, height, { hovered, disabled, highScore = 0,
   ctx.lineJoin = "round";
   ctx.lineWidth = 18;
   ctx.strokeStyle = "#481752";
-  ctx.shadowColor = "rgba(255, 160, 92, 0.6)";
-  ctx.shadowBlur = 28 + hoverMix * 10;
   ctx.font = '118px "Knewave", cursive';
   ctx.strokeText("SKATE", width * 0.5, height * 0.33);
   ctx.fillStyle = titleGradient;
@@ -686,8 +668,6 @@ function drawTitleScreen(ctx, width, height, { hovered, disabled, highScore = 0,
   ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
   ctx.strokeStyle = hsHov ? "rgba(124, 247, 255, 0.6)" : "rgba(124, 247, 255, 0.28)";
   ctx.lineWidth = 3;
-  ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.4)" : "rgba(124, 247, 255, 0.15)";
-  ctx.shadowBlur = hsHov ? 20 : 10;
   ctx.fill();
   ctx.stroke();
 
@@ -699,8 +679,6 @@ function drawTitleScreen(ctx, width, height, { hovered, disabled, highScore = 0,
   hsGrad.addColorStop(0.5, hsHov ? "#5fd4f7" : "#4db8d8");
   hsGrad.addColorStop(1, hsHov ? "#6fa0ff" : "#5580cc");
   ctx.fillStyle = hsGrad;
-  ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.7)" : "rgba(124, 247, 255, 0.3)";
-  ctx.shadowBlur = hsHov ? 22 : 12;
   ctx.fill();
 
   // Specular highlight bar
@@ -717,7 +695,6 @@ function drawTitleScreen(ctx, width, height, { hovered, disabled, highScore = 0,
   ctx.stroke();
 
   // Text
-  ctx.shadowBlur = 0;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#0a1428";
@@ -780,8 +757,6 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     ctx.lineJoin = "round";
     ctx.lineWidth = 14;
     ctx.strokeStyle = "rgba(47, 14, 58, 0.95)";
-    ctx.shadowColor = `${accent}88`;
-    ctx.shadowBlur = 24 + (1 - titleP) * 20;
     ctx.font = '82px "Knewave", cursive';
     ctx.strokeText(title, width * 0.5, titleY);
     const titleGradient = ctx.createLinearGradient(width * 0.28, 0, width * 0.72, 0);
@@ -836,8 +811,6 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     ctx.globalAlpha = clamp01(scoreCountP * 3);
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffffff";
-    ctx.shadowColor = `${accent}99`;
-    ctx.shadowBlur = 30 + (1 - scoreScaleP) * 20;
     ctx.font = `${fontSize}px "Knewave", cursive`;
     ctx.fillText(`${displayScore}`, width * 0.5, height * 0.485);
     ctx.restore();
@@ -920,8 +893,6 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
     ctx.strokeStyle = hsHov ? "rgba(124, 247, 255, 0.6)" : "rgba(124, 247, 255, 0.28)";
     ctx.lineWidth = 3;
-    ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.4)" : "rgba(124, 247, 255, 0.15)";
-    ctx.shadowBlur = hsHov ? 20 : 10;
     ctx.fill();
     ctx.stroke();
 
@@ -932,8 +903,6 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     hsGrad.addColorStop(0.5, hsHov ? "#5fd4f7" : "#4db8d8");
     hsGrad.addColorStop(1, hsHov ? "#6fa0ff" : "#5580cc");
     ctx.fillStyle = hsGrad;
-    ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.7)" : "rgba(124, 247, 255, 0.3)";
-    ctx.shadowBlur = hsHov ? 22 : 12;
     ctx.fill();
 
     ctx.beginPath();
@@ -947,7 +916,6 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
     ctx.stroke();
 
-    ctx.shadowBlur = 0;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#0a1428";
@@ -995,8 +963,6 @@ function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed =
     ctx.lineJoin = "round";
     ctx.lineWidth = 14;
     ctx.strokeStyle = "rgba(47, 14, 58, 0.95)";
-    ctx.shadowColor = "rgba(255, 209, 102, 0.6)";
-    ctx.shadowBlur = 22;
     ctx.font = '82px "Knewave", cursive';
     ctx.strokeText("HIGH SCORES", width * 0.5, titleY);
     const grad = ctx.createLinearGradient(width * 0.2, 0, width * 0.8, 0);
@@ -1110,8 +1076,6 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
     ctx.lineJoin = "round";
     ctx.lineWidth = 12;
     ctx.strokeStyle = "rgba(47, 14, 58, 0.95)";
-    ctx.shadowColor = "rgba(255, 209, 102, 0.65)";
-    ctx.shadowBlur = 22;
     ctx.font = '68px "Knewave", cursive';
     ctx.strokeText("NEW HIGH SCORE!", width * 0.5, titleY);
     const grad = ctx.createLinearGradient(width * 0.2, 0, width * 0.8, 0);
@@ -1136,8 +1100,6 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
     ctx.strokeStyle = "rgba(20, 8, 40, 0.9)";
     ctx.strokeText(`${score}`, width * 0.5, height * 0.3);
     ctx.fillStyle = "#ffffff";
-    ctx.shadowColor = "rgba(255, 209, 102, 0.8)";
-    ctx.shadowBlur = 30;
     ctx.fillText(`${score}`, width * 0.5, height * 0.3);
     ctx.restore();
   }
@@ -1157,11 +1119,8 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
     ctx.fillStyle = "rgba(10, 6, 20, 0.85)";
     ctx.strokeStyle = rankColor;
     ctx.lineWidth = 3;
-    ctx.shadowColor = `${rankColor}66`;
-    ctx.shadowBlur = 14;
     ctx.fill();
     ctx.stroke();
-    ctx.shadowBlur = 0;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = rankColor;
@@ -1196,13 +1155,8 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
         ? `rgba(124, 247, 255, ${0.6 + pulse * 0.4})`
         : "rgba(255, 240, 210, 0.3)";
       ctx.lineWidth = isActive ? 4 : 2.5;
-      if (isActive) {
-        ctx.shadowColor = `rgba(124, 247, 255, ${0.3 + pulse * 0.3})`;
-        ctx.shadowBlur = 16 + pulse * 8;
-      }
       ctx.fill();
       ctx.stroke();
-      ctx.shadowBlur = 0;
 
       // Letter
       ctx.textAlign = "center";
@@ -1277,7 +1231,7 @@ function getInitialsSlotBounds(width, height) {
 export function drawTvScreen(
   ctx,
   canvas,
-  time,
+  _time,
   {
     hovered = false,
     disabled = false,
@@ -1288,6 +1242,7 @@ export function drawTvScreen(
     showDismissButton = false,
     dismissHovered = false,
     summaryElapsed = 99,
+    // eslint-disable-next-line no-unused-vars
     bootElapsed = 0,
     bootStatusLabel = "SYNCING STAGE",
     bootProgress = 0,
@@ -1303,8 +1258,16 @@ export function drawTvScreen(
     initialsElapsed = 0,
   } = {},
 ) {
-  const { width, height } = canvas;
-  ctx.clearRect(0, 0, width, height);
+  const { width: rawWidth, height: rawHeight } = canvas;
+  ctx.clearRect(0, 0, rawWidth, rawHeight);
+
+  // Scale so all hardcoded px values (fonts, positions) work at any canvas size
+  const scale = rawWidth / REFERENCE_SIZE;
+  ctx.save();
+  ctx.scale(scale, scale);
+  const width = REFERENCE_SIZE;
+  const height = Math.round(rawHeight / scale);
+
   ctx.globalAlpha = 1;
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
@@ -1321,7 +1284,6 @@ export function drawTvScreen(
     });
   } else if (screenMode === "boot") {
     drawBootScreen(ctx, width, height, {
-      elapsed: bootElapsed || time,
       bootStatusLabel,
       bootProgress,
       bootReady,
@@ -1340,7 +1302,7 @@ export function drawTvScreen(
       rank: initialsRank,
     });
   } else {
-    drawTitleScreen(ctx, width, height, { hovered, disabled, highScore, highScoresHovered });
+    drawTitleScreen(ctx, width, height, { highScore, highScoresHovered });
   }
 
   // Button logic per screen mode
@@ -1391,4 +1353,5 @@ export function drawTvScreen(
   }
 
   ctx.globalAlpha = 1;
+  ctx.restore(); // undo scale transform
 }
