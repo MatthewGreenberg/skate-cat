@@ -993,20 +993,27 @@ export default function App() {
     setPhase(PHASE_RUNNING)
   }, [])
 
+  const prepareRunForLaunch = useCallback(() => {
+    resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
+    setIsEndingLocked(false)
+    setShowDeathFullscreen(false)
+    gameState.lastRunSummary.current = null
+    setTvScreenOverride(null)
+    setInitialsEntry(null)
+  }, [resetRunState])
+
   const handleGameWorldPrimed = useCallback(() => {
     setIsGameWorldPrimed(true)
   }, [])
 
   const startLaunchTransition = useCallback(() => {
-    resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
     transitionProgressRef.current = 0
-    setIsEndingLocked(false)
     setCapturedTransitionTexture(null)
     setTransitionDirection('forward')
     shouldCaptureSceneRef.current = true
     transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
     setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
-  }, [resetRunState])
+  }, [])
 
   const queueLaunchStart = useCallback((launchAction) => {
     if (startPhase !== START_PHASE_IDLE || isTransitionBusy) return
@@ -1031,6 +1038,7 @@ export default function App() {
     setTransitionCaptureMode(null)
 
     if (captureMode === CAPTURE_MODE_LAUNCH) {
+      prepareRunForLaunch()
       setPhase(PHASE_LAUNCHING)
       startMusicPlayback()
       return
@@ -1039,7 +1047,7 @@ export default function App() {
     if (captureMode === CAPTURE_MODE_RETURN) {
       setPhase(PHASE_RETURNING)
     }
-  }, [startMusicPlayback])
+  }, [prepareRunForLaunch, startMusicPlayback])
 
   const handleTransitionComplete = useCallback(() => {
     if (transitionDirection === 'reverse') {
@@ -1074,22 +1082,8 @@ export default function App() {
   }, [handleSongComplete])
 
   const handleRestart = useCallback(() => {
-    queueLaunchStart(() => {
-      resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
-      transitionProgressRef.current = 0
-      setCapturedTransitionTexture(null)
-      setTransitionDirection('forward')
-      setIsEndingLocked(false)
-      setShowDeathFullscreen(false)
-      setPhase(PHASE_INTRO)
-      gameState.lastRunSummary.current = null
-      setTvScreenOverride(null)
-      setInitialsEntry(null)
-      shouldCaptureSceneRef.current = true
-      transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
-      setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
-    })
-  }, [queueLaunchStart, resetRunState])
+    queueLaunchStart(startLaunchTransition)
+  }, [queueLaunchStart, startLaunchTransition])
 
   // Leaderboard: set screen mode directly (TvScreen handles the smooth CRT transition)
   const flipToScreen = useCallback((targetMode) => {

@@ -9,7 +9,7 @@ const INTRO_LERP_SPEED = 2.5
 const INTRO_FOV = 43
 const GAME_FOV = 75
 const DEATH_FOV = 46
-const REVERSE_INTRO_DOLLY_DISTANCE = 1.2
+const REVERSE_INTRO_DOLLY_DISTANCE = 2.2
 const INTRO_MOUSE_YAW_MAX = THREE.MathUtils.degToRad(4.5)
 const INTRO_MOUSE_PITCH_SHIFT = 0.14
 const INTRO_MOUSE_YAW_RESPONSE = 5
@@ -30,6 +30,9 @@ const _vecH = new THREE.Vector3()
 const _vecI = new THREE.Vector3()
 const _vecJ = new THREE.Vector3()
 const _vecK = new THREE.Vector3()
+const _vecL = new THREE.Vector3()
+const _vecM = new THREE.Vector3()
+const _vecN = new THREE.Vector3()
 const _worldUp = new THREE.Vector3(0, 1, 0)
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
@@ -164,7 +167,7 @@ export default function CameraRig({
     const reverseTargetLook = cameraMode === 'death' ? targetIntroLook : idleTargetLook
     const reverseTargetFov = cameraMode === 'death' ? INTRO_FOV : idleTargetFov
     const shouldUseReverseIntroStartShot = transitionDirection === 'reverse' && cameraMode === 'failed'
-    const reverseIntroStartPos = _vecE
+    const reverseIntroStartPos = _vecN
       .copy(failedTargetPos)
       .addScaledVector(
         _vecI.copy(failedTargetPos).sub(failedTargetLook).normalize(),
@@ -193,8 +196,8 @@ export default function CameraRig({
       const nextFov = isFailedReverseDolly
         ? failedTargetFov
         : THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
-      const gameTargetPos = _vecA.set(posX, posY, posZ)
-      const gameTargetLook = _vecB.set(lookX, lookY, lookZ)
+      const gameTargetPos = _vecL.set(posX, posY, posZ)
+      const gameTargetLook = _vecM.set(lookX, lookY, lookZ)
 
       camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? reverseTargetPos : gameTargetPos, t)
       if (isFailedReverseDolly) {
