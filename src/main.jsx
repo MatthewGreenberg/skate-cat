@@ -1,14 +1,31 @@
-import { Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Leva } from 'leva'
 import './index.css'
 import App from './App.jsx'
 
 const isDebugMode = import.meta.env.DEV && new URLSearchParams(window.location.search).has('debug')
+const root = createRoot(document.getElementById('root'))
 
-createRoot(document.getElementById('root')).render(
-  <Suspense fallback={null}>
-    <App />
-    {isDebugMode ? <Leva collapsed={false} /> : null}
-  </Suspense>,
-)
+async function waitForBootFonts() {
+  if (typeof document === 'undefined' || !document.fonts?.load) return
+
+  const fontLoads = [
+    document.fonts.load('1em "Knewave"'),
+    document.fonts.load('700 1em "Nunito"'),
+    document.fonts.load('900 1em "Nunito"'),
+  ]
+
+  await Promise.race([
+    Promise.all(fontLoads),
+    new Promise((resolve) => window.setTimeout(resolve, 2500)),
+  ])
+}
+
+void waitForBootFonts().finally(() => {
+  root.render(
+    <>
+      <App />
+      {isDebugMode ? <Leva collapsed={false} /> : null}
+    </>,
+  )
+})

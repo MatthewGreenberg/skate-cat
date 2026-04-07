@@ -26,11 +26,20 @@ export function TvScreen({
   crt = DEFAULT_TV_CRT,
   onStart,
   onDismiss,
+  onAction,
   disabled = false,
   buttonLabel = 'PRESS START',
+  instructionLabel = 'SPACE / ENTER TO SHRED',
   screenMode = 'title',
   summary = null,
   showDismissButton = false,
+  bootVisualMix = 1,
+  bootStatusLabel = 'SYNCING STAGE',
+  bootProgress = 0,
+  bootReady = false,
+  highScore = 0,
+  leaderboard = [],
+  initialsEntry = null,
 }) {
   const [hoveredAction, setHoveredAction] = useState(null)
   const screenWidth = size[0] * sizeScale[0]
@@ -108,6 +117,28 @@ export function TvScreen({
     if (disabled) return undefined
     const onKeyDown = (event) => {
       if (event.repeat) return
+
+      if (screenMode === 'leaderboard') {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Escape' || event.key === 'Backspace') {
+          event.preventDefault()
+          onAction?.('back')
+        }
+        return
+      }
+
+      if (screenMode === 'initials') {
+        event.preventDefault()
+        if (event.key === 'ArrowUp') { onAction?.('letterUp'); return }
+        if (event.key === 'ArrowDown') { onAction?.('letterDown'); return }
+        if (event.key === 'ArrowLeft') { onAction?.('cursorLeft'); return }
+        if (event.key === 'ArrowRight') { onAction?.('cursorRight'); return }
+        if (event.key === 'Enter') { onAction?.('confirmInitials'); return }
+        if (/^[a-zA-Z]$/.test(event.key)) {
+          onAction?.('letterDirect', event.key.toUpperCase())
+        }
+        return
+      }
+
       if (showDismissButton && (event.key === 'x' || event.key === 'X')) {
         event.preventDefault()
         onDismiss?.()
@@ -120,7 +151,7 @@ export function TvScreen({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [disabled, onDismiss, onStart, showDismissButton])
+  }, [disabled, onAction, onDismiss, onStart, screenMode, showDismissButton])
 
   const resolveActionFromEvent = (event) => {
     if (!event.uv || !gpu) return null
@@ -142,32 +173,80 @@ export function TvScreen({
   const powerOnRef = useRef(0)
   const prevScreenModeRef = useRef(screenMode)
   const summaryElapsedRef = useRef(0)
+  const bootElapsedRef = useRef(0)
+  const leaderboardElapsedRef = useRef(0)
+  const initialsElapsedRef = useRef(0)
+  // Channel-flip transition: 0 = idle, >0 = animating (counts down from FLIP_DURATION)
+  const channelFlipRef = useRef(0)
+  const FLIP_DURATION = 0.35
 
   useFrame((state, delta) => {
-    // Animate CRT power-on when returning to summary screen
-    if (screenMode === 'summary' && prevScreenModeRef.current !== 'summary') {
-      powerOnRef.current = 0
+    const modeChanged = prevScreenModeRef.current !== screenMode
+    if (modeChanged) {
+      // Only trigger channel-flip for leaderboard/initials transitions (not boot/summary which have their own power-on)
+      const isFlipTransition =
+        (prevScreenModeRef.current === 'title' || prevScreenModeRef.current === 'leaderboard' || prevScreenModeRef.current === 'initials') &&
+        (screenMode === 'title' || screenMode === 'leaderboard' || screenMode === 'initials')
+      if (isFlipTransition) {
+        channelFlipRef.current = FLIP_DURATION
+      } else {
+        powerOnRef.current = 0
+      }
       summaryElapsedRef.current = 0
+      bootElapsedRef.current = 0
+      leaderboardElapsedRef.current = 0
+      initialsElapsedRef.current = 0
     }
     prevScreenModeRef.current = screenMode
-    if (screenMode === 'summary') {
+
+    // Advance channel-flip timer
+    if (channelFlipRef.current > 0) {
+      channelFlipRef.current = Math.max(0, channelFlipRef.current - delta)
+    }
+
+    if (screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials') {
       if (powerOnRef.current < 1) {
         powerOnRef.current = Math.min(1, powerOnRef.current + delta / Math.max(crtRef.current.powerOnDuration ?? 0.4, 0.001))
       }
+    }
+    if (screenMode === 'summary') {
       summaryElapsedRef.current += delta
+    }
+    if (screenMode === 'boot') {
+      bootElapsedRef.current += delta
+    }
+    if (screenMode === 'leaderboard') {
+      leaderboardElapsedRef.current += delta
+    }
+    if (screenMode === 'initials') {
+      initialsElapsedRef.current += delta
     }
     if (!gpu) return
     const ctx = gpu.canvas.getContext('2d')
     if (!ctx) return
     drawTvScreen(ctx, gpu.canvas, state.clock.elapsedTime, {
-      hovered: hoveredAction === 'start',
+      hovered: hoveredAction === 'start' || hoveredAction === 'back' || hoveredAction === 'confirmInitials',
       disabled,
       buttonLabel,
+      instructionLabel,
       screenMode,
       summary,
       showDismissButton,
       dismissHovered: hoveredAction === 'dismiss',
       summaryElapsed: summaryElapsedRef.current,
+      bootElapsed: bootElapsedRef.current,
+      bootStatusLabel,
+      bootProgress,
+      bootReady,
+      highScore,
+      highScoresHovered: hoveredAction === 'highscores',
+      leaderboard,
+      leaderboardElapsed: leaderboardElapsedRef.current,
+      initials: initialsEntry?.initials ?? null,
+      cursorPos: initialsEntry?.cursorPos ?? 0,
+      initialsScore: initialsEntry?.score ?? 0,
+      initialsRank: initialsEntry?.rank ?? 'F',
+      initialsElapsed: initialsElapsedRef.current,
     })
     // Three.js marks canvas textures dirty for GPU upload
     // eslint-disable-next-line react-hooks/immutability -- texture.needsUpdate is required API
@@ -183,19 +262,52 @@ export function TvScreen({
     // Power-on effect: ramp brightness, boost scanlines and noise during warm-up
     const pwr = powerOnRef.current
     const powerEase = pwr
-    const isPoweringOn = screenMode === 'summary' && pwr < 1
-    uniforms.uScanlineIntensity.value = c.scanlineIntensity + (isPoweringOn ? (1 - powerEase) * 0.4 : 0)
+    const isPoweringOn = (screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials') && pwr < 1
+    const bootBrightnessMix = screenMode === 'boot'
+      ? THREE.MathUtils.lerp(0.38, 1, bootVisualMix)
+      : 1
+    // Channel-flip effect: smooth brightness dip + noise spike on a bell curve
+    const flipT = channelFlipRef.current / FLIP_DURATION // 1 at start → 0 at end
+    const flipIntensity = Math.sin(flipT * Math.PI) // bell curve: 0 → 1 → 0
+    const flipNoise = flipIntensity * 0.7
+    const flipDim = 1 - flipIntensity * 0.85
+    const flipAberration = flipIntensity * 0.025
+    uniforms.uScanlineIntensity.value = c.scanlineIntensity + (isPoweringOn ? (1 - powerEase) * 0.4 : 0) + flipIntensity * 0.5
     uniforms.uScanlineDensity.value = c.scanlineDensity
     uniforms.uGrilleIntensity.value = c.grilleIntensity
     uniforms.uGrilleDensity.value = c.grilleDensity
-    uniforms.uRollIntensity.value = c.rollIntensity
+    uniforms.uRollIntensity.value = c.rollIntensity + flipIntensity * 0.8
     uniforms.uRollSpeed.value = c.rollSpeed
-    uniforms.uNoiseIntensity.value = c.noiseIntensity + (isPoweringOn ? (1 - powerEase) * 0.3 : 0)
+    uniforms.uNoiseIntensity.value = c.noiseIntensity + (isPoweringOn ? (1 - powerEase) * 0.3 : 0) + flipNoise
     uniforms.uVignetteStrength.value = c.vignetteStrength
     uniforms.uVignetteStart.value = c.vignetteStart
-    uniforms.uBrightness.value = c.brightness * (screenMode === 'summary' ? powerEase : 1)
+    uniforms.uBrightness.value = c.brightness * (screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials' ? powerEase : 1) * bootBrightnessMix * flipDim
     uniforms.uBlackLevel.value = c.blackLevel
+    uniforms.uAberration.value = c.aberration + flipAberration
   })
+
+  const handlePointerDown = (event) => {
+    event.stopPropagation()
+    const action = resolveActionFromEvent(event)
+    if (disabled || !action) return
+    if (action === 'dismiss') {
+      onDismiss?.()
+      return
+    }
+    // Route new actions through onAction
+    if (action === 'highscores' || action === 'back' || action === 'confirmInitials') {
+      onAction?.(action)
+      return
+    }
+    // Handle slot clicks for initials (slotUp_0, slotDown_1, etc.)
+    if (action.startsWith('slotUp_') || action.startsWith('slotDown_')) {
+      const slotIndex = parseInt(action.split('_')[1], 10)
+      onAction?.('slotSelect', slotIndex)
+      onAction?.(action.startsWith('slotUp_') ? 'letterUp' : 'letterDown')
+      return
+    }
+    onStart?.()
+  }
 
   if (!gpu) return null
 
@@ -226,16 +338,7 @@ export function TvScreen({
             setHoveredAction(resolveActionFromEvent(event))
           }}
           onPointerLeave={() => setHoveredAction(null)}
-          onPointerDown={(event) => {
-            event.stopPropagation()
-            const action = resolveActionFromEvent(event)
-            if (disabled || !action) return
-            if (action === 'dismiss') {
-              onDismiss?.()
-              return
-            }
-            onStart?.()
-          }}
+          onPointerDown={handlePointerDown}
         >
           <primitive object={gpu.material} attach="material" />
         </mesh>

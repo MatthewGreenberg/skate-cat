@@ -14,6 +14,7 @@ import {
 } from 'postprocessing'
 import { N8AO } from '@react-three/postprocessing'
 import TransitionEffect from './TransitionEffect'
+import IntroFluidEffect from './IntroFluidEffect'
 import { gameState, getNightFactor } from '../store'
 import { interpolatePostSettings } from '../lib/postProcessing'
 import { useOptionalControls } from '../lib/debugControls'
@@ -39,10 +40,12 @@ export default function PostEffects({
   isTransitioning,
   transitionDirection = 'forward',
   showGameWorld,
+  showIntroOverlay,
   runActive,
   capturedTexture,
   gpuTier,
   chromaticSpike = 0,
+  introOverlaySettings,
 }) {
   const tier = gpuTier?.tier ?? 3
   const aoCtrl = useOptionalControls('AO', {
@@ -65,6 +68,7 @@ export default function PostEffects({
   const vignetteRef = useRef(null)
   const postMixRef = useRef(showGameWorld ? 1 : 0)
   const postMixStartRef = useRef(showGameWorld ? 1 : 0)
+  const introOverlayMixRef = useRef(showIntroOverlay ? 1 : 0)
   const wasTransitioningRef = useRef(false)
 
   if (bloomRef.current == null) {
@@ -151,6 +155,13 @@ export default function PostEffects({
       isTransitioning ? 0.24 : chromaticSpike > 0 ? 0.2 : 0.14
     )
 
+    const overlayTargetMix = showIntroOverlay && introOverlaySettings.enabled ? 1 : 0
+    introOverlayMixRef.current = THREE.MathUtils.lerp(
+      introOverlayMixRef.current,
+      overlayTargetMix,
+      overlayTargetMix > introOverlayMixRef.current ? 0.08 : 0.14
+    )
+
     const activeSettings = interpolatePostSettings(introSettings, gameSettings, postMixRef.current)
 
     if (aoRef.current) {
@@ -227,6 +238,11 @@ export default function PostEffects({
           direction={transitionDirection}
         />
       )}
+      <IntroFluidEffect
+        active={showIntroOverlay && introOverlaySettings.enabled}
+        mixRef={introOverlayMixRef}
+        settings={introOverlaySettings}
+      />
       <primitive object={brightnessContrast} />
       <primitive object={hueSaturation} />
       <primitive object={lensDistortion} />

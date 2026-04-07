@@ -177,34 +177,27 @@ export default function CameraRig({
         camLook.current.set(lookX, lookY, lookZ)
         applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
       } else {
-        const introYawTarget = cameraMode === 'intro'
-          ? state.pointer.x * INTRO_MOUSE_YAW_MAX
-          : 0
-        const introPitchTarget = cameraMode === 'intro'
-          ? state.pointer.y * INTRO_MOUSE_PITCH_SHIFT
-          : 0
+        const mouseScale = cameraMode === 'intro' ? 1 : 0.35
+        const introYawTarget = state.pointer.x * INTRO_MOUSE_YAW_MAX * mouseScale
+        const introPitchTarget = state.pointer.y * INTRO_MOUSE_PITCH_SHIFT * mouseScale
         introYaw.current = THREE.MathUtils.lerp(
           introYaw.current,
           introYawTarget,
           gameDelta * INTRO_MOUSE_YAW_RESPONSE
         )
 
-        const interactiveTargetPos = cameraMode === 'intro'
-          ? _vecG
-            .copy(idleTargetPos)
-            .sub(idleTargetLook)
-            .applyAxisAngle(_worldUp, introYaw.current)
-            .add(idleTargetLook)
-          : idleTargetPos
-        const interactiveTargetLook = cameraMode === 'intro'
-          ? _vecH.copy(idleTargetLook).add(
-            _vecI.set(
-              introYaw.current * INTRO_MOUSE_LOOK_SHIFT,
-              introPitchTarget,
-              0
-            )
+        const interactiveTargetPos = _vecG
+          .copy(idleTargetPos)
+          .sub(idleTargetLook)
+          .applyAxisAngle(_worldUp, introYaw.current)
+          .add(idleTargetLook)
+        const interactiveTargetLook = _vecH.copy(idleTargetLook).add(
+          _vecI.set(
+            introYaw.current * INTRO_MOUSE_LOOK_SHIFT,
+            introPitchTarget,
+            0
           )
-          : idleTargetLook
+        )
 
         camPos.current.lerp(interactiveTargetPos, gameDelta * INTRO_LERP_SPEED)
         camLook.current.lerp(interactiveTargetLook, gameDelta * INTRO_LERP_SPEED)

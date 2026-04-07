@@ -24,6 +24,7 @@ export function IntroLighting({
   boardAnchor,
   lampCtrl,
   motionFxCtrl,
+  bootVisualMix = 1,
 }) {
   const wallEdgeCoolLight = useOptionalControls('Intro', {
     'Wall edge cool': folder({
@@ -35,13 +36,15 @@ export function IntroLighting({
       decay: { value: 1.97, min: 0, max: 3, step: 0.01 },
     }),
   })
+  const roomPower = 0.14 + bootVisualMix * 0.86
+  const ambientPower = 0.25 + bootVisualMix * 0.75
 
   return (
     <>
       {/* Scene backdrop + depth cue */}
       <color attach="background" args={[ROOM_BACKGROUND]} />
 
-      <ambientLight intensity={75.16} color="#251922" />
+      <ambientLight intensity={75.16 * ambientPower} color="#251922" />
       {/* <hemisphereLight args={['#8e7464', '#08070b', 1.15]} /> */}
       {/* Spotlight targets (updated in IntroScene useFrame) */}
       <object3D ref={shadowTargetRef} position={[catPosition.x, floorY, catPosition.z]} />
@@ -51,7 +54,7 @@ export function IntroLighting({
       <pointLight
         ref={accentLightRef}
         position={[screenWorld.x + tvForward.x * 0.85, floorY + 0.28, screenWorld.z + tvForward.z * 0.9]}
-        intensity={6.4}
+        intensity={6.4 * roomPower}
         distance={7.8}
         decay={1.85}
         color="#fff"
@@ -80,7 +83,7 @@ export function IntroLighting({
       <pointLight
         ref={boardGlowRef}
         position={[boardAnchor.x, boardAnchor.y + 0.18, boardAnchor.z + 0.02]}
-        intensity={motionFxCtrl.boardGlowIntensity}
+        intensity={motionFxCtrl.boardGlowIntensity * roomPower}
         distance={2.6}
         decay={2}
         color={motionFxCtrl.boardGlowColor}
@@ -88,8 +91,9 @@ export function IntroLighting({
 
       {/* TV fill + wall wash + lamp (three point lights) + cool corner accent */}
       <spotLight
+        ref={sweepSpotlightRef}
         position={[screenWorld.x + tvForward.x * 0.2, screenWorld.y + 0.15, screenWorld.z + tvForward.z * 0.15]}
-        intensity={20}
+        intensity={20 * roomPower}
         angle={0.78}
         penumbra={0.8}
         distance={12}
@@ -98,15 +102,16 @@ export function IntroLighting({
         castShadow={false}
       />
       <pointLight
+        ref={tvGlowRef}
         position={[screenWorld.x, tvPanelCenterY + 0.7, backWallZ + 0.95]}
-        intensity={3.8}
+        intensity={3.8 * roomPower}
         distance={6.4}
         decay={2}
         color="#ffcf96"
       />
       <pointLight
         position={[lampCtrl.lampPosX - 0.2 * lampCtrl.lampScale, lampCtrl.lampPosY + 2.2 * lampCtrl.lampScale, lampCtrl.lampPosZ + 0.1 * lampCtrl.lampScale]}
-        intensity={5.2}
+        intensity={5.2 * roomPower}
         distance={7.8}
         decay={1.9}
         color="#ffd4a8"
@@ -114,7 +119,7 @@ export function IntroLighting({
 
       <pointLight
         position={[-wallEdgeCoolLight.x, wallEdgeCoolLight.y, wallEdgeCoolLight.z]}
-        intensity={wallEdgeCoolLight.intensity}
+        intensity={wallEdgeCoolLight.intensity * roomPower}
         distance={wallEdgeCoolLight.distance}
         decay={wallEdgeCoolLight.decay}
         color={'pink'}

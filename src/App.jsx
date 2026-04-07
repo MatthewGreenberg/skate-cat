@@ -1,4 +1,4 @@
-import { memo, useRef, useState, useCallback, useEffect } from 'react'
+import { Suspense, memo, useRef, useState, useCallback, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
@@ -10,7 +10,9 @@ import GameWorld, { GameWorldWarmup } from './components/GameWorld'
 import PostEffects, { TransitionAnimator } from './components/PostEffects'
 import SceneCapture from './components/SceneCapture'
 import {
+  createIntroOverlayControls,
   createPostProcessingControls,
+  DEFAULT_INTRO_OVERLAY_SETTINGS,
   DEFAULT_INTRO_POST_SETTINGS,
   DEFAULT_GAME_POST_SETTINGS,
 } from './lib/postProcessing'
@@ -40,11 +42,19 @@ import {
   getPerceivedMusicTime,
   TRACK_BEAT_PHASE_OFFSET_SECONDS,
 } from './rhythm'
+import { loadLeaderboard, isHighScore, insertScore } from './lib/leaderboard'
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 const AUTO_DPR = [1, 1.25]
 const HIGH_DPR = [1, 2]
 const QUIET_DPR = [1, 1]
+const BOOT_PHASE_LOADING = 'loading'
+const BOOT_PHASE_PRIMING = 'priming'
+const BOOT_PHASE_REVEALING = 'revealing'
+const BOOT_PHASE_ATTRACT = 'attract'
+const START_PHASE_IDLE = 'idle'
+const START_PHASE_ARMING = 'arming'
+const START_PHASE_LAUNCHING = 'launching'
 const PHASE_INTRO = 'intro'
 const PHASE_LAUNCHING = 'launching'
 const PHASE_RUNNING = 'running'
@@ -56,17 +66,147 @@ const CAPTURE_MODE_RETURN = 'return'
 const RETURN_SCREEN_TITLE = 'title'
 const RETURN_SCREEN_SUMMARY = 'summary'
 const END_GLITCH_DURATION_MS = 900
+const LOADING_PHASE_MIN_MS = 950
+const PRIMING_PHASE_MIN_MS = 700
+const BOOT_REVEAL_DURATION_MS = 1100
+const BOOT_ATTRACT_SETTLE_MS = 480
+const START_CONFIRM_MS = 220
+
+function clamp01(value) {
+  return Math.min(Math.max(value, 0), 1)
+}
+
+function BootOverlay({
+  visible,
+  opacity,
+  phase,
+  progress,
+  statusLabel,
+  detailLabel,
+}) {
+  if (!visible && opacity <= 0.001) return null
+
+  const showProgress = phase === BOOT_PHASE_LOADING || phase === BOOT_PHASE_PRIMING
+  const roundedProgress = Math.round(progress)
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'clamp(1.25rem, 3vw, 2.5rem)',
+        opacity,
+        pointerEvents: opacity > 0.15 ? 'auto' : 'none',
+        transition: phase === BOOT_PHASE_REVEALING ? 'none' : 'opacity 240ms ease-out',
+        background: `
+          radial-gradient(circle at 50% 18%, rgba(255, 188, 116, 0.18), transparent 36%),
+          radial-gradient(circle at 50% 120%, rgba(80, 220, 255, 0.16), transparent 40%),
+          linear-gradient(180deg, rgba(5, 6, 14, 0.86), rgba(4, 4, 10, 0.96))
+        `,
+        backdropFilter: 'blur(16px)',
+      }}
+    >
+      <div
+        style={{
+          width: 'min(420px, 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1rem',
+          textAlign: 'center',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'Knewave',
+            fontSize: 'clamp(2.2rem, 7vw, 4rem)',
+            letterSpacing: '0.05em',
+            color: '#fff7d5',
+            textShadow: '0 0 30px rgba(255, 209, 102, 0.2)',
+          }}
+        >
+          Skate Cat
+        </div>
+
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '14px',
+            borderRadius: '999px',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              inset: '2px auto 2px 2px',
+              width: `${clamp01(progress / 100) * 100}%`,
+              borderRadius: '999px',
+              background: 'linear-gradient(90deg, #7cf7ff, #ffd166 55%, #ff8db3)',
+              boxShadow: '0 0 20px rgba(124, 247, 255, 0.35)',
+              transition: 'width 140ms ease-out',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                width: '32%',
+                background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.42), transparent)',
+                animation: 'loadingBarShine 1.2s linear infinite',
+              }}
+            />
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontFamily: 'Nunito, sans-serif',
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: '0.78rem',
+            fontWeight: 900,
+            letterSpacing: '0.18em',
+          }}
+        >
+          {showProgress ? `${roundedProgress}% · ${statusLabel}` : statusLabel}
+        </div>
+
+        <div
+          style={{
+            maxWidth: '34rem',
+            fontFamily: 'Nunito, sans-serif',
+            color: 'rgba(255,255,255,0.52)',
+            fontSize: '0.8rem',
+            fontWeight: 800,
+            letterSpacing: '0.06em',
+          }}
+        >
+          {detailLabel}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const SceneCanvas = memo(function SceneCanvas({
   phase,
   transitionCaptureMode,
-  hasCompletedBootReveal,
+  bootVisualMix,
   canvasDpr,
   showGameWorld,
   isTransitioning,
   transitionDirection,
   runActive,
   transitionProgressRef,
+  showIntroOverlay,
   introDisabled,
   onStart,
   shouldMountGameWorld,
@@ -83,6 +223,7 @@ const SceneCanvas = memo(function SceneCanvas({
   transitionSettings,
   onTransitionComplete,
   introPost,
+  introOverlaySettings,
   gamePost,
   transitionSnapshotTextureRef,
   capturedTransitionTexture,
@@ -92,11 +233,19 @@ const SceneCanvas = memo(function SceneCanvas({
   introScreenMode,
   introSummary,
   introButtonLabel,
+  introInstructionLabel,
   gpuTier,
   chromaticSpike,
   cameraMode,
   onDismissIntroScreen,
   showIntroDismissButton,
+  bootStatusLabel,
+  bootDisplayedProgress,
+  bootReady,
+  highScore,
+  leaderboard,
+  initialsEntry,
+  onAction,
 }) {
   return (
     <Canvas
@@ -104,7 +253,6 @@ const SceneCanvas = memo(function SceneCanvas({
       style={{
         width: '100vw',
         height: '100vh',
-        opacity: hasCompletedBootReveal ? 1 : 0,
       }}
       gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
       shadows={{ type: (gpuTier?.tier ?? 3) <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
@@ -127,11 +275,20 @@ const SceneCanvas = memo(function SceneCanvas({
         <IntroScene
           onStart={onStart}
           onDismiss={onDismissIntroScreen}
+          onAction={onAction}
           disabled={introDisabled}
           buttonLabel={introButtonLabel}
+          instructionLabel={introInstructionLabel}
           screenMode={introScreenMode}
           summary={introSummary}
           showDismissButton={showIntroDismissButton}
+          bootVisualMix={bootVisualMix}
+          bootStatusLabel={bootStatusLabel}
+          bootProgress={bootDisplayedProgress}
+          bootReady={bootReady}
+          highScore={highScore}
+          leaderboard={leaderboard}
+          initialsEntry={initialsEntry}
         />
       )}
       {shouldMountGameWorld && (
@@ -171,10 +328,12 @@ const SceneCanvas = memo(function SceneCanvas({
         isTransitioning={isTransitioning}
         transitionDirection={transitionDirection}
         showGameWorld={showGameWorld}
+        showIntroOverlay={showIntroOverlay}
         runActive={runActive}
         capturedTexture={capturedTransitionTexture}
         gpuTier={gpuTier}
         chromaticSpike={chromaticSpike}
+        introOverlaySettings={introOverlaySettings}
       />
     </Canvas>
   )
@@ -189,18 +348,28 @@ export default function App() {
   const hasStartedMusicRef = useRef(false)
   const handleSongCompleteRef = useRef(() => { })
   const endGlitchTimeoutRef = useRef(0)
+  const startArmingTimeoutRef = useRef(0)
+  const bootPhaseEnteredAtRef = useRef(0)
   const shouldCaptureSceneRef = useRef(false)
   const transitionSnapshotTextureRef = useRef(null)
   const transitionCaptureModeRef = useRef(null)
   const [capturedTransitionTexture, setCapturedTransitionTexture] = useState(null)
   const [phase, setPhase] = useState(PHASE_INTRO)
+  const [bootPhase, setBootPhase] = useState(BOOT_PHASE_LOADING)
+  const [bootVisualMix, setBootVisualMix] = useState(0)
+  const [displayedBootProgress, setDisplayedBootProgress] = useState(0)
+  const [musicLoadState, setMusicLoadState] = useState('pending')
+  const [hasSettledAttractScreen, setHasSettledAttractScreen] = useState(false)
+  const [startPhase, setStartPhase] = useState(START_PHASE_IDLE)
   const [transitionDirection, setTransitionDirection] = useState('forward')
   const [transitionCaptureMode, setTransitionCaptureMode] = useState(null)
   const [returnScreenMode, setReturnScreenMode] = useState(RETURN_SCREEN_SUMMARY)
+  const [leaderboard, setLeaderboard] = useState(() => loadLeaderboard())
+  const [initialsEntry, setInitialsEntry] = useState(null)
+  const [tvScreenOverride, setTvScreenOverride] = useState(null)
   const [isEndingLocked, setIsEndingLocked] = useState(false)
   const [isGameWorldPrimed, setIsGameWorldPrimed] = useState(false)
   const [showDeathFullscreen, setShowDeathFullscreen] = useState(false)
-  const [hasCompletedBootReveal, setHasCompletedBootReveal] = useState(false)
   const [hasConfirmedMusicStart, setHasConfirmedMusicStart] = useState(false)
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownText, setCountdownText] = useState('')
@@ -211,7 +380,9 @@ export default function App() {
   const returnFreezeDurationRef = useRef(0.2)
   const { active: isLoadingAssets, progress: loadingProgress } = useProgress()
   const isAssetLoadComplete = !isLoadingAssets && loadingProgress >= 100
-  const showLoadingOverlay = !hasCompletedBootReveal
+  const isMusicReady = musicLoadState === 'ready'
+  const isMusicLoadSettled = musicLoadState !== 'pending'
+  const showBootOverlay = bootPhase !== BOOT_PHASE_ATTRACT || bootVisualMix < 0.999
   const isPreReturnGlitching = phase === PHASE_END_GLITCH
   const isTransitioning = phase === PHASE_LAUNCHING || phase === PHASE_RETURNING
   const isTransitionBusy = transitionCaptureMode !== null || isTransitioning || isPreReturnGlitching
@@ -239,8 +410,28 @@ export default function App() {
   const currentRunSummary = gameState.lastRunSummary.current
   const currentOutcome = currentRunSummary?.outcome ?? null
   const isReturnScreenActive = phase === PHASE_RETURNING || phase === PHASE_RESULTS
-  const introScreenMode = isReturnScreenActive ? returnScreenMode : RETURN_SCREEN_TITLE
-  const introButtonLabel = introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
+  const bootProgressTarget = (
+    (isAssetLoadComplete ? 72 : clamp01(loadingProgress / 100) * 72) +
+    (isGameWorldPrimed ? 18 : 0) +
+    (isMusicLoadSettled ? 10 : 0)
+  )
+  const introStartEnabled = (
+    phase === PHASE_INTRO &&
+    bootPhase === BOOT_PHASE_ATTRACT &&
+    hasSettledAttractScreen &&
+    isGameWorldPrimed &&
+    isMusicReady &&
+    !isTransitionBusy &&
+    startPhase === START_PHASE_IDLE &&
+    !tvScreenOverride
+  )
+  const introScreenMode = tvScreenOverride ?? (isReturnScreenActive ? returnScreenMode : RETURN_SCREEN_TITLE)
+  const highScore = leaderboard.length > 0 ? leaderboard[0].score : 0
+  const introButtonLabel = startPhase !== START_PHASE_IDLE
+    ? 'STARTING RUN'
+    : introScreenMode === 'leaderboard' ? 'BACK'
+      : introScreenMode === 'initials' ? 'OK'
+        : introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
   const introSummary = introScreenMode === RETURN_SCREEN_SUMMARY ? currentRunSummary : null
   const chromaticSpike = isPreReturnGlitching ? 1 : 0
   const cameraMode = isReturnScreenActive
@@ -256,6 +447,44 @@ export default function App() {
     currentOutcome === 'failed' &&
     showDeathFullscreen
   )
+  const bootOverlayOpacity = bootPhase === BOOT_PHASE_REVEALING ? 1 - bootVisualMix : bootPhase === BOOT_PHASE_ATTRACT ? 0 : 1
+  const bootStatusLabel = bootPhase === BOOT_PHASE_LOADING
+    ? 'LOADING CARTRIDGE'
+    : bootPhase === BOOT_PHASE_PRIMING
+      ? 'SYNCING STAGE'
+      : bootPhase === BOOT_PHASE_REVEALING
+        ? 'POWERING CRT ROOM'
+        : isMusicReady
+          ? 'PRESS START'
+          : 'AUDIO DECK OFFLINE'
+  const bootStatusDetail = bootPhase === BOOT_PHASE_LOADING
+    ? 'Streaming room assets and preparing the attract scene.'
+    : bootPhase === BOOT_PHASE_PRIMING
+      ? isMusicLoadSettled
+        ? isMusicReady
+          ? 'Stage geometry and audio transport are locked in.'
+          : 'Video is ready, but the audio deck failed to lock.'
+        : 'Warming gameplay systems and locking the music transport.'
+      : bootPhase === BOOT_PHASE_REVEALING
+        ? 'Handing off from platform boot to the in-world cabinet.'
+        : isMusicReady
+          ? 'Cabinet is live. Space or Enter drops you in.'
+          : 'Title is up, but start remains locked until audio is available.'
+  const introInstructionLabel = startPhase === START_PHASE_ARMING
+    ? 'SPINNING UP STAGE'
+    : startPhase === START_PHASE_LAUNCHING
+      ? 'DROPPING IN'
+      : introScreenMode === RETURN_SCREEN_SUMMARY
+        ? 'SPACE / ENTER TO PLAY AGAIN'
+        : isMusicReady
+          ? 'SPACE / ENTER TO SHRED'
+          : 'AUDIO DECK OFFLINE'
+  const introDisabled = tvScreenOverride
+    ? false
+    : isReturnScreenActive
+      ? isTransitionBusy || phase === PHASE_RETURNING || startPhase !== START_PHASE_IDLE
+      : !introStartEnabled
+  const showIntroOverlay = phase === PHASE_INTRO || phase === PHASE_RESULTS
 
   const handleVolumePointerDone = useCallback((event) => {
     event.currentTarget.blur()
@@ -347,6 +576,7 @@ export default function App() {
 
   const handleReturnToIntro = useCallback(() => {
     window.clearTimeout(endGlitchTimeoutRef.current)
+    window.clearTimeout(startArmingTimeoutRef.current)
     clearPlaybackState()
     shouldCaptureSceneRef.current = false
     transitionCaptureModeRef.current = null
@@ -363,16 +593,22 @@ export default function App() {
     setReturnScreenMode(RETURN_SCREEN_SUMMARY)
     setIsEndingLocked(false)
     setShowDeathFullscreen(false)
+    setStartPhase(START_PHASE_IDLE)
     setPhase(PHASE_INTRO)
   }, [clearPlaybackState, resetRunState])
 
   useEffect(() => () => {
     window.clearTimeout(endGlitchTimeoutRef.current)
+    window.clearTimeout(startArmingTimeoutRef.current)
   }, [])
 
   const introPost = useOptionalControls(
     'Intro',
     { 'Post Processing': folder(createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS)) }
+  )
+  const introOverlaySettings = useOptionalControls(
+    'Intro',
+    { 'Screen Overlay': folder(createIntroOverlayControls(DEFAULT_INTRO_OVERLAY_SETTINGS), { collapsed: true }) }
   )
   const gamePost = useOptionalControls(
     'Game',
@@ -431,12 +667,24 @@ export default function App() {
   }, [transitionSettings.returnFreezeDuration])
 
   useEffect(() => {
+    let cancelled = false
     const music = createBufferedMusicTransport('/skate-cat-2.mp3')
     music.onEnded = () => handleSongCompleteRef.current()
     musicRef.current = music
-    void music.preload().catch(() => { })
+    void music.preload()
+      .then(() => {
+        if (!cancelled) {
+          setMusicLoadState('ready')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMusicLoadState('failed')
+        }
+      })
 
     return () => {
+      cancelled = true
       hasStartedMusicRef.current = false
       if (musicRef.current === music) {
         musicRef.current = null
@@ -446,30 +694,88 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (
-      hasCompletedBootReveal ||
-      !isGameWorldPrimed ||
-      phase !== PHASE_INTRO ||
-      isTransitionBusy
-    ) {
-      return
+    bootPhaseEnteredAtRef.current = performance.now()
+
+    if (bootPhase === BOOT_PHASE_REVEALING) {
+      let animationFrameId = 0
+      const startedAt = performance.now()
+
+      const animateReveal = () => {
+        const elapsed = performance.now() - startedAt
+        const progress = clamp01(elapsed / BOOT_REVEAL_DURATION_MS)
+        setBootVisualMix(progress)
+
+        if (progress >= 1) {
+          setBootPhase(BOOT_PHASE_ATTRACT)
+          return
+        }
+
+        animationFrameId = window.requestAnimationFrame(animateReveal)
+      }
+
+      animationFrameId = window.requestAnimationFrame(animateReveal)
+      return () => window.cancelAnimationFrame(animationFrameId)
     }
 
-    let revealFrameA = 0
-    let revealFrameB = 0
-    revealFrameA = window.requestAnimationFrame(() => {
-      revealFrameB = window.requestAnimationFrame(() => {
-        setHasCompletedBootReveal(true)
-      })
-    })
-
-    return () => {
-      window.cancelAnimationFrame(revealFrameA)
-      window.cancelAnimationFrame(revealFrameB)
+    if (bootPhase === BOOT_PHASE_ATTRACT) {
+      const settleTimeout = window.setTimeout(() => {
+        setHasSettledAttractScreen(true)
+      }, BOOT_ATTRACT_SETTLE_MS)
+      return () => window.clearTimeout(settleTimeout)
     }
-  }, [hasCompletedBootReveal, isGameWorldPrimed, isTransitionBusy, phase])
+
+    return undefined
+  }, [bootPhase])
 
   useEffect(() => {
+    if (bootPhase !== BOOT_PHASE_LOADING || !isAssetLoadComplete) return undefined
+
+    const elapsed = performance.now() - bootPhaseEnteredAtRef.current
+    const timeout = window.setTimeout(() => {
+      setBootPhase(BOOT_PHASE_PRIMING)
+    }, Math.max(0, LOADING_PHASE_MIN_MS - elapsed))
+
+    return () => window.clearTimeout(timeout)
+  }, [bootPhase, isAssetLoadComplete])
+
+  useEffect(() => {
+    if (
+      bootPhase !== BOOT_PHASE_PRIMING ||
+      !isAssetLoadComplete ||
+      !isGameWorldPrimed ||
+      !isMusicLoadSettled
+    ) {
+      return undefined
+    }
+
+    const elapsed = performance.now() - bootPhaseEnteredAtRef.current
+    const timeout = window.setTimeout(() => {
+      setBootPhase(BOOT_PHASE_REVEALING)
+    }, Math.max(0, PRIMING_PHASE_MIN_MS - elapsed))
+
+    return () => window.clearTimeout(timeout)
+  }, [bootPhase, isAssetLoadComplete, isGameWorldPrimed, isMusicLoadSettled])
+
+  useEffect(() => {
+    if (bootPhase === BOOT_PHASE_ATTRACT && displayedBootProgress >= 99.5) return undefined
+
+    const intervalId = window.setInterval(() => {
+      setDisplayedBootProgress((current) => {
+        const target = bootPhase === BOOT_PHASE_REVEALING || bootPhase === BOOT_PHASE_ATTRACT
+          ? 100
+          : bootProgressTarget
+        const delta = target - current
+        if (Math.abs(delta) < 0.3) return target
+        return current + delta * (bootPhase === BOOT_PHASE_LOADING ? 0.14 : 0.18)
+      })
+    }, 50)
+
+    return () => window.clearInterval(intervalId)
+  }, [bootPhase, bootProgressTarget, displayedBootProgress])
+
+  useEffect(() => {
+    if (!debugControlsEnabled) return undefined
+
     const onKeyDown = (event) => {
       if (event.repeat) return
       if (canDismissDeathFullscreen && event.key.toLowerCase() === 'x') {
@@ -480,7 +786,10 @@ export default function App() {
 
       const isResetShortcut = (
         event.key.toLowerCase() === 'r' &&
-        (event.metaKey || event.ctrlKey || event.shiftKey)
+        event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
       )
       if (!isResetShortcut) return
 
@@ -610,6 +919,7 @@ export default function App() {
     gameState.speedBoostActive = false
     gameState.speedLinesOn = true
     setIsEndingLocked(false)
+    setStartPhase(START_PHASE_IDLE)
     setPhase(PHASE_RUNNING)
   }, [])
 
@@ -617,9 +927,7 @@ export default function App() {
     setIsGameWorldPrimed(true)
   }, [])
 
-  const handleStart = useCallback(() => {
-    if (!isGameWorldPrimed || isTransitionBusy) return
-
+  const startLaunchTransition = useCallback(() => {
     resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
     transitionProgressRef.current = 0
     setIsEndingLocked(false)
@@ -628,7 +936,23 @@ export default function App() {
     shouldCaptureSceneRef.current = true
     transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
     setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
-  }, [isGameWorldPrimed, isTransitionBusy, resetRunState])
+  }, [resetRunState])
+
+  const queueLaunchStart = useCallback((launchAction) => {
+    if (startPhase !== START_PHASE_IDLE || isTransitionBusy) return
+
+    window.clearTimeout(startArmingTimeoutRef.current)
+    setStartPhase(START_PHASE_ARMING)
+    startArmingTimeoutRef.current = window.setTimeout(() => {
+      setStartPhase(START_PHASE_LAUNCHING)
+      launchAction()
+    }, START_CONFIRM_MS)
+  }, [isTransitionBusy, startPhase])
+
+  const handleStart = useCallback(() => {
+    if (!introStartEnabled) return
+    queueLaunchStart(startLaunchTransition)
+  }, [introStartEnabled, queueLaunchStart, startLaunchTransition])
 
   const handleSceneCaptured = useCallback((sceneTexture) => {
     const captureMode = transitionCaptureModeRef.current
@@ -653,6 +977,7 @@ export default function App() {
         handleReturnToIntro()
         return
       }
+      setStartPhase(START_PHASE_IDLE)
       setPhase(PHASE_RESULTS)
       setIsEndingLocked(false)
       return
@@ -673,18 +998,118 @@ export default function App() {
   }, [handleSongComplete])
 
   const handleRestart = useCallback(() => {
-    resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
-    transitionProgressRef.current = 0
-    setCapturedTransitionTexture(null)
-    setTransitionDirection('forward')
-    setIsEndingLocked(false)
-    setShowDeathFullscreen(false)
-    setPhase(PHASE_INTRO)
-    gameState.lastRunSummary.current = null
-    shouldCaptureSceneRef.current = true
-    transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
-    setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
-  }, [resetRunState])
+    queueLaunchStart(() => {
+      resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
+      transitionProgressRef.current = 0
+      setCapturedTransitionTexture(null)
+      setTransitionDirection('forward')
+      setIsEndingLocked(false)
+      setShowDeathFullscreen(false)
+      setPhase(PHASE_INTRO)
+      gameState.lastRunSummary.current = null
+      setTvScreenOverride(null)
+      setInitialsEntry(null)
+      shouldCaptureSceneRef.current = true
+      transitionCaptureModeRef.current = CAPTURE_MODE_LAUNCH
+      setTransitionCaptureMode(CAPTURE_MODE_LAUNCH)
+    })
+  }, [queueLaunchStart, resetRunState])
+
+  // Leaderboard: set screen mode directly (TvScreen handles the smooth CRT transition)
+  const flipToScreen = useCallback((targetMode) => {
+    setTvScreenOverride(targetMode)
+  }, [])
+
+  // Leaderboard: auto-trigger initials entry after summary if high score
+  const hasTriggeredInitialsRef = useRef(false)
+  useEffect(() => {
+    if (introScreenMode !== RETURN_SCREEN_SUMMARY) {
+      hasTriggeredInitialsRef.current = false
+      return
+    }
+    // Already triggered or already in initials
+    if (hasTriggeredInitialsRef.current || tvScreenOverride) return
+    const summary = currentRunSummary
+    if (!summary) return
+
+    // Wait for the summary animation to complete before triggering
+    const timer = window.setTimeout(() => {
+      if (isHighScore(summary.totalScore)) {
+        hasTriggeredInitialsRef.current = true
+        setInitialsEntry({
+          initials: ['A', 'A', 'A'],
+          cursorPos: 0,
+          score: summary.totalScore,
+          rank: summary.rank,
+        })
+        flipToScreen('initials')
+      }
+    }, 3200) // After summary animation (~2.5s) + brief pause
+    return () => window.clearTimeout(timer)
+  }, [currentRunSummary, introScreenMode, flipToScreen, tvScreenOverride])
+
+  const handleTvAction = useCallback((action, payload) => {
+    if (action === 'highscores') {
+      flipToScreen('leaderboard')
+      return
+    }
+    if (action === 'back') {
+      flipToScreen(null)
+      return
+    }
+    if (action === 'letterUp') {
+      setInitialsEntry(prev => {
+        if (!prev) return prev
+        const next = [...prev.initials]
+        const code = next[prev.cursorPos].charCodeAt(0)
+        next[prev.cursorPos] = String.fromCharCode(code >= 90 ? 65 : code + 1) // A-Z wrap
+        return { ...prev, initials: next }
+      })
+      return
+    }
+    if (action === 'letterDown') {
+      setInitialsEntry(prev => {
+        if (!prev) return prev
+        const next = [...prev.initials]
+        const code = next[prev.cursorPos].charCodeAt(0)
+        next[prev.cursorPos] = String.fromCharCode(code <= 65 ? 90 : code - 1)
+        return { ...prev, initials: next }
+      })
+      return
+    }
+    if (action === 'cursorLeft') {
+      setInitialsEntry(prev => prev ? { ...prev, cursorPos: Math.max(0, prev.cursorPos - 1) } : prev)
+      return
+    }
+    if (action === 'cursorRight') {
+      setInitialsEntry(prev => prev ? { ...prev, cursorPos: Math.min(2, prev.cursorPos + 1) } : prev)
+      return
+    }
+    if (action === 'letterDirect') {
+      setInitialsEntry(prev => {
+        if (!prev) return prev
+        const next = [...prev.initials]
+        next[prev.cursorPos] = payload
+        return { ...prev, initials: next, cursorPos: Math.min(2, prev.cursorPos + 1) }
+      })
+      return
+    }
+    if (action === 'slotSelect') {
+      setInitialsEntry(prev => prev ? { ...prev, cursorPos: Math.max(0, Math.min(2, payload)) } : prev)
+      return
+    }
+    if (action === 'confirmInitials') {
+      if (!initialsEntry) return
+      const updated = insertScore(
+        initialsEntry.initials.join(''),
+        initialsEntry.score,
+        initialsEntry.rank,
+      )
+      setLeaderboard(updated)
+      setInitialsEntry(null)
+      flipToScreen(null)
+    }
+  }, [initialsEntry, flipToScreen])
 
   const playJumpSfx = useCallback(() => {
     const jump = jumpSfxRef.current
@@ -711,76 +1136,16 @@ export default function App() {
     sfx.play().catch(() => { })
   }, [])
 
-  const loadingLabel = isAssetLoadComplete ? 'WARMING UP' : 'LOADING'
-  const introDisabled = !isGameWorldPrimed || isTransitionBusy || phase === PHASE_RETURNING
-
   return (
     <>
-      {showLoadingOverlay && (
-        <>
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 1200,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '1.2rem',
-              background: 'radial-gradient(ellipse at 50% 40%, rgba(40, 50, 85, 0.92), rgba(8, 11, 20, 0.98))',
-              color: 'white',
-              fontFamily: 'Knewave',
-              letterSpacing: '0.04em',
-            }}
-          >
-            <div style={{
-              fontSize: 'clamp(2rem, 6vw, 3.2rem)',
-              animation: 'gameLoadingPulse 1.2s ease-in-out infinite',
-              textShadow: '0 0 30px rgba(255, 107, 53, 0.3), 2px 2px 0 rgba(255, 107, 53, 0.25)',
-            }}>
-              {loadingLabel}
-            </div>
-            <div style={{
-              position: 'relative',
-              width: 'clamp(180px, 50vw, 280px)',
-              height: '12px',
-              borderRadius: '999px',
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '2px solid rgba(255, 255, 255, 0.12)',
-              overflow: 'hidden',
-            }}>
-              <div style={{
-                position: 'absolute',
-                inset: '2px',
-                borderRadius: '999px',
-                background: 'linear-gradient(90deg, #FF6B35, #FF8F5C, #FFD166)',
-                width: `${Math.round(loadingProgress)}%`,
-                transition: 'width 0.3s ease-out',
-                boxShadow: '0 0 12px rgba(255, 107, 53, 0.6)',
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  top: 0,
-                  width: '40%',
-                  height: '100%',
-                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-                  animation: 'loadingBarShine 1.5s ease-in-out infinite',
-                }} />
-              </div>
-            </div>
-            <div style={{
-              fontSize: '0.85rem',
-              fontFamily: 'Nunito, sans-serif',
-              fontWeight: 800,
-              opacity: 0.6,
-              letterSpacing: '0.15em',
-            }}>
-              {Math.round(loadingProgress)}%
-            </div>
-          </div>
-        </>
-      )}
+      <BootOverlay
+        visible={showBootOverlay}
+        opacity={bootOverlayOpacity}
+        phase={bootPhase}
+        progress={displayedBootProgress}
+        statusLabel={bootStatusLabel}
+        detailLabel={bootStatusDetail}
+      />
       <audio ref={jumpSfxRef} src="/jump.wav" preload="auto" />
       <audio ref={jump2SfxRef} src="/jump2.wav" preload="auto" />
       <audio ref={dieSfxRef} src="/die.wav" preload="auto" />
@@ -824,7 +1189,7 @@ export default function App() {
           visible={runActive && !isGameOver}
         />
       )}
-      {(runActive || phase === PHASE_LAUNCHING) && (
+      {debugControlsEnabled && (runActive || phase === PHASE_LAUNCHING) && (
         <button
           onClick={handleReturnToIntro}
           style={{
@@ -905,47 +1270,60 @@ export default function App() {
         </div>
       )}
       <GameHud musicRef={musicRef} visible={runActive && !isGameOver} />
-      <SceneCanvas
-        phase={phase}
-        transitionCaptureMode={transitionCaptureMode}
-        hasCompletedBootReveal={hasCompletedBootReveal}
-        canvasDpr={canvasDpr}
-        showGameWorld={showGameWorld}
-        isTransitioning={isTransitioning}
-        transitionDirection={transitionDirection}
-        runActive={runActive}
-        transitionProgressRef={transitionProgressRef}
-        introDisabled={introDisabled}
-        onStart={phase === PHASE_RESULTS ? handleRestart : handleStart}
-        shouldMountGameWorld={shouldMountGameWorld}
-        sceneActive={sceneActive}
-        isGameOver={isGameOver}
-        isCountdownActive={isCountdownActive}
-        useOriginalMaterials={useOriginalMaterials}
-        trailTargetRef={trailTarget}
-        musicRef={musicRef}
-        onJumpSfx={playJumpSfx}
-        onLogHit={playDieSfx}
-        isWarmingGameWorld={isWarmingGameWorld}
-        onGameWorldPrimed={handleGameWorldPrimed}
-        transitionSettings={transitionSettings}
-        onTransitionComplete={handleTransitionComplete}
-        introPost={introPost}
-        gamePost={gamePost}
-        transitionSnapshotTextureRef={transitionSnapshotTextureRef}
-        capturedTransitionTexture={capturedTransitionTexture}
-        shouldCaptureSceneRef={shouldCaptureSceneRef}
-        onSceneCaptured={handleSceneCaptured}
-        foliageSegmentCount={foliageSegmentCount}
-        introScreenMode={introScreenMode}
-        introSummary={introSummary}
-        introButtonLabel={phase === PHASE_RESULTS ? 'PLAY AGAIN' : introButtonLabel}
-        gpuTier={gpuTier}
-        chromaticSpike={chromaticSpike}
-        cameraMode={cameraMode}
-        onDismissIntroScreen={() => setShowDeathFullscreen(false)}
-        showIntroDismissButton={canDismissDeathFullscreen}
-      />
+      <Suspense fallback={null}>
+        <SceneCanvas
+          phase={phase}
+          bootPhase={bootPhase}
+          transitionCaptureMode={transitionCaptureMode}
+          bootVisualMix={bootVisualMix}
+          canvasDpr={canvasDpr}
+          showGameWorld={showGameWorld}
+          isTransitioning={isTransitioning}
+          transitionDirection={transitionDirection}
+          runActive={runActive}
+          transitionProgressRef={transitionProgressRef}
+          showIntroOverlay={showIntroOverlay}
+          introDisabled={introDisabled}
+          onStart={phase === PHASE_RESULTS ? handleRestart : handleStart}
+          shouldMountGameWorld={shouldMountGameWorld}
+          sceneActive={sceneActive}
+          isGameOver={isGameOver}
+          isCountdownActive={isCountdownActive}
+          useOriginalMaterials={useOriginalMaterials}
+          trailTargetRef={trailTarget}
+          musicRef={musicRef}
+          onJumpSfx={playJumpSfx}
+          onLogHit={playDieSfx}
+          isWarmingGameWorld={isWarmingGameWorld}
+          onGameWorldPrimed={handleGameWorldPrimed}
+          transitionSettings={transitionSettings}
+          onTransitionComplete={handleTransitionComplete}
+          introPost={introPost}
+          introOverlaySettings={introOverlaySettings}
+          gamePost={gamePost}
+          transitionSnapshotTextureRef={transitionSnapshotTextureRef}
+          capturedTransitionTexture={capturedTransitionTexture}
+          shouldCaptureSceneRef={shouldCaptureSceneRef}
+          onSceneCaptured={handleSceneCaptured}
+          foliageSegmentCount={foliageSegmentCount}
+          introScreenMode={introScreenMode}
+          introSummary={introSummary}
+          introButtonLabel={introButtonLabel}
+          introInstructionLabel={introInstructionLabel}
+          gpuTier={gpuTier}
+          chromaticSpike={chromaticSpike}
+          cameraMode={cameraMode}
+          onDismissIntroScreen={() => setShowDeathFullscreen(false)}
+          showIntroDismissButton={canDismissDeathFullscreen}
+          bootStatusLabel={bootStatusLabel}
+          bootDisplayedProgress={displayedBootProgress}
+          bootReady={isAssetLoadComplete && isGameWorldPrimed && isMusicReady}
+          highScore={highScore}
+          leaderboard={leaderboard}
+          initialsEntry={initialsEntry}
+          onAction={handleTvAction}
+        />
+      </Suspense>
     </>
   )
 }

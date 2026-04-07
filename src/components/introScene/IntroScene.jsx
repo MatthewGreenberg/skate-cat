@@ -25,11 +25,20 @@ import { TvScreen } from './TvScreen'
 export default function IntroScene({
   onStart,
   onDismiss,
+  onAction,
   disabled = false,
   buttonLabel = 'PRESS START',
+  instructionLabel = 'SPACE / ENTER TO SHRED',
   screenMode = 'title',
   summary = null,
   showDismissButton = false,
+  bootVisualMix = 1,
+  bootStatusLabel = 'SYNCING STAGE',
+  bootProgress = 0,
+  bootReady = false,
+  highScore = 0,
+  leaderboard = [],
+  initialsEntry = null,
 }) {
   const { camera, gl } = useThree()
   const tvGlowRef = useRef()
@@ -383,11 +392,13 @@ export default function IntroScene({
   // Flicker TV/accent lights; orbit hero + sweep spots; follow cat/board for shadows and glow
   useFrame((state) => {
     const t = state.clock.elapsedTime
+    const roomPower = THREE.MathUtils.lerp(0.16, 1, bootVisualMix)
+    const accentPower = THREE.MathUtils.lerp(0.12, 1, bootVisualMix)
     if (tvGlowRef.current) {
-      tvGlowRef.current.intensity = 21.5 + Math.sin(t * 8.4) * 1.2 + Math.sin(t * 15.5) * 0.5
+      tvGlowRef.current.intensity = (21.5 + Math.sin(t * 8.4) * 1.2 + Math.sin(t * 15.5) * 0.5) * roomPower
     }
     if (accentLightRef.current) {
-      accentLightRef.current.intensity = 6.4 + Math.sin(t * 2.6) * 0.55
+      accentLightRef.current.intensity = (6.4 + Math.sin(t * 2.6) * 0.55) * accentPower
     }
     if (heroSpotlightRef.current) {
       heroSpotlightRef.current.position.set(
@@ -395,7 +406,7 @@ export default function IntroScene({
         catHeroTarget.y + motionFxCtrl.heroHeight + Math.cos(t * 0.65) * 0.14,
         catHeroTarget.z + 1.75 + Math.cos(t * 0.75) * motionFxCtrl.heroOrbitRadius * 0.8
       )
-      heroSpotlightRef.current.intensity = motionFxCtrl.heroSpotIntensity + Math.sin(t * 2.2) * 0.45
+      heroSpotlightRef.current.intensity = (motionFxCtrl.heroSpotIntensity + Math.sin(t * 2.2) * 0.45) * roomPower
       heroSpotlightRef.current.angle = motionFxCtrl.heroSpotAngle + Math.sin(t * 0.8) * 0.025
     }
     if (shadowTargetRef.current) {
@@ -409,7 +420,7 @@ export default function IntroScene({
         catHeroTarget.y + 1.95 + Math.cos(t * 0.6) * 0.22,
         screenWorld.z + 1.85 + Math.cos(t * motionFxCtrl.sweepSpeed * 0.85) * 0.45
       )
-      sweepSpotlightRef.current.intensity = motionFxCtrl.sweepSpotIntensity + Math.sin(t * 1.3) * 0.35
+      sweepSpotlightRef.current.intensity = (motionFxCtrl.sweepSpotIntensity + Math.sin(t * 1.3) * 0.35) * roomPower
     }
     if (sweepSpotlightTargetRef.current) {
       sweepSpotlightTargetRef.current.position.set(
@@ -421,7 +432,7 @@ export default function IntroScene({
     }
     if (boardGlowRef.current) {
       boardGlowRef.current.position.set(boardAnchor.x, boardAnchor.y + 0.18, boardAnchor.z + 0.02)
-      boardGlowRef.current.intensity = motionFxCtrl.boardGlowIntensity + (Math.sin(t * 3.4) * 0.5 + 0.5) * 0.9
+      boardGlowRef.current.intensity = (motionFxCtrl.boardGlowIntensity + (Math.sin(t * 3.4) * 0.5 + 0.5) * 0.9) * roomPower
     }
   })
 
@@ -446,6 +457,7 @@ export default function IntroScene({
         boardAnchor={boardAnchor}
         lampCtrl={lampCtrl}
         motionFxCtrl={motionFxCtrl}
+        bootVisualMix={bootVisualMix}
       />
 
       {/* Floor, walls, rug, lamp mesh, contact-shadow quads */}
@@ -540,7 +552,7 @@ export default function IntroScene({
           curveAmount={tvUiCtrl.uiCurve}
           showGlow={tvUiCtrl.glowEnabled}
           glowScale={[tvUiCtrl.glowScaleX, tvUiCtrl.glowScaleY]}
-          glowOpacity={tvUiCtrl.glowOpacity}
+          glowOpacity={tvUiCtrl.glowOpacity * THREE.MathUtils.lerp(0.18, 1, bootVisualMix)}
           glowOffsetZ={tvUiCtrl.glowOffsetZ}
           crt={{
             warp: tvCrtCtrl.crtWarp,
@@ -562,11 +574,20 @@ export default function IntroScene({
           }}
           onStart={onStart}
           onDismiss={onDismiss}
+          onAction={onAction}
           disabled={disabled}
           buttonLabel={buttonLabel}
+          instructionLabel={instructionLabel}
           screenMode={screenMode}
           summary={summary}
           showDismissButton={showDismissButton}
+          bootVisualMix={bootVisualMix}
+          bootStatusLabel={bootStatusLabel}
+          bootProgress={bootProgress}
+          bootReady={bootReady}
+          highScore={highScore}
+          leaderboard={leaderboard}
+          initialsEntry={initialsEntry}
         />
       </group>
 

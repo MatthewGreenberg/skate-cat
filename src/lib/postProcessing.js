@@ -36,6 +36,35 @@ export const DEFAULT_INTRO_POST_SETTINGS = {
   distortionY: 0,
 };
 
+export const INTRO_OVERLAY_CONTROL_LIMITS = {
+  distortionPixels: { min: 0, max: 4, step: 0.05 },
+  flowScale: { min: 0.5, max: 12, step: 0.1 },
+  flowSpeed: { min: 0, max: 2, step: 0.01 },
+  cellSize: { min: 1, max: 16, step: 0.25 },
+  pixelatePixels: { min: 1, max: 48, step: 1 },
+  blendStrength: { min: 0, max: 1, step: 0.01 },
+  desaturateBias: { min: 0, max: 1, step: 0.01 },
+  desaturateAmount: { min: 0, max: 1, step: 0.01 },
+  brushRadius: { min: 0.01, max: 0.18, step: 0.0025 },
+  brushStrength: { min: 0.05, max: 1, step: 0.01 },
+  decayRate: { min: 0.2, max: 6, step: 0.05 },
+};
+
+export const DEFAULT_INTRO_OVERLAY_SETTINGS = {
+  enabled: true,
+  distortionPixels: 4,
+  flowScale: 2.3,
+  flowSpeed: 0.28,
+  cellSize: 3,
+  pixelatePixels: 27,
+  blendStrength: 0.28,
+  desaturateBias: 0.55,
+  desaturateAmount: 0.83,
+  brushRadius: 0.06,
+  brushStrength: 1,
+  decayRate: 1.5,
+};
+
 export function createPostProcessingControls(defaults) {
   return {
     bloomIntensity: {
@@ -67,6 +96,56 @@ export function createPostProcessingControls(defaults) {
     distortionY: {
       value: defaults.distortionY,
       ...POST_CONTROL_LIMITS.distortionY,
+    },
+  };
+}
+
+export function createIntroOverlayControls(defaults) {
+  return {
+    enabled: defaults.enabled,
+    distortionPixels: {
+      value: defaults.distortionPixels,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.distortionPixels,
+    },
+    flowScale: {
+      value: defaults.flowScale,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.flowScale,
+    },
+    flowSpeed: {
+      value: defaults.flowSpeed,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.flowSpeed,
+    },
+    cellSize: {
+      value: defaults.cellSize,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.cellSize,
+    },
+    pixelatePixels: {
+      value: defaults.pixelatePixels,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.pixelatePixels,
+    },
+    blendStrength: {
+      value: defaults.blendStrength,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.blendStrength,
+    },
+    desaturateBias: {
+      value: defaults.desaturateBias,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.desaturateBias,
+    },
+    desaturateAmount: {
+      value: defaults.desaturateAmount,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.desaturateAmount,
+    },
+    brushRadius: {
+      value: defaults.brushRadius,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.brushRadius,
+    },
+    brushStrength: {
+      value: defaults.brushStrength,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.brushStrength,
+    },
+    decayRate: {
+      value: defaults.decayRate,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.decayRate,
     },
   };
 }

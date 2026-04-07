@@ -230,8 +230,10 @@ function drawActionButton(ctx, width, height, {
   disabled,
   buttonLabel,
   instructionLabel,
+  disabledInstructionLabel = instructionLabel,
   instructionFont = '900 22px "Nunito", sans-serif',
   y = 0.82,
+  hideInstruction = false,
 }) {
   const buttonScale =
     disabled ? 0.98
@@ -308,19 +310,21 @@ function drawActionButton(ctx, width, height, {
   ctx.font = '52px "Knewave", cursive';
   ctx.fillText(buttonLabel, width * 0.5, buttonY + buttonHeight * 0.69);
 
-  ctx.fillStyle = "#201130";
-  ctx.font = instructionFont;
-  ctx.fillText(
-    disabled ? "LOADING TAPE..." : instructionLabel,
-    width * 0.5,
-    height * 0.94,
-  );
-  ctx.fillStyle = "#fff8d8";
-  ctx.fillText(
-    disabled ? "LOADING TAPE..." : instructionLabel,
-    width * 0.5,
-    height * 0.937,
-  );
+  if (!hideInstruction) {
+    ctx.fillStyle = "#201130";
+    ctx.font = instructionFont;
+    ctx.fillText(
+      disabled ? disabledInstructionLabel : instructionLabel,
+      width * 0.5,
+      height * 0.94,
+    );
+    ctx.fillStyle = "#fff8d8";
+    ctx.fillText(
+      disabled ? disabledInstructionLabel : instructionLabel,
+      width * 0.5,
+      height * 0.937,
+    );
+  }
   ctx.restore();
 }
 
@@ -411,11 +415,12 @@ export function getTvScreenActionAtPoint(
   width,
   height,
   {
+    screenMode = "title",
     disabled = false,
     showDismissButton = false,
   } = {},
 ) {
-  if (disabled) return null;
+  if (disabled || screenMode === "boot") return null;
 
   if (showDismissButton) {
     const dismissBounds = getDismissButtonBounds(width);
@@ -429,6 +434,43 @@ export function getTvScreenActionAtPoint(
     hovered: false,
     y: 0.82,
   });
+
+  if (screenMode === "title") {
+    if (isPointInBounds(x, y, actionBounds)) {
+      return "start";
+    }
+    const hsBounds = getHighScoresButtonBounds(width, height);
+    if (isPointInBounds(x, y, hsBounds)) {
+      return "highscores";
+    }
+    return null;
+  }
+
+  if (screenMode === "leaderboard") {
+    if (isPointInBounds(x, y, actionBounds)) {
+      return "back";
+    }
+    return null;
+  }
+
+  if (screenMode === "initials") {
+    if (isPointInBounds(x, y, actionBounds)) {
+      return "confirmInitials";
+    }
+    // Check letter slot clicks
+    const slots = getInitialsSlotBounds(width, height);
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      if (isPointInBounds(x, y, slot)) {
+        const midY = slot.y + slot.height / 2;
+        if (y < midY) return `slotUp_${i}`;
+        return `slotDown_${i}`;
+      }
+    }
+    return null;
+  }
+
+  // summary and other modes
   if (isPointInBounds(x, y, actionBounds)) {
     return "start";
   }
@@ -436,7 +478,112 @@ export function getTvScreenActionAtPoint(
   return null;
 }
 
-function drawTitleScreen(ctx, width, height, { hovered, disabled }) {
+function drawBootScreen(ctx, width, height, {
+  elapsed = 0,
+  bootStatusLabel = "SYNCING STAGE",
+  bootProgress = 0,
+  bootReady = false,
+}) {
+  const glowPulse = 0.5 + Math.sin(elapsed * 2.6) * 0.5;
+  const progressRatio = clamp01(bootProgress / 100);
+  const diagnostics = [
+    ["CARTRIDGE", progressRatio >= 0.72 ? "LOCKED" : "READING"],
+    ["TRACK BUS", bootProgress >= 90 ? (bootReady ? "LOCKED" : "FAULT") : "WAIT"],
+    ["CRT LINK", progressRatio >= 0.92 ? "STABLE" : "SYNC"],
+  ];
+
+  ctx.save();
+  ctx.fillStyle = "rgba(5, 10, 19, 0.92)";
+  ctx.fillRect(58, 58, width - 116, height - 116);
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(124, 247, 255, 0.42)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(78, 78, width - 156, height - 156);
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(124, 247, 255, 0.78)";
+  ctx.font = '900 18px "Nunito", sans-serif';
+  ctx.fillText("ARCADE SYSTEM DIAGNOSTICS", 102, 126);
+  ctx.fillStyle = "#fff4c8";
+  ctx.font = '72px "Knewave", cursive';
+  ctx.fillText("SKATE CAT", 98, 218);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(100, 246, width - 200, 74, 24);
+  ctx.fillStyle = "rgba(10, 21, 34, 0.92)";
+  ctx.strokeStyle = bootReady ? "#ffd166" : "#7cf7ff";
+  ctx.lineWidth = 4;
+  ctx.shadowColor = bootReady ? "rgba(255, 209, 102, 0.42)" : "rgba(124, 247, 255, 0.36)";
+  ctx.shadowBlur = 18 + glowPulse * 10;
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#ffffff";
+  ctx.font = '900 28px "Nunito", sans-serif';
+  ctx.fillText(bootStatusLabel, 128, 292);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(100, 354, width - 200, 26, 12);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(100, 354, (width - 200) * progressRatio, 26, 12);
+  const progressGradient = ctx.createLinearGradient(100, 0, width - 100, 0);
+  progressGradient.addColorStop(0, "#7cf7ff");
+  progressGradient.addColorStop(0.55, "#ffd166");
+  progressGradient.addColorStop(1, "#ff8db3");
+  ctx.fillStyle = progressGradient;
+  ctx.shadowColor = "rgba(124, 247, 255, 0.34)";
+  ctx.shadowBlur = 14;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.62)";
+  ctx.font = '900 19px "Nunito", sans-serif';
+  ctx.fillText(`${Math.round(bootProgress)}%`, 100, 415);
+  ctx.fillStyle = bootReady ? "#fff1c6" : "rgba(255,255,255,0.82)";
+  ctx.fillText(bootReady ? "START BUS READY" : "AWAITING FINAL LOCK", width - 346, 415);
+  ctx.restore();
+
+  diagnostics.forEach(([label, value], index) => {
+    const x = 156 + index * 232;
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x - 74, 474, 148, 94, 20);
+    ctx.fillStyle = "rgba(20, 12, 34, 0.88)";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 3;
+    ctx.fill();
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.48)";
+    ctx.font = '900 16px "Nunito", sans-serif';
+    ctx.fillText(label, x, 510);
+    ctx.fillStyle = value === "FAULT" ? "#ff8db3" : value === "LOCKED" || value === "READY" ? "#ffd166" : "#7cf7ff";
+    ctx.font = '900 24px "Nunito", sans-serif';
+    ctx.fillText(value, x, 552);
+    ctx.restore();
+  });
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.font = '900 18px "Nunito", sans-serif';
+  ctx.fillText("TITLE UNLOCKS WHEN BOOT COMPLETES", width * 0.5, height * 0.9);
+  ctx.restore();
+}
+
+function drawTitleScreen(ctx, width, height, { hovered, disabled, highScore = 0, highScoresHovered = false }) {
   const hoverMix = hovered && !disabled ? 1 : 0;
 
   drawHudPill(ctx, width * 0.16, height * 0.09, 160, 56, "1UP", {
@@ -445,7 +592,8 @@ function drawTitleScreen(ctx, width, height, { hovered, disabled }) {
     text: "#dbfdff",
     glow: "rgba(124, 247, 255, 0.5)",
   });
-  drawHudPill(ctx, width * 0.5, height * 0.09, 320, 56, "HI-SCORE 90210", {
+  const hiScoreLabel = highScore > 0 ? `HI-SCORE ${highScore}` : "HI-SCORE ---";
+  drawHudPill(ctx, width * 0.5, height * 0.09, 320, 56, hiScoreLabel, {
     fill: "rgba(66, 18, 48, 0.92)",
     stroke: "#ffd166",
     text: "#fff5d5",
@@ -516,6 +664,62 @@ function drawTitleScreen(ctx, width, height, { hovered, disabled }) {
   drawPawPrint(ctx, width * 0.88, height * 0.79, 0.72, "#7cf7ff", 0.36, 0.22);
   drawSparkle(ctx, width * 0.18, height * 0.24, 13, "#fff2a8", 0.28, 0.9);
   drawSparkle(ctx, width * 0.82, height * 0.28, 13, "#73f7ff", -0.34, 0.9);
+
+  // "HIGH SCORES" button — styled like a smaller version of the main action button
+  const hsHov = highScoresHovered;
+  const hsScale = hsHov ? 1.06 : 1;
+  const hsW = 260 * hsScale;
+  const hsH = 54 * hsScale;
+  const hsX = width * 0.5;
+  const hsY = height * 0.965;
+  const hsBtnX = hsX - hsW / 2;
+  const hsBtnY = hsY - hsH / 2;
+
+  ctx.save();
+  // Outer frame glow
+  ctx.beginPath();
+  ctx.roundRect(hsBtnX - 10, hsBtnY - 8, hsW + 20, hsH + 16, 30);
+  ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
+  ctx.strokeStyle = hsHov ? "rgba(124, 247, 255, 0.6)" : "rgba(124, 247, 255, 0.28)";
+  ctx.lineWidth = 3;
+  ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.4)" : "rgba(124, 247, 255, 0.15)";
+  ctx.shadowBlur = hsHov ? 20 : 10;
+  ctx.fill();
+  ctx.stroke();
+
+  // Inner gradient fill
+  ctx.beginPath();
+  ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
+  const hsGrad = ctx.createLinearGradient(0, hsBtnY, 0, hsBtnY + hsH);
+  hsGrad.addColorStop(0, hsHov ? "#9bfcff" : "#7cf7ff");
+  hsGrad.addColorStop(0.5, hsHov ? "#5fd4f7" : "#4db8d8");
+  hsGrad.addColorStop(1, hsHov ? "#6fa0ff" : "#5580cc");
+  ctx.fillStyle = hsGrad;
+  ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.7)" : "rgba(124, 247, 255, 0.3)";
+  ctx.shadowBlur = hsHov ? 22 : 12;
+  ctx.fill();
+
+  // Specular highlight bar
+  ctx.beginPath();
+  ctx.roundRect(hsBtnX + 8, hsBtnY + 5, hsW - 16, hsH * 0.32, 14);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
+  ctx.fill();
+
+  // Border
+  ctx.beginPath();
+  ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.stroke();
+
+  // Text
+  ctx.shadowBlur = 0;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#0a1428";
+  ctx.font = '900 22px "Nunito", sans-serif';
+  ctx.fillText("\u2605 HIGH SCORES \u2605", hsX, hsY + 1);
+  ctx.restore();
 }
 
 // Easing helpers for summary animations
@@ -701,6 +905,308 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
   }
 }
 
+function getHighScoresButtonBounds(width, height) {
+  const hsWidth = 260;
+  const hsHeight = 54;
+  return {
+    x: width * 0.5 - hsWidth / 2 - 10,
+    y: height * 0.965 - hsHeight / 2 - 8,
+    width: hsWidth + 20,
+    height: hsHeight + 16,
+  };
+}
+
+const RANK_COLORS = {
+  S: "#ffd166",
+  A: "#7cf7ff",
+  B: "#ff81b5",
+  C: "#ffffff",
+  D: "#9e9e9e",
+  F: "#6e6e6e",
+};
+
+function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed = 0 }) {
+  // Title
+  const titleP = easeOutBack(animProgress(elapsed, 0.1, 0.5));
+  if (titleP > 0) {
+    const titleY = height * 0.12 + (1 - titleP) * -40;
+    ctx.save();
+    ctx.globalAlpha = clamp01(titleP * 1.5);
+    ctx.textAlign = "center";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = "rgba(47, 14, 58, 0.95)";
+    ctx.shadowColor = "rgba(255, 209, 102, 0.6)";
+    ctx.shadowBlur = 22;
+    ctx.font = '82px "Knewave", cursive';
+    ctx.strokeText("HIGH SCORES", width * 0.5, titleY);
+    const grad = ctx.createLinearGradient(width * 0.2, 0, width * 0.8, 0);
+    grad.addColorStop(0, "#fff2a8");
+    grad.addColorStop(0.5, "#ffba5f");
+    grad.addColorStop(1, "#ff6f91");
+    ctx.fillStyle = grad;
+    ctx.fillText("HIGH SCORES", width * 0.5, titleY);
+    ctx.restore();
+  }
+
+  // Column headers
+  const headerP = easeOutCubic(animProgress(elapsed, 0.15, 0.3));
+  if (headerP > 0) {
+    ctx.save();
+    ctx.globalAlpha = headerP;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(255, 245, 216, 0.62)";
+    ctx.font = '900 18px "Nunito", sans-serif';
+    ctx.textAlign = "center";
+    ctx.fillText("#", width * 0.1, height * 0.19);
+    ctx.fillText("RANK", width * 0.22, height * 0.19);
+    ctx.fillText("NAME", width * 0.48, height * 0.19);
+    ctx.fillText("SCORE", width * 0.78, height * 0.19);
+    ctx.restore();
+  }
+
+  // Rows
+  for (let i = 0; i < 10; i++) {
+    const rowP = easeOutBack(animProgress(elapsed, 0.2 + i * 0.06, 0.4));
+    if (rowP <= 0) continue;
+    const entry = leaderboard[i];
+    const rowY = height * 0.235 + i * (height * 0.062);
+    const rowHeight = height * 0.054;
+
+    ctx.save();
+    ctx.globalAlpha = clamp01(rowP * 2);
+    const offsetX = (1 - rowP) * 60;
+
+    // Row background
+    ctx.beginPath();
+    ctx.roundRect(width * 0.05 + offsetX, rowY - rowHeight / 2, width * 0.9, rowHeight, 14);
+    ctx.fillStyle = i % 2 === 0 ? "rgba(18, 10, 34, 0.72)" : "rgba(28, 16, 48, 0.72)";
+    ctx.fill();
+
+    ctx.textBaseline = "middle";
+
+    // Rank number
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255, 245, 216, 0.82)";
+    ctx.font = '900 22px "Nunito", sans-serif';
+    ctx.fillText(`${i + 1}`, width * 0.1 + offsetX, rowY + 1);
+
+    if (entry) {
+      // Rank letter badge
+      const rankColor = RANK_COLORS[entry.rank] || "#9e9e9e";
+      ctx.beginPath();
+      ctx.roundRect(width * 0.185 + offsetX, rowY - 16, 64, 32, 12);
+      ctx.fillStyle = "rgba(10, 6, 20, 0.82)";
+      ctx.strokeStyle = rankColor;
+      ctx.lineWidth = 2.5;
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = rankColor;
+      ctx.font = '900 20px "Nunito", sans-serif';
+      ctx.fillText(entry.rank || "?", width * 0.22 + offsetX, rowY + 1);
+
+      // Initials
+      ctx.fillStyle = "#ffffff";
+      ctx.font = '32px "Knewave", cursive';
+      ctx.fillText(entry.initials, width * 0.48 + offsetX, rowY + 2);
+
+      // Score
+      ctx.fillStyle = "#fff5d5";
+      ctx.font = '32px "Knewave", cursive';
+      ctx.fillText(`${entry.score}`, width * 0.78 + offsetX, rowY + 2);
+    } else {
+      // Empty slot
+      ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
+      ctx.font = '28px "Knewave", cursive';
+      ctx.fillText("---", width * 0.48 + offsetX, rowY + 2);
+      ctx.fillText("---", width * 0.78 + offsetX, rowY + 2);
+    }
+
+    ctx.restore();
+  }
+
+  // Paw prints
+  const pawP = easeOutCubic(animProgress(elapsed, 0.5, 0.4));
+  if (pawP > 0) {
+    drawPawPrint(ctx, width * 0.06, height * 0.14, 0.52 * pawP, "#ffd166", 0.3 * pawP, -0.3);
+    drawPawPrint(ctx, width * 0.94, height * 0.14, 0.52 * pawP, "#7cf7ff", 0.3 * pawP, 0.3);
+  }
+
+  // Sparkles
+  if (elapsed > 0.3) {
+    const sparkA = Math.min((elapsed - 0.3) * 2, 0.8);
+    drawSparkle(ctx, width * 0.15, height * 0.08, 12, "#fff2a8", elapsed * 0.6, sparkA);
+    drawSparkle(ctx, width * 0.85, height * 0.08, 12, "#73f7ff", -elapsed * 0.6, sparkA);
+  }
+}
+
+function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cursorPos = 0, elapsed = 0, score = 0, rank = "F" }) {
+  // Title
+  const titleP = easeOutBack(animProgress(elapsed, 0.1, 0.5));
+  if (titleP > 0) {
+    const titleY = height * 0.13 + (1 - titleP) * -40;
+    ctx.save();
+    ctx.globalAlpha = clamp01(titleP * 1.5);
+    ctx.textAlign = "center";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 12;
+    ctx.strokeStyle = "rgba(47, 14, 58, 0.95)";
+    ctx.shadowColor = "rgba(255, 209, 102, 0.65)";
+    ctx.shadowBlur = 22;
+    ctx.font = '68px "Knewave", cursive';
+    ctx.strokeText("NEW HIGH SCORE!", width * 0.5, titleY);
+    const grad = ctx.createLinearGradient(width * 0.2, 0, width * 0.8, 0);
+    grad.addColorStop(0, "#fff2a8");
+    grad.addColorStop(0.5, "#ffd166");
+    grad.addColorStop(1, "#ff6f91");
+    ctx.fillStyle = grad;
+    ctx.fillText("NEW HIGH SCORE!", width * 0.5, titleY);
+    ctx.restore();
+  }
+
+  // Score display
+  const scoreP = easeOutElastic(animProgress(elapsed, 0.3, 0.6));
+  if (scoreP > 0) {
+    const fontSize = Math.round(100 * (0.6 + 0.4 * scoreP));
+    ctx.save();
+    ctx.globalAlpha = clamp01(scoreP * 2);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.shadowColor = "rgba(255, 209, 102, 0.6)";
+    ctx.shadowBlur = 24;
+    ctx.font = `${fontSize}px "Knewave", cursive`;
+    ctx.fillText(`${score}`, width * 0.5, height * 0.3);
+    ctx.restore();
+  }
+
+  // Rank badge
+  const badgeP = easeOutBack(animProgress(elapsed, 0.5, 0.4));
+  if (badgeP > 0) {
+    const rankColor = RANK_COLORS[rank] || "#9e9e9e";
+    ctx.save();
+    ctx.globalAlpha = badgeP;
+    ctx.beginPath();
+    ctx.roundRect(width * 0.5 - 42, height * 0.34, 84, 42, 16);
+    ctx.fillStyle = "rgba(10, 6, 20, 0.85)";
+    ctx.strokeStyle = rankColor;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = `${rankColor}66`;
+    ctx.shadowBlur = 14;
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = rankColor;
+    ctx.font = '900 26px "Nunito", sans-serif';
+    ctx.fillText(`RANK ${rank}`, width * 0.5, height * 0.34 + 22);
+    ctx.restore();
+  }
+
+  // Letter slots
+  const slotsP = easeOutBack(animProgress(elapsed, 0.6, 0.5));
+  if (slotsP > 0) {
+    const slotWidth = 110;
+    const slotHeight = 130;
+    const gap = 30;
+    const totalW = slotWidth * 3 + gap * 2;
+    const startX = (width - totalW) / 2;
+    const slotY = height * 0.47;
+    const pulse = 0.5 + Math.sin(elapsed * 4) * 0.5;
+
+    ctx.save();
+    ctx.globalAlpha = clamp01(slotsP * 2);
+
+    for (let i = 0; i < 3; i++) {
+      const sx = startX + i * (slotWidth + gap);
+      const isActive = i === cursorPos;
+
+      // Slot background
+      ctx.beginPath();
+      ctx.roundRect(sx, slotY, slotWidth, slotHeight, 20);
+      ctx.fillStyle = "rgba(18, 10, 34, 0.85)";
+      ctx.strokeStyle = isActive
+        ? `rgba(124, 247, 255, ${0.6 + pulse * 0.4})`
+        : "rgba(255, 240, 210, 0.3)";
+      ctx.lineWidth = isActive ? 4 : 2.5;
+      if (isActive) {
+        ctx.shadowColor = `rgba(124, 247, 255, ${0.3 + pulse * 0.3})`;
+        ctx.shadowBlur = 16 + pulse * 8;
+      }
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Letter
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = isActive ? "#ffffff" : "rgba(255, 255, 255, 0.82)";
+      ctx.font = '72px "Knewave", cursive';
+      ctx.fillText(initials[i] || "A", sx + slotWidth / 2, slotY + slotHeight / 2 + 4);
+
+      // Up/down arrows for active slot
+      if (isActive) {
+        const arrowX = sx + slotWidth / 2;
+        ctx.fillStyle = `rgba(124, 247, 255, ${0.6 + pulse * 0.3})`;
+        // Up arrow
+        ctx.beginPath();
+        ctx.moveTo(arrowX, slotY - 18);
+        ctx.lineTo(arrowX - 14, slotY - 4);
+        ctx.lineTo(arrowX + 14, slotY - 4);
+        ctx.closePath();
+        ctx.fill();
+        // Down arrow
+        ctx.beginPath();
+        ctx.moveTo(arrowX, slotY + slotHeight + 18);
+        ctx.lineTo(arrowX - 14, slotY + slotHeight + 4);
+        ctx.lineTo(arrowX + 14, slotY + slotHeight + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Instructions
+  const instrP = easeOutCubic(animProgress(elapsed, 0.8, 0.3));
+  if (instrP > 0) {
+    ctx.save();
+    ctx.globalAlpha = instrP * 0.72;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#e5fdff";
+    ctx.font = '900 18px "Nunito", sans-serif';
+    ctx.fillText("\u2191\u2193 CHANGE    \u2190\u2192 MOVE    ENTER CONFIRM", width * 0.5, height * 0.72);
+    ctx.restore();
+  }
+
+  // Sparkles
+  if (elapsed > 0.3) {
+    const sparkA = Math.min((elapsed - 0.3) * 2, 0.85);
+    drawSparkle(ctx, width * 0.2, height * 0.1, 14, "#ffd166", elapsed * 0.8, sparkA);
+    drawSparkle(ctx, width * 0.8, height * 0.1, 14, "#73f7ff", -elapsed * 0.8, sparkA);
+  }
+}
+
+function getInitialsSlotBounds(width, height) {
+  const slotWidth = 110;
+  const slotHeight = 130;
+  const gap = 30;
+  const totalW = slotWidth * 3 + gap * 2;
+  const startX = (width - totalW) / 2;
+  const slotY = height * 0.47;
+  const slots = [];
+  for (let i = 0; i < 3; i++) {
+    slots.push({
+      x: startX + i * (slotWidth + gap),
+      y: slotY,
+      width: slotWidth,
+      height: slotHeight,
+    });
+  }
+  return slots;
+}
+
 export function drawTvScreen(
   ctx,
   canvas,
@@ -709,11 +1215,25 @@ export function drawTvScreen(
     hovered = false,
     disabled = false,
     buttonLabel = "PRESS START",
+    instructionLabel = "SPACE / ENTER TO SHRED",
     screenMode = "title",
     summary = null,
     showDismissButton = false,
     dismissHovered = false,
     summaryElapsed = 99,
+    bootElapsed = 0,
+    bootStatusLabel = "SYNCING STAGE",
+    bootProgress = 0,
+    bootReady = false,
+    highScore = 0,
+    highScoresHovered = false,
+    leaderboard = [],
+    leaderboardElapsed = 0,
+    initials = null,
+    cursorPos = 0,
+    initialsScore = 0,
+    initialsRank = "F",
+    initialsElapsed = 0,
   } = {},
 ) {
   const { width, height } = canvas;
@@ -721,6 +1241,7 @@ export function drawTvScreen(
   ctx.globalAlpha = 1;
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
+
   drawScreenBackground(ctx, width, height);
   drawScreenFrame(ctx, width, height);
 
@@ -730,26 +1251,66 @@ export function drawTvScreen(
       dismissHovered,
       elapsed: summaryElapsed,
     });
+  } else if (screenMode === "boot") {
+    drawBootScreen(ctx, width, height, {
+      elapsed: bootElapsed || time,
+      bootStatusLabel,
+      bootProgress,
+      bootReady,
+    });
+  } else if (screenMode === "leaderboard") {
+    drawLeaderboardScreen(ctx, width, height, {
+      leaderboard,
+      elapsed: leaderboardElapsed,
+    });
+  } else if (screenMode === "initials") {
+    drawInitialsScreen(ctx, width, height, {
+      initials: initials || ["A", "A", "A"],
+      cursorPos,
+      elapsed: initialsElapsed,
+      score: initialsScore,
+      rank: initialsRank,
+    });
   } else {
-    drawTitleScreen(ctx, width, height, { hovered, disabled });
+    drawTitleScreen(ctx, width, height, { hovered, disabled, highScore, highScoresHovered });
   }
 
-  // In summary mode, animate the button appearing after the cards
-  const buttonAlpha = screenMode === "summary"
-    ? clamp01((summaryElapsed - 2.5) / 0.5)
-    : 1;
-  if (buttonAlpha > 0) {
+  // Button logic per screen mode
+  const showButton = screenMode === "title" || screenMode === "summary" || screenMode === "leaderboard" || screenMode === "initials";
+  let buttonAlpha = 0;
+  let buttonSlide = 0;
+  let effectiveButtonLabel = buttonLabel;
+  let effectiveInstructionLabel = instructionLabel;
+  let effectiveInstructionFont = '900 22px "Nunito", sans-serif';
+
+  if (screenMode === "summary") {
+    buttonAlpha = clamp01((summaryElapsed - 2.5) / 0.5);
+    buttonSlide = (1 - easeOutCubic(clamp01((summaryElapsed - 2.5) / 0.5))) * 40;
+    effectiveInstructionFont = '900 18px "Nunito", sans-serif';
+  } else if (screenMode === "leaderboard") {
+    buttonAlpha = clamp01(leaderboardElapsed / 0.3);
+    effectiveButtonLabel = "BACK";
+    effectiveInstructionLabel = "ESC TO RETURN";
+  } else if (screenMode === "initials") {
+    buttonAlpha = clamp01((initialsElapsed - 0.8) / 0.4);
+    effectiveButtonLabel = "OK";
+    effectiveInstructionLabel = "ENTER TO CONFIRM";
+  } else if (screenMode === "title") {
+    buttonAlpha = 1;
+  }
+
+  if (showButton && buttonAlpha > 0) {
     ctx.save();
     ctx.globalAlpha = buttonAlpha;
-    const buttonSlide = screenMode === "summary" ? (1 - easeOutCubic(clamp01((summaryElapsed - 2.5) / 0.5))) * 40 : 0;
     drawActionButton(ctx, width, height, {
       hovered,
       disabled,
-      buttonLabel,
-      instructionLabel: screenMode === "summary" ? "SPACE / ENTER TO PLAY AGAIN" : "SPACE / ENTER TO SHRED",
-      instructionFont:
-        screenMode === "summary" ? '900 18px "Nunito", sans-serif' : '900 22px "Nunito", sans-serif',
+      buttonLabel: effectiveButtonLabel,
+      instructionLabel: effectiveInstructionLabel,
+      disabledInstructionLabel: effectiveInstructionLabel,
+      instructionFont: effectiveInstructionFont,
       y: 0.82 + buttonSlide / height,
+      hideInstruction: screenMode === "title",
     });
     ctx.restore();
   }
