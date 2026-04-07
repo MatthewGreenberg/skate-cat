@@ -10,6 +10,9 @@ const INTRO_FOV = 43
 const GAME_FOV = 75
 const DEATH_FOV = 46
 const REVERSE_INTRO_DOLLY_DISTANCE = 2.2
+const FAILED_SUMMARY_DOLLY_DISTANCE = 0.7
+const LEADERBOARD_DOLLY_DISTANCE = 1.15
+const LEADERBOARD_LOOK_Y_OFFSET = 0.12
 const INTRO_MOUSE_YAW_MAX = THREE.MathUtils.degToRad(4.5)
 const INTRO_MOUSE_PITCH_SHIFT = 0.14
 const INTRO_MOUSE_YAW_RESPONSE = 5
@@ -33,6 +36,8 @@ const _vecK = new THREE.Vector3()
 const _vecL = new THREE.Vector3()
 const _vecM = new THREE.Vector3()
 const _vecN = new THREE.Vector3()
+const _vecO = new THREE.Vector3()
+const _vecP = new THREE.Vector3()
 const _worldUp = new THREE.Vector3(0, 1, 0)
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
@@ -141,11 +146,24 @@ export default function CameraRig({
     const targetResultsLook = _vecD.set(resultsLookX, resultsLookY, resultsLookZ)
     const deathTargetPos = _vecE.set(deathCamX, deathCamY, deathCamZ)
     const deathTargetLook = _vecF.set(deathLookX, deathLookY, deathLookZ)
-    const failedTargetPos = _vecJ.copy(targetIntroPos)
     const failedTargetLook = _vecK.copy(targetIntroLook)
+    const failedTargetPos = _vecJ
+      .copy(targetIntroPos)
+      .addScaledVector(
+        _vecH.copy(failedTargetLook).sub(targetIntroPos).normalize(),
+        FAILED_SUMMARY_DOLLY_DISTANCE
+      )
     const failedTargetFov = INTRO_FOV
+    const leaderboardTargetLook = _vecL.copy(targetIntroLook)
+    leaderboardTargetLook.y += LEADERBOARD_LOOK_Y_OFFSET
+    const leaderboardTargetPos = _vecM
+      .copy(targetIntroPos)
+      .addScaledVector(_vecI.copy(leaderboardTargetLook).sub(targetIntroPos).normalize(), LEADERBOARD_DOLLY_DISTANCE)
+    const leaderboardTargetFov = INTRO_FOV
     const idleTargetPos = cameraMode === 'death'
       ? deathTargetPos
+      : cameraMode === 'leaderboard'
+        ? leaderboardTargetPos
       : cameraMode === 'failed'
         ? failedTargetPos
         : cameraMode === 'results'
@@ -153,6 +171,8 @@ export default function CameraRig({
         : targetIntroPos
     const idleTargetLook = cameraMode === 'death'
       ? deathTargetLook
+      : cameraMode === 'leaderboard'
+        ? leaderboardTargetLook
       : cameraMode === 'failed'
         ? failedTargetLook
         : cameraMode === 'results'
@@ -160,6 +180,8 @@ export default function CameraRig({
         : targetIntroLook
     const idleTargetFov = cameraMode === 'death'
       ? deathFov
+      : cameraMode === 'leaderboard'
+        ? leaderboardTargetFov
       : cameraMode === 'failed'
         ? failedTargetFov
         : INTRO_FOV
@@ -196,8 +218,8 @@ export default function CameraRig({
       const nextFov = isFailedReverseDolly
         ? failedTargetFov
         : THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
-      const gameTargetPos = _vecL.set(posX, posY, posZ)
-      const gameTargetLook = _vecM.set(lookX, lookY, lookZ)
+      const gameTargetPos = _vecO.set(posX, posY, posZ)
+      const gameTargetLook = _vecP.set(lookX, lookY, lookZ)
 
       camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? reverseTargetPos : gameTargetPos, t)
       if (isFailedReverseDolly) {
@@ -221,7 +243,7 @@ export default function CameraRig({
         camLook.current.set(lookX, lookY, lookZ)
         applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
       } else {
-        const mouseScale = cameraMode === 'intro' ? 1 : cameraMode === 'failed' ? 0 : 0.35
+        const mouseScale = cameraMode === 'intro' ? 1 : cameraMode === 'failed' || cameraMode === 'leaderboard' ? 0 : 0.35
         const introYawTarget = state.pointer.x * INTRO_MOUSE_YAW_MAX * mouseScale
         const introPitchTarget = state.pointer.y * INTRO_MOUSE_PITCH_SHIFT * mouseScale
         introYaw.current = THREE.MathUtils.lerp(

@@ -487,6 +487,8 @@ export default function App() {
   )
   const cameraMode = shouldUseDeathCamera
     ? 'death'
+    : introScreenMode === 'leaderboard' || introScreenMode === 'initials'
+      ? 'leaderboard'
     : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome === 'failed'
       ? 'failed'
     : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome !== 'failed'

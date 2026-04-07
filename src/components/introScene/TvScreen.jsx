@@ -133,7 +133,14 @@ export function TvScreen({
       if (event.repeat) return
 
       if (screenMode === 'leaderboard') {
-        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Escape' || event.key === 'Backspace') {
+        if (
+          event.key === 'Enter' ||
+          event.key === ' ' ||
+          event.key === 'Escape' ||
+          event.key === 'Backspace' ||
+          event.key === 'x' ||
+          event.key === 'X'
+        ) {
           event.preventDefault()
           onAction?.('back')
         }
