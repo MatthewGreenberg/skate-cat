@@ -10,15 +10,10 @@ import { DEFAULT_TV_CRT, SCREEN_CYAN } from './constants'
 import { CRT_FRAGMENT_SHADER, CRT_VERTEX_SHADER } from './crtShaders'
 import { createCurvedScreenGeometry } from './curvedScreenGeometry'
 import { drawTvScreen, getTvScreenActionAtPoint } from './tvScreenCanvas'
-
-function isSafari() {
-  if (typeof navigator === 'undefined') return false
-  const { userAgent, vendor = '' } = navigator
-  return vendor.includes('Apple') && userAgent.includes('Safari') && !userAgent.includes('Chrome')
-}
+import { isSafari } from '../../store'
 
 function getScreenTextureSize(quality) {
-  if (isSafari()) return 512
+  if (isSafari) return 512
   if (quality === 'high') return 1024
   if (quality === 'quiet') return 512
   return 768

@@ -32,6 +32,7 @@ import {
   isTimingDebug,
   MAX_RUN_LIVES,
   qualityMode,
+  isSafari,
   resetObstacleTargets,
   debugControlsEnabled,
 } from './store'
@@ -79,19 +80,7 @@ function clamp01(value) {
 }
 
 function shouldUseSafariGameplayContactShadows() {
-  if (typeof navigator === 'undefined') return false
-
-  const { userAgent, vendor = '' } = navigator
-  return (
-    vendor.includes('Apple') &&
-    userAgent.includes('Safari') &&
-    !userAgent.includes('Chrome') &&
-    !userAgent.includes('Chromium') &&
-    !userAgent.includes('CriOS') &&
-    !userAgent.includes('FxiOS') &&
-    !userAgent.includes('EdgiOS') &&
-    !userAgent.includes('OPiOS')
-  )
+  return isSafari
 }
 
 function BootOverlay({

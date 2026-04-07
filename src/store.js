@@ -16,6 +16,11 @@ export const debugControlsEnabled = import.meta.env.DEV && isDebug;
 export const qualityMode = validQualityModes.has(qualityParam) ? qualityParam : "auto";
 export const isHighQuality = qualityMode === "high";
 export const isQuietQuality = qualityMode === "quiet";
+export const isSafari = (() => {
+  if (typeof navigator === 'undefined') return false;
+  const { userAgent, vendor = '' } = navigator;
+  return vendor.includes('Apple') && userAgent.includes('Safari') && !userAgent.includes('Chrome');
+})();
 export const SPEED_RESPONSE = 4;
 
 export function createIdleGrindState() {
