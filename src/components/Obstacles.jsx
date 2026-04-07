@@ -111,7 +111,15 @@ const TIMING_DEBUG_PATTERN_LIBRARY = [
 ]
 
 
-export default function Obstacles({ musicRef, active: isActive = true, isRunning, canCollide = true, onLogHit }) {
+export default function Obstacles({
+  musicRef,
+  active: isActive = true,
+  isRunning,
+  canCollide = true,
+  onLogHit,
+  shadowMode = 'map',
+}) {
+  const useShadowMap = shadowMode === 'map'
   const log = useGLTF('/large_tree_log/scene.gltf')
   const refs = useRef([])
   const logRefs = useRef([])
@@ -1182,7 +1190,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
 
           child.material = logMaterial
           child.material.side = sourceMaterial.side
-          child.castShadow = true
+          child.castShadow = useShadowMap
           child.receiveShadow = false
         })
 
@@ -1191,6 +1199,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     [
       log.scene,
       logMaterial,
+      useShadowMap,
     ]
   )
 
@@ -1236,7 +1245,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
                 ref={(el) => (railTopRefs.current[i] = el)}
                 geometry={railLogGeometry}
                 material={railWoodMaterial}
-                castShadow
+                castShadow={useShadowMap}
               />
               <group ref={(el) => (railFrontSupportRefs.current[i] = el)}>
                 <mesh position={[-GRIND_RAIL_SUPPORT_SPAN * 0.5, 0, 0]} material={railSupportMaterial}>

@@ -9,7 +9,7 @@ const INTRO_LERP_SPEED = 2.5
 const INTRO_FOV = 43
 const GAME_FOV = 75
 const DEATH_FOV = 46
-const REVERSE_INTRO_ENTRY_BLEND = 0.4
+const REVERSE_INTRO_DOLLY_DISTANCE = 1.2
 const INTRO_MOUSE_YAW_MAX = THREE.MathUtils.degToRad(4.5)
 const INTRO_MOUSE_PITCH_SHIFT = 0.14
 const INTRO_MOUSE_YAW_RESPONSE = 5
@@ -28,6 +28,9 @@ const _vecF = new THREE.Vector3()
 const _vecG = new THREE.Vector3()
 const _vecH = new THREE.Vector3()
 const _vecI = new THREE.Vector3()
+const _vecJ = new THREE.Vector3()
+const _vecK = new THREE.Vector3()
+const _vecL = new THREE.Vector3()
 const _worldUp = new THREE.Vector3(0, 1, 0)
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
@@ -126,7 +129,9 @@ export default function CameraRig({
     }, { collapsed: true }),
   }, [])
 
-  useFrame((state, delta) => {
+  useFrame((state, rawDelta) => {
+    // Clamp delta to prevent camera overshoot after tab-away (large accumulated delta)
+    const delta = Math.min(rawDelta, 0.1)
     const gameDelta = getGameDelta(delta)
     const targetIntroPos = _vecA.set(introCamX, introCamY, introCamZ)
     const targetIntroLook = _vecB.set(introLookX, introLookY, introLookZ)
@@ -134,13 +139,19 @@ export default function CameraRig({
     const targetResultsLook = _vecD.set(resultsLookX, resultsLookY, resultsLookZ)
     const deathTargetPos = _vecE.set(deathCamX, deathCamY, deathCamZ)
     const deathTargetLook = _vecF.set(deathLookX, deathLookY, deathLookZ)
+    const failedTargetLook = _vecJ.set(resultsLookX, resultsLookY, resultsLookZ)
+    const failedTargetPos = _vecK.set(resultsLookX, resultsCamY, resultsCamZ)
     const idleTargetPos = cameraMode === 'death'
       ? deathTargetPos
+      : cameraMode === 'failed'
+        ? failedTargetPos
       : cameraMode === 'results'
         ? targetResultsPos
         : targetIntroPos
     const idleTargetLook = cameraMode === 'death'
       ? deathTargetLook
+      : cameraMode === 'failed'
+        ? failedTargetLook
       : cameraMode === 'results'
         ? targetResultsLook
         : targetIntroLook
@@ -148,14 +159,20 @@ export default function CameraRig({
     const reverseTargetPos = cameraMode === 'death' ? targetIntroPos : idleTargetPos
     const reverseTargetLook = cameraMode === 'death' ? targetIntroLook : idleTargetLook
     const reverseTargetFov = cameraMode === 'death' ? INTRO_FOV : idleTargetFov
-    const shouldBiasReverseEntry = transitionDirection === 'reverse' && cameraMode === 'intro'
+    const shouldUseReverseIntroStartShot = transitionDirection === 'reverse' && cameraMode === 'failed'
+    const reverseIntroStartPos = _vecL
+      .copy(failedTargetPos)
+      .addScaledVector(
+        _vecI.copy(failedTargetPos).sub(failedTargetLook).normalize(),
+        REVERSE_INTRO_DOLLY_DISTANCE
+      )
 
     if (isTransitioning && !wasTransitioning.current) {
-      if (shouldBiasReverseEntry) {
-        // Start the intro reveal closer to the TV front, but leave enough travel for a visible pan during the wipe.
-        posAtCapture.current.lerpVectors(camera.position, reverseTargetPos, REVERSE_INTRO_ENTRY_BLEND)
-        lookAtCapture.current.lerpVectors(camLook.current, reverseTargetLook, REVERSE_INTRO_ENTRY_BLEND)
-        fovAtCapture.current = THREE.MathUtils.lerp(camera.fov, reverseTargetFov, REVERSE_INTRO_ENTRY_BLEND)
+      if (shouldUseReverseIntroStartShot) {
+        // Failed reverse reveals should stay centered on the TV and dolly straight into the summary framing.
+        posAtCapture.current.copy(reverseIntroStartPos)
+        lookAtCapture.current.copy(failedTargetLook)
+        fovAtCapture.current = INTRO_FOV
       } else {
         posAtCapture.current.copy(camera.position)
         lookAtCapture.current.copy(camLook.current)
@@ -190,7 +207,7 @@ export default function CameraRig({
         camLook.current.set(lookX, lookY, lookZ)
         applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
       } else {
-        const mouseScale = cameraMode === 'intro' ? 1 : 0.35
+        const mouseScale = cameraMode === 'intro' ? 1 : cameraMode === 'failed' ? 0 : 0.35
         const introYawTarget = state.pointer.x * INTRO_MOUSE_YAW_MAX * mouseScale
         const introPitchTarget = state.pointer.y * INTRO_MOUSE_PITCH_SHIFT * mouseScale
         introYaw.current = THREE.MathUtils.lerp(

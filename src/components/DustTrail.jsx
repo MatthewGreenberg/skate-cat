@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { gameState, getGameDelta } from '../store'
+import { gameState, getGameDelta, isSafari } from '../store'
 
-const PARTICLE_COUNT = 60
+const PARTICLE_COUNT = isSafari ? 25 : 60
 const PARTICLE_LIFETIME = 0.8
 
 const _dummy = new THREE.Object3D()
@@ -118,7 +118,10 @@ export default function DustTrail({ active = true }) {
   const geo = useMemo(() => new THREE.IcosahedronGeometry(1, 0), [])
 
   return (
-    <instancedMesh ref={meshRef} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
+    <instancedMesh ref={(el) => {
+      meshRef.current = el
+      if (el) el.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    }} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
       <meshBasicMaterial
         color="#c4a882"
         transparent

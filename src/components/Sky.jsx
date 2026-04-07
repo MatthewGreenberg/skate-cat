@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { gameState, getNightFactor } from '../store'
+import { gameState, getNightFactor, isSafari } from '../store'
 
 // Build a single merged "puff" geometry from several low-poly icosahedrons
 function buildCloudGeometry() {
@@ -76,7 +76,7 @@ export default function Sky({ active = true }) {
       emissiveIntensity: 0.16,
       transparent: true,
       opacity: 0.32,
-      flatShading: true,
+      flatShading: !isSafari,
       depthWrite: false,
     })
 
@@ -94,10 +94,10 @@ export default function Sky({ active = true }) {
   const cloudEmissiveNight = useMemo(() => new THREE.Color('#112244'), [])
 
   const dummyRef = useRef(new THREE.Object3D())
-  const tempMatrixRef = useRef(new THREE.Matrix4())
-  const tempPosRef = useRef(new THREE.Vector3())
-  const tempScaleRef = useRef(new THREE.Vector3())
-  const tempQuatRef = useRef(new THREE.Quaternion())
+  // Pre-allocated per-cloud transform arrays — avoids matrix decompose every frame
+  const cloudPositions = useRef(Array.from({ length: CLOUD_COUNT }, () => new THREE.Vector3()))
+  const cloudQuaternions = useRef(Array.from({ length: CLOUD_COUNT }, () => new THREE.Quaternion()))
+  const cloudScaleVecs = useRef(Array.from({ length: CLOUD_COUNT }, () => new THREE.Vector3(1, 1, 1)))
 
   useFrame((_, delta) => {
     const mesh = meshRef.current
@@ -105,10 +105,9 @@ export default function Sky({ active = true }) {
     if (!active) return
 
     const dummy = dummyRef.current
-    const tempMatrix = tempMatrixRef.current
-    const tempPos = tempPosRef.current
-    const tempScale = tempScaleRef.current
-    const tempQuat = tempQuatRef.current
+    const positions = cloudPositions.current
+    const quaternions = cloudQuaternions.current
+    const scaleVecs = cloudScaleVecs.current
     const cloudMaterial = mesh.material
 
     // One-time initialization (ref is now attached)
@@ -117,10 +116,13 @@ export default function Sky({ active = true }) {
       for (let i = 0; i < CLOUD_COUNT; i++) {
         const p = randomCloudPos(camera.position.z)
         const s = cloudScales[i]
-        dummy.position.set(p.x, p.y, p.z)
-        dummy.scale.set(s, s * 0.55, s * 0.85)
+        positions[i].set(p.x, p.y, p.z)
+        scaleVecs[i].set(s, s * 0.55, s * 0.85)
+        dummy.position.copy(positions[i])
+        dummy.scale.copy(scaleVecs[i])
         dummy.rotation.set(0, Math.random() * Math.PI * 2, 0)
         dummy.updateMatrix()
+        quaternions[i].copy(dummy.quaternion)
         mesh.setMatrixAt(i, dummy.matrix)
       }
       mesh.instanceMatrix.needsUpdate = true
@@ -142,19 +144,16 @@ export default function Sky({ active = true }) {
     cloudMaterial.emissiveIntensity = THREE.MathUtils.lerp(cloudMaterial.emissiveIntensity, nightEmissiveTarget, delta * 2)
 
     for (let i = 0; i < CLOUD_COUNT; i++) {
-      mesh.getMatrixAt(i, tempMatrix)
-      tempMatrix.decompose(tempPos, tempQuat, tempScale)
+      positions[i].z += drift
 
-      tempPos.set(tempPos.x, tempPos.y, tempPos.z + drift)
-
-      if (tempPos.z > camera.position.z + RECYCLE_BEHIND) {
+      if (positions[i].z > camera.position.z + RECYCLE_BEHIND) {
         const p = randomCloudPos(camera.position.z)
-        tempPos.set(p.x, p.y, p.z)
+        positions[i].set(p.x, p.y, p.z)
       }
 
-      dummy.position.copy(tempPos)
-      dummy.quaternion.copy(tempQuat)
-      dummy.scale.copy(tempScale)
+      dummy.position.copy(positions[i])
+      dummy.quaternion.copy(quaternions[i])
+      dummy.scale.copy(scaleVecs[i])
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
     }
@@ -163,7 +162,10 @@ export default function Sky({ active = true }) {
 
   return (
     <instancedMesh
-      ref={meshRef}
+      ref={(el) => {
+        meshRef.current = el
+        if (el) el.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+      }}
       args={[geometry, material, CLOUD_COUNT]}
       frustumCulled={false}
     />

@@ -15,7 +15,7 @@ import {
 import { N8AO } from '@react-three/postprocessing'
 import TransitionEffect from './TransitionEffect'
 import IntroFluidEffect from './IntroFluidEffect'
-import { gameState, getNightFactor } from '../store'
+import { gameState, getNightFactor, isSafari } from '../store'
 import { interpolatePostSettings } from '../lib/postProcessing'
 import { useOptionalControls } from '../lib/debugControls'
 
@@ -57,7 +57,7 @@ export default function PostEffects({
     aoDistanceFalloff: { value: 1.05, min: 0, max: 2, step: 0.05 },
     aoHalfRes: true,
   }, [])
-  const shouldEnableAo = aoCtrl.aoEnabled && showGameWorld && quality !== 'quiet' && tier >= 2
+  const shouldEnableAo = aoCtrl.aoEnabled && showGameWorld && quality !== 'quiet' && tier >= 2 && !isSafari
 
   const aoRef = useRef(null)
   const bloomRef = useRef(null)
@@ -217,6 +217,7 @@ export default function PostEffects({
 
     // Disable effects that have no visual contribution to save full-screen passes
     chromaticAberration.enabled = chromaticStrengthRef.current > 0.001 || chromaticSpike > 0
+    lensDistortion.enabled = !isSafari || freezeT > 0.001
     vignette.enabled = vignette.darkness > 0.001
   })
 

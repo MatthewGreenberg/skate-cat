@@ -93,7 +93,7 @@ const roadFragmentShader = /* glsl */ `
   }
 `
 
-export default function Ground({ active = true, foliageSegmentCount = 2, quality = 'auto' }) {
+export default function Ground({ active = true, foliageSegmentCount = 2, quality = 'auto', shadowMode = 'map' }) {
   const {
     baseSpeed, roadColor, roadDetail, edgeColor,
     toonSteps, shadowBrightness, grainAmount, grainScale,
@@ -114,6 +114,7 @@ export default function Ground({ active = true, foliageSegmentCount = 2, quality
       vignetteStrength: { value: 0.27, min: 0, max: 0.3, step: 0.01 },
     }, { collapsed: true }),
   }, [])
+  const useShadowMap = shadowMode === 'map'
 
   const roadMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
@@ -204,11 +205,12 @@ export default function Ground({ active = true, foliageSegmentCount = 2, quality
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} material={roadMaterial} receiveShadow>
             <planeGeometry args={[3, SEGMENT_LENGTH]} />
           </mesh>
-          {/* Shadow catcher for the shader road (ShaderMaterial can't receive built-in shadows) */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} receiveShadow renderOrder={10}>
-            <planeGeometry args={[3, SEGMENT_LENGTH]} />
-            <shadowMaterial transparent opacity={0.35} depthWrite={false} />
-          </mesh>
+          {useShadowMap && (
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} receiveShadow renderOrder={10}>
+              <planeGeometry args={[3, SEGMENT_LENGTH]} />
+              <shadowMaterial transparent opacity={0.35} depthWrite={false} />
+            </mesh>
+          )}
           <Pebbles segmentSeed={i} />
           <group ref={(el) => (detailRefs.current[i] = el)}>
             <Grass quality={quality} />

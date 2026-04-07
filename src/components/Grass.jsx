@@ -45,10 +45,10 @@ const grassVertexShader = /* glsl */ `
   varying float vPatchNoise;
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
-  flat varying int vInstanceId;
+  varying float vInstanceId;
   void main() {
     vUv = uv;
-    vInstanceId = gl_InstanceID;
+    vInstanceId = float(gl_InstanceID);
     vec3 pos = position;
 
     // Early world position for culling
@@ -100,12 +100,12 @@ const grassFragmentShader = /* glsl */ `
   varying float vPatchNoise;
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
-  flat varying int vInstanceId;
+  varying float vInstanceId;
   void main() {
-    if (vInstanceId >= uVisibleCount) discard;
+    if (int(vInstanceId + 0.5) >= uVisibleCount) discard;
 
     // Mix some color variety based on instance ID
-    float dryMix = fract(sin(float(vInstanceId) * 43758.5453) * 2.0);
+    float dryMix = fract(sin(vInstanceId * 43758.5453) * 2.0);
     dryMix = smoothstep(0.6, 1.0, dryMix);
     vec3 baseColor = mix(uColorBase, uColorDry, dryMix * 0.5);
     vec3 tipColor = mix(uColorTip, uColorDry, dryMix * 0.3);

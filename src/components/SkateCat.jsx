@@ -1,11 +1,13 @@
 import { useRef, useEffect, useMemo } from 'react'
 import { useGLTF, useTexture } from '@react-three/drei'
+import { useFrame } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
-import { createToonMaterial, createOutlineMaterial } from '../lib/toonMaterials'
+import { createToonMaterial, createOutlineMaterial, createContactShadowTexture } from '../lib/toonMaterials'
 import useToonShaderSync from '../hooks/useToonShaderSync'
 import useCatAnimation from '../hooks/useCatAnimation'
 import { useOptionalControls } from '../lib/debugControls'
+import { gameState } from '../store'
 
 function applyOriginalMaterials(root) {
   root.traverse((child) => {
@@ -31,7 +33,10 @@ export default function SkateCat({
   freezeMotion = false,
   musicRef,
   onJumpSfx,
+  shadowMode = 'map',
 }) {
+  const useShadowMap = shadowMode === 'map'
+  const useContactShadow = shadowMode === 'contact'
   const { catRotX, catRotY, catRotZ } = useOptionalControls('Game', {
     Cat: folder({
       catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -78,6 +83,8 @@ export default function SkateCat({
   const catRef = useRef()
   const grindLightRef = useRef()
   const catModelRef = useRef()
+  const contactShadowRef = useRef()
+  const contactShadowMaterialRef = useRef()
 
   // --- Model loading ---
   const skateboard = useGLTF('/skateboard.glb')
@@ -105,11 +112,18 @@ export default function SkateCat({
     return map
   }, [originalBodyMapSource])
 
+  const contactShadowTexture = useMemo(() => {
+    if (!useContactShadow || typeof document === 'undefined') return null
+    return createContactShadowTexture()
+  }, [useContactShadow])
+
   const skateClone = useMemo(() => {
     const clone = skateboard.scene.clone()
-    clone.traverse((child) => { if (child.isMesh) child.castShadow = true })
+    clone.traverse((child) => {
+      if (child.isMesh) child.castShadow = useShadowMap
+    })
     return clone
-  }, [skateboard])
+  }, [skateboard, useShadowMap])
 
   // --- Toon material setup ---
   const catWithToon = useMemo(() => {
@@ -127,7 +141,7 @@ export default function SkateCat({
       if (map) { mat.uniforms.uMap.value = map; mat.uniforms.uHasMap.value = 1.0 }
       if (oldMat.transparent) { mat.transparent = true; mat.uniforms.uAlphaTest.value = 0.5; mat.depthWrite = false }
       if (oldMat.side === THREE.DoubleSide) mat.side = THREE.DoubleSide
-      child.castShadow = true
+      child.castShadow = useShadowMap
       const flatMat = new THREE.MeshBasicMaterial({
         map: oldMat.name === 'dingus' ? originalBodyMap : oldMat.map,
         color: oldMat.color,
@@ -150,7 +164,7 @@ export default function SkateCat({
       }
     })
     return clone
-  }, [catScene, paintedBodyMap, originalBodyMap])
+  }, [catScene, paintedBodyMap, originalBodyMap, useShadowMap])
 
   // --- Cache mesh refs for per-frame shader sync ---
   const toonMeshesRef = useRef([])
@@ -176,6 +190,12 @@ export default function SkateCat({
     fn(catWithToon)
   }, [useOriginalMaterials, catWithToon])
 
+  useEffect(() => {
+    return () => {
+      contactShadowTexture?.dispose()
+    }
+  }, [contactShadowTexture])
+
   // --- Hooks ---
   const { introStateRef } = useCatAnimation({
     groupRef, boardRef, catRef, grindLightRef, catModelRef,
@@ -194,42 +214,80 @@ export default function SkateCat({
     blinkStateRef: blinkState,
   })
 
+  useFrame(() => {
+    if (!useContactShadow || !contactShadowRef.current || !contactShadowMaterialRef.current || !groupRef.current) return
+
+    const shadowHeight = THREE.MathUtils.clamp(gameState.catHeight.current - 0.05, 0, 2.8)
+    const leanAmount = Math.min(Math.abs(groupRef.current.rotation.x) + Math.abs(groupRef.current.rotation.z), 0.3)
+    const depthStretch = 1 + shadowHeight * 0.32
+
+    contactShadowRef.current.position.set(
+      groupRef.current.position.x,
+      0.003,
+      groupRef.current.position.z + 0.04 + shadowHeight * 0.08
+    )
+    contactShadowRef.current.scale.set(
+      1.35 + shadowHeight * 0.24 + leanAmount * 0.2,
+      1.95 * depthStretch + leanAmount * 0.3,
+      1
+    )
+    contactShadowMaterialRef.current.opacity = THREE.MathUtils.clamp(0.42 - shadowHeight * 0.11, 0.16, 0.42)
+  })
+
   // --- Render ---
   return (
-    <group ref={groupRef} position={[0, 0.05, 0]}>
-      <group ref={boardRef}>
-        <primitive
-          object={skateClone}
-          scale={2}
-          rotation={[0, Math.PI / 2, 0]}
-          position={[0, 0, 0]}
-        />
+    <>
+      {useContactShadow && contactShadowTexture && (
+        <mesh ref={contactShadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.003, 0]}>
+          <planeGeometry args={[1, 1]} />
+          <meshBasicMaterial
+            ref={contactShadowMaterialRef}
+            map={contactShadowTexture}
+            color="#050301"
+            transparent
+            opacity={0.42}
+            blending={THREE.MultiplyBlending}
+            premultipliedAlpha
+            toneMapped={false}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      <group ref={groupRef} position={[0, 0.05, 0]}>
+        <group ref={boardRef}>
+          <primitive
+            object={skateClone}
+            scale={2}
+            rotation={[0, Math.PI / 2, 0]}
+            position={[0, 0, 0]}
+          />
+          <pointLight
+            ref={grindLightRef}
+            position={[0.14, 0.04, 0.38]}
+            intensity={0}
+            distance={0.01}
+            decay={2}
+            color="#ffb764"
+          />
+        </group>
+        <group ref={catRef} position={[0, 0.2, 0]}>
+          <primitive
+            ref={catModelRef}
+            object={catWithToon}
+            scale={0.03}
+            rotation={[catRotX, catRotY, catRotZ]}
+          />
+        </group>
+        <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
         <pointLight
-          ref={grindLightRef}
-          position={[0.14, 0.04, 0.38]}
-          intensity={0}
-          distance={0.01}
+          position={[0.3, 0.8, 0.3]}
+          intensity={3}
+          distance={1.2}
           decay={2}
-          color="#ffb764"
+          color="#ffe8cc"
         />
       </group>
-      <group ref={catRef} position={[0, 0.2, 0]}>
-        <primitive
-          ref={catModelRef}
-          object={catWithToon}
-          scale={0.03}
-          rotation={[catRotX, catRotY, catRotZ]}
-        />
-      </group>
-      <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
-      <pointLight
-        position={[0.3, 0.8, 0.3]}
-        intensity={3}
-        distance={1.2}
-        decay={2}
-        color="#ffe8cc"
-      />
-    </group>
+    </>
   )
 }
 

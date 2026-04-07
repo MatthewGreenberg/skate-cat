@@ -13,12 +13,13 @@ import {
 } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
 
-export default function DayNightController({ isRunning, quality = 'auto' }) {
+export default function DayNightController({ isRunning, quality = 'auto', shadowMode = 'map' }) {
   const dirLightRef = useRef()
   const ambientRef = useRef()
   const hemiRef = useRef()
   const { scene } = useThree()
   const shadowMapSize = quality === 'high' ? 1024 : quality === 'quiet' ? 256 : 512
+  const useShadowMap = shadowMode === 'map'
   const { timeOfDay, paused } = useOptionalControls('Game', {
     'Day/Night': folder({
       timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },
@@ -74,7 +75,7 @@ export default function DayNightController({ isRunning, quality = 'auto' }) {
         position={[5, 10, 3]}
         color="#ffe6bf"
         intensity={1.65}
-        castShadow
+        castShadow={useShadowMap}
         shadow-mapSize-width={shadowMapSize}
         shadow-mapSize-height={shadowMapSize}
         shadow-camera-left={-10}

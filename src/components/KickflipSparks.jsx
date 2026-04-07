@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { gameState, getGameDelta } from '../store'
+import { gameState, getGameDelta, isSafari } from '../store'
 
-const PARTICLE_COUNT = 60
+const PARTICLE_COUNT = isSafari ? 30 : 60
 const PARTICLE_LIFETIME = 0.5
 const LAND_PARTICLE_LIFETIME = 0.6
 const GRIND_PARTICLE_LIFETIME = 0.22
@@ -30,6 +30,7 @@ export default function KickflipSparks({ active = true }) {
 
   const grindSpawnTimer = useRef(0)
   const lastGrindImpactId = useRef(0)
+  const hadActiveParticle = useRef(false)
 
   useEffect(() => {
     if (active || !meshRef.current) return
@@ -64,7 +65,7 @@ export default function KickflipSparks({ active = true }) {
       const spawnPos = kick.position
       let spawned = 0
       for (const p of particles.current) {
-        if (p.active || spawned >= 25) continue
+        if (p.active || spawned >= (isSafari ? 12 : 25)) continue
         p.active = true
         p.life = PARTICLE_LIFETIME
         p.maxLife = PARTICLE_LIFETIME
@@ -86,7 +87,7 @@ export default function KickflipSparks({ active = true }) {
       const spawnPos = land.position
       let spawned = 0
       for (const p of particles.current) {
-        if (p.active || spawned >= 30) continue
+        if (p.active || spawned >= (isSafari ? 15 : 30)) continue
         p.active = true
         p.life = LAND_PARTICLE_LIFETIME
         p.maxLife = LAND_PARTICLE_LIFETIME
@@ -161,14 +162,18 @@ export default function KickflipSparks({ active = true }) {
 
     if (!meshRef.current) return
 
+    let hasActive = false
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const p = particles.current[i]
       if (!p.active) {
-        _dummy.scale.setScalar(0)
-        _dummy.updateMatrix()
-        meshRef.current.setMatrixAt(i, _dummy.matrix)
+        if (hadActiveParticle.current) {
+          _dummy.scale.setScalar(0)
+          _dummy.updateMatrix()
+          meshRef.current.setMatrixAt(i, _dummy.matrix)
+        }
         continue
       }
+      hasActive = true
 
       p.life -= gameDelta
       if (p.life <= 0) {
@@ -238,14 +243,23 @@ export default function KickflipSparks({ active = true }) {
       }
     }
 
-    meshRef.current.instanceMatrix.needsUpdate = true
-    meshRef.current.geometry.attributes.color.needsUpdate = true
+    if (hasActive || hadActiveParticle.current) {
+      meshRef.current.instanceMatrix.needsUpdate = true
+      meshRef.current.geometry.attributes.color.needsUpdate = true
+    }
+    hadActiveParticle.current = hasActive
   })
 
   const geo = useMemo(() => new THREE.BoxGeometry(1, 1, 1), [])
 
   return (
-    <instancedMesh ref={meshRef} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
+    <instancedMesh ref={(el) => {
+      meshRef.current = el
+      if (el) {
+        el.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+        if (el.geometry.attributes.color) el.geometry.attributes.color.setUsage(THREE.DynamicDrawUsage)
+      }
+    }} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
       <meshBasicMaterial
         toneMapped={false}
         transparent

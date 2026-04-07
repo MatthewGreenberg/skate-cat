@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
-import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
+import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor, isSafari } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
 
 const BACKGROUND_DISTANCE = 145
@@ -63,10 +63,12 @@ const bgFragmentShader = /* glsl */ `
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
   }
 
+  uniform int uFbmOctaves;
   float fbm(vec2 p) {
     float value = 0.0;
     float amplitude = 0.5;
     for (int i = 0; i < 4; i++) {
+      if (i >= uFbmOctaves) break;
       value += noise(p) * amplitude;
       p *= 2.03;
       amplitude *= 0.5;
@@ -275,6 +277,7 @@ export default function Background({ active = true }) {
     uSunColor: { value: new THREE.Color('#ffd17a') },
     uMoonColor: { value: new THREE.Color('#d9e6ff') },
     uStarColor: { value: new THREE.Color('#9ed3ff') },
+    uFbmOctaves: { value: isSafari ? 2 : 4 },
   }), [])
 
   const material = useMemo(() => new THREE.ShaderMaterial({

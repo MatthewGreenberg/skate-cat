@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { gameState, getGameDelta, getNightFactor } from '../store'
+import { gameState, getGameDelta, getNightFactor, isSafari } from '../store'
 
-const PARTICLE_COUNT = 40
+const PARTICLE_COUNT = isSafari ? 20 : 40
 
 export default function AmbientParticles({ active = true }) {
   const meshRef = useRef()
@@ -95,7 +95,10 @@ export default function AmbientParticles({ active = true }) {
   const geo = useMemo(() => new THREE.IcosahedronGeometry(1, 1), [])
 
   return (
-    <instancedMesh ref={meshRef} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
+    <instancedMesh ref={(el) => {
+      meshRef.current = el
+      if (el) el.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    }} args={[geo, null, PARTICLE_COUNT]} frustumCulled={false}>
       <meshBasicMaterial
         ref={matRef}
         color="#ffe8a0"

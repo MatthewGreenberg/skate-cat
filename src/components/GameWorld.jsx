@@ -39,6 +39,7 @@ export default function GameWorld({
   freezeMotion = false,
   foliageSegmentCount = 2,
   quality = 'auto',
+  shadowMode = 'map',
   trailTargetRef,
   musicRef,
   onJumpSfx,
@@ -48,8 +49,8 @@ export default function GameWorld({
     <>
       <color attach="background" args={['#000000']} />
       <group visible={visible}>
-        <DayNightController isRunning={sceneActive && !isGameOver} quality={quality} />
-        <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} quality={quality} />
+        <DayNightController isRunning={sceneActive && !isGameOver} quality={quality} shadowMode={shadowMode} />
+        <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} quality={quality} shadowMode={shadowMode} />
         <Background active={sceneActive} />
         <Sky active={sceneActive} />
         <group visible={visible}>
@@ -61,6 +62,7 @@ export default function GameWorld({
             freezeMotion={freezeMotion}
             musicRef={musicRef}
             onJumpSfx={onJumpSfx}
+            shadowMode={shadowMode}
           />
         </group>
         <Obstacles
@@ -69,6 +71,7 @@ export default function GameWorld({
           isRunning={runActive && !isGameOver}
           canCollide={runActive && !isCountdownActive}
           onLogHit={onLogHit}
+          shadowMode={shadowMode}
         />
         <SpeedLines active={sceneActive} />
         <KickflipSparks active={sceneActive} />
