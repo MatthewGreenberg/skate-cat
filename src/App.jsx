@@ -281,7 +281,7 @@ const SceneCanvas = memo(function SceneCanvas({
           width: '100vw',
           height: '100vh',
         }}
-        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
+        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15, powerPreference: 'high-performance' }}
         shadows={{ type: (gpuTier?.tier ?? 3) <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
       >
         {debugControlsEnabled && <StatsGl parent={statsParentRef} />}
@@ -438,13 +438,15 @@ export default function App() {
   const effectiveQuality = qualityMode !== 'auto'
     ? qualityMode
     : detectedQuality
-  const canvasDpr = qualityMode === 'high'
-    ? FORCED_HIGH_DPR
-    : effectiveQuality === 'high'
-      ? AUTO_HIGH_DPR
-      : effectiveQuality === 'quiet'
-        ? QUIET_DPR
-        : AUTO_DPR
+  const canvasDpr = isSafari
+    ? QUIET_DPR
+    : qualityMode === 'high'
+      ? FORCED_HIGH_DPR
+      : effectiveQuality === 'high'
+        ? AUTO_HIGH_DPR
+        : effectiveQuality === 'quiet'
+          ? QUIET_DPR
+          : AUTO_DPR
   const foliageSegmentCount = effectiveQuality === 'quiet' ? 1 : 2
   const gameplayShadowMode = useMemo(
     () => (shouldUseSafariGameplayContactShadows() ? 'contact' : 'map'),
