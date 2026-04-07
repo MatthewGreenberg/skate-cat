@@ -214,6 +214,10 @@ export default function PostEffects({
     const nightFactor = runActive ? getNightFactor(gameState.timeOfDay.current) : 0
     bloom.intensity = THREE.MathUtils.lerp(activeSettings.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
     bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(activeSettings.bloomThreshold, 0, nightFactor)
+
+    // Disable effects that have no visual contribution to save full-screen passes
+    chromaticAberration.enabled = chromaticStrengthRef.current > 0.001 || chromaticSpike > 0
+    vignette.enabled = vignette.darkness > 0.001
   })
 
   return (
