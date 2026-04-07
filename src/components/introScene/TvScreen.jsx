@@ -188,6 +188,7 @@ export function TvScreen({
   const bootElapsedRef = useRef(0)
   const leaderboardElapsedRef = useRef(0)
   const initialsElapsedRef = useRef(0)
+  const prevDrawInputsRef = useRef(null)
   // Channel-flip transition: 0 = idle, >0 = animating (counts down from FLIP_DURATION)
   const channelFlipRef = useRef(0)
   const FLIP_DURATION = 0.35
@@ -234,33 +235,46 @@ export function TvScreen({
       initialsElapsedRef.current += delta
     }
     if (!gpu) return
-    drawTvScreen(gpu.ctx, gpu.canvas, state.clock.elapsedTime, {
-      hovered: hoveredAction === 'start' || hoveredAction === 'back' || hoveredAction === 'confirmInitials',
-      disabled,
-      buttonLabel,
-      instructionLabel,
-      screenMode,
-      summary,
-      showDismissButton,
-      dismissHovered: hoveredAction === 'dismiss',
-      summaryElapsed: summaryElapsedRef.current,
-      bootElapsed: bootElapsedRef.current,
-      bootStatusLabel,
-      bootProgress,
-      bootReady,
-      highScore,
-      highScoresHovered: hoveredAction === 'highscores',
-      leaderboard,
-      leaderboardElapsed: leaderboardElapsedRef.current,
-      initials: initialsEntry?.initials ?? null,
-      cursorPos: initialsEntry?.cursorPos ?? 0,
-      initialsScore: initialsEntry?.score ?? 0,
-      initialsRank: initialsEntry?.rank ?? 'F',
-      initialsElapsed: initialsElapsedRef.current,
-    })
-    // Three.js marks canvas textures dirty for GPU upload
-    // eslint-disable-next-line react-hooks/immutability -- texture.needsUpdate is required API
-    gpu.texture.needsUpdate = true
+
+    // Build a lightweight fingerprint of inputs that affect canvas output
+    const isAnimatingMode = screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials'
+    const drawInputs = `${screenMode}|${hoveredAction}|${disabled}|${bootReady}|${Math.round(bootProgress)}|${highScore}`
+
+    // Animated modes need continuous redraws; static modes only redraw on input change
+    const needsRedraw = isAnimatingMode
+      || channelFlipRef.current > 0
+      || drawInputs !== prevDrawInputsRef.current
+
+    if (needsRedraw) {
+      prevDrawInputsRef.current = drawInputs
+      drawTvScreen(gpu.ctx, gpu.canvas, state.clock.elapsedTime, {
+        hovered: hoveredAction === 'start' || hoveredAction === 'back' || hoveredAction === 'confirmInitials',
+        disabled,
+        buttonLabel,
+        instructionLabel,
+        screenMode,
+        summary,
+        showDismissButton,
+        dismissHovered: hoveredAction === 'dismiss',
+        summaryElapsed: summaryElapsedRef.current,
+        bootElapsed: bootElapsedRef.current,
+        bootStatusLabel,
+        bootProgress,
+        bootReady,
+        highScore,
+        highScoresHovered: hoveredAction === 'highscores',
+        leaderboard,
+        leaderboardElapsed: leaderboardElapsedRef.current,
+        initials: initialsEntry?.initials ?? null,
+        cursorPos: initialsEntry?.cursorPos ?? 0,
+        initialsScore: initialsEntry?.score ?? 0,
+        initialsRank: initialsEntry?.rank ?? 'F',
+        initialsElapsed: initialsElapsedRef.current,
+      })
+      // Three.js marks canvas textures dirty for GPU upload
+      // eslint-disable-next-line react-hooks/immutability -- texture.needsUpdate is required API
+      gpu.texture.needsUpdate = true
+    }
     const uniforms = gpu.material.uniforms
     const c = crtRef.current
     uniforms.uTime.value = state.clock.elapsedTime
