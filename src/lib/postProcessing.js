@@ -37,7 +37,7 @@ export const DEFAULT_INTRO_POST_SETTINGS = {
 };
 
 export const INTRO_OVERLAY_CONTROL_LIMITS = {
-  warpStrength: { min: 0, max: 6, step: 0.05 },
+  warpStrength: { min: 0, max: 200, step: 5 },
   scanlineFrequency: { min: 20, max: 420, step: 1 },
   scanlineStrength: { min: 0, max: 1, step: 0.01 },
   rgbSplit: { min: 0, max: 6, step: 0.05 },
@@ -52,9 +52,9 @@ export const INTRO_OVERLAY_CONTROL_LIMITS = {
 export const DEFAULT_INTRO_OVERLAY_SETTINGS = {
   enabled: true,
   brushRadius: 0.05,
-  brushStrength: 0.14,
+  brushStrength: 0.145,
   decayRate: 1.75,
-  warpStrength: 6,
+  warpStrength: 166,
   scanlineFrequency: 420,
   scanlineStrength: 0.72,
   rgbSplit: 5.05,
