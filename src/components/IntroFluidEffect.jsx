@@ -223,6 +223,7 @@ export default function IntroFluidEffect({ active, mixRef, settings }) {
       pointer: null,
       pointerUv: new THREE.Vector2(-10, -10),
       velocity: new THREE.Vector2(),
+      dirty: false,
     }
   }, [])
 
@@ -256,6 +257,7 @@ export default function IntroFluidEffect({ active, mixRef, settings }) {
       maskGpu.ctx.fillRect(0, 0, maskGpu.canvas.width, maskGpu.canvas.height)
       setPointerInactive()
       maskGpu.texture.needsUpdate = true
+      maskGpu.dirty = false
     }
 
     if (!active) {
@@ -311,6 +313,7 @@ export default function IntroFluidEffect({ active, mixRef, settings }) {
         radius,
         settings.brushStrength
       )
+      maskGpu.dirty = true
       maskGpu.pointer = nextPoint
       maskGpu.velocity.lerp(
         new THREE.Vector2(nextUv.x - previousUv.x, nextUv.y - previousUv.y),
@@ -347,12 +350,14 @@ export default function IntroFluidEffect({ active, mixRef, settings }) {
     let frameId = 0
 
     const tick = () => {
-      const fadeAlpha = 1 - Math.exp(-settings.decayRate / 60)
-      if (fadeAlpha > 0.0001) {
-        maskGpu.ctx.globalCompositeOperation = 'source-over'
-        maskGpu.ctx.fillStyle = `rgba(0, 0, 0, ${fadeAlpha})`
-        maskGpu.ctx.fillRect(0, 0, maskGpu.canvas.width, maskGpu.canvas.height)
-        maskGpu.texture.needsUpdate = true
+      if (maskGpu.dirty) {
+        const fadeAlpha = 1 - Math.exp(-settings.decayRate / 60)
+        if (fadeAlpha > 0.0001) {
+          maskGpu.ctx.globalCompositeOperation = 'source-over'
+          maskGpu.ctx.fillStyle = `rgba(0, 0, 0, ${fadeAlpha})`
+          maskGpu.ctx.fillRect(0, 0, maskGpu.canvas.width, maskGpu.canvas.height)
+          maskGpu.texture.needsUpdate = true
+        }
       }
       maskGpu.velocity.multiplyScalar(0.86)
       frameId = window.requestAnimationFrame(tick)
