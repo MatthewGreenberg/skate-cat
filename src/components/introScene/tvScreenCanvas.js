@@ -474,6 +474,10 @@ export function getTvScreenActionAtPoint(
   if (isPointInBounds(x, y, actionBounds)) {
     return "start";
   }
+  const hsBoundsSummary = getHighScoresButtonBounds(width, height);
+  if (isPointInBounds(x, y, hsBoundsSummary)) {
+    return "highscores";
+  }
 
   return null;
 }
@@ -747,7 +751,7 @@ function animProgress(elapsed, start, duration) {
   return clamp01((elapsed - start) / duration);
 }
 
-function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = false, dismissHovered = false, elapsed = 99 } = {}) {
+function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = false, dismissHovered = false, elapsed = 99, highScoresHovered = false } = {}) {
   const title = getSummaryTitle(summary);
   const subhead = getSummarySubhead(summary);
   const isComplete = summary?.outcome === "complete";
@@ -897,6 +901,61 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     drawPawPrint(ctx, width * 0.88, height * 0.78, 0.68 * pawP, accentAlt, 0.34 * pawP, 0.2);
   }
 
+  // HIGH SCORES button
+  const hsButtonP = easeOutCubic(animProgress(elapsed, cardStaggerBase + 0.5, 0.4));
+  if (hsButtonP > 0) {
+    const hsHov = highScoresHovered;
+    const hsScale = hsHov ? 1.06 : 1;
+    const hsW = 260 * hsScale;
+    const hsH = 54 * hsScale;
+    const hsX = width * 0.5;
+    const hsY = height * 0.965;
+    const hsBtnX = hsX - hsW / 2;
+    const hsBtnY = hsY - hsH / 2;
+
+    ctx.save();
+    ctx.globalAlpha = hsButtonP;
+    ctx.beginPath();
+    ctx.roundRect(hsBtnX - 10, hsBtnY - 8, hsW + 20, hsH + 16, 30);
+    ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
+    ctx.strokeStyle = hsHov ? "rgba(124, 247, 255, 0.6)" : "rgba(124, 247, 255, 0.28)";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.4)" : "rgba(124, 247, 255, 0.15)";
+    ctx.shadowBlur = hsHov ? 20 : 10;
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
+    const hsGrad = ctx.createLinearGradient(0, hsBtnY, 0, hsBtnY + hsH);
+    hsGrad.addColorStop(0, hsHov ? "#9bfcff" : "#7cf7ff");
+    hsGrad.addColorStop(0.5, hsHov ? "#5fd4f7" : "#4db8d8");
+    hsGrad.addColorStop(1, hsHov ? "#6fa0ff" : "#5580cc");
+    ctx.fillStyle = hsGrad;
+    ctx.shadowColor = hsHov ? "rgba(124, 247, 255, 0.7)" : "rgba(124, 247, 255, 0.3)";
+    ctx.shadowBlur = hsHov ? 22 : 12;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.roundRect(hsBtnX + 8, hsBtnY + 5, hsW - 16, hsH * 0.32, 14);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#0a1428";
+    ctx.font = '900 22px "Nunito", sans-serif';
+    ctx.fillText("\u2605 HIGH SCORES \u2605", hsX, hsY + 1);
+    ctx.restore();
+  }
+
   if (showDismissButton) {
     drawDismissButton(ctx, width, height, {
       hovered: dismissHovered,
@@ -970,8 +1029,8 @@ function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed =
     const rowP = easeOutBack(animProgress(elapsed, 0.2 + i * 0.06, 0.4));
     if (rowP <= 0) continue;
     const entry = leaderboard[i];
-    const rowY = height * 0.235 + i * (height * 0.062);
-    const rowHeight = height * 0.054;
+    const rowY = height * 0.225 + i * (height * 0.055);
+    const rowHeight = height * 0.048;
 
     ctx.save();
     ctx.globalAlpha = clamp01(rowP * 2);
@@ -1071,10 +1130,14 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
     ctx.save();
     ctx.globalAlpha = clamp01(scoreP * 2);
     ctx.textAlign = "center";
-    ctx.fillStyle = "#ffffff";
-    ctx.shadowColor = "rgba(255, 209, 102, 0.6)";
-    ctx.shadowBlur = 24;
     ctx.font = `${fontSize}px "Knewave", cursive`;
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 16;
+    ctx.strokeStyle = "rgba(20, 8, 40, 0.9)";
+    ctx.strokeText(`${score}`, width * 0.5, height * 0.3);
+    ctx.fillStyle = "#ffffff";
+    ctx.shadowColor = "rgba(255, 209, 102, 0.8)";
+    ctx.shadowBlur = 30;
     ctx.fillText(`${score}`, width * 0.5, height * 0.3);
     ctx.restore();
   }
@@ -1083,10 +1146,14 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
   const badgeP = easeOutBack(animProgress(elapsed, 0.5, 0.4));
   if (badgeP > 0) {
     const rankColor = RANK_COLORS[rank] || "#9e9e9e";
+    const badgeWidth = 156;
+    const badgeHeight = 52;
+    const badgeX = width * 0.5 - badgeWidth / 2;
+    const badgeY = height * 0.34;
     ctx.save();
     ctx.globalAlpha = badgeP;
     ctx.beginPath();
-    ctx.roundRect(width * 0.5 - 42, height * 0.34, 84, 42, 16);
+    ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, 18);
     ctx.fillStyle = "rgba(10, 6, 20, 0.85)";
     ctx.strokeStyle = rankColor;
     ctx.lineWidth = 3;
@@ -1098,8 +1165,8 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = rankColor;
-    ctx.font = '900 26px "Nunito", sans-serif';
-    ctx.fillText(`RANK ${rank}`, width * 0.5, height * 0.34 + 22);
+    ctx.font = '900 28px "Nunito", sans-serif';
+    ctx.fillText(`RANK ${rank}`, width * 0.5, badgeY + badgeHeight / 2 + 1);
     ctx.restore();
   }
 
@@ -1250,6 +1317,7 @@ export function drawTvScreen(
       showDismissButton,
       dismissHovered,
       elapsed: summaryElapsed,
+      highScoresHovered,
     });
   } else if (screenMode === "boot") {
     drawBootScreen(ctx, width, height, {
@@ -1310,7 +1378,7 @@ export function drawTvScreen(
       disabledInstructionLabel: effectiveInstructionLabel,
       instructionFont: effectiveInstructionFont,
       y: 0.82 + buttonSlide / height,
-      hideInstruction: screenMode === "title",
+      hideInstruction: screenMode === "title" || screenMode === "summary",
     });
     ctx.restore();
   }

@@ -43,31 +43,13 @@ export const RAIL_PATTERN_LIBRARY = [
 
 export const PLACEMENT_LIBRARY = {
   1: [
-    { name: 'centerSingle', lanes: ['center'], weight: 1.35, maxScore: 18 },
-    { name: 'leftSingle', lanes: ['left'], weight: 1.05 },
-    { name: 'rightSingle', lanes: ['right'], weight: 1.05 },
-    { name: 'wideLeftSingle', lanes: ['farLeft'], weight: 0.7, minScore: 16 },
-    { name: 'wideRightSingle', lanes: ['farRight'], weight: 0.7, minScore: 16 },
+    { name: 'centerSingle', lanes: ['center'], weight: 1 },
   ],
   2: [
-    { name: 'leftRight', lanes: ['left', 'right'], weight: 1.2 },
-    { name: 'rightLeft', lanes: ['right', 'left'], weight: 1.2 },
-    { name: 'centerLeft', lanes: ['center', 'left'], weight: 1.1, maxScore: 24 },
-    { name: 'centerRight', lanes: ['center', 'right'], weight: 1.1, maxScore: 24 },
-    { name: 'leftCenter', lanes: ['left', 'center'], weight: 0.95, minScore: 10 },
-    { name: 'rightCenter', lanes: ['right', 'center'], weight: 0.95, minScore: 10 },
-    { name: 'wideSweepLeft', lanes: ['farRight', 'left'], weight: 0.7, minScore: 24, sparseOnly: true },
-    { name: 'wideSweepRight', lanes: ['farLeft', 'right'], weight: 0.7, minScore: 24, sparseOnly: true },
+    { name: 'centerDouble', lanes: ['center', 'center'], weight: 1 },
   ],
   3: [
-    { name: 'sweepLeft', lanes: ['right', 'center', 'left'], weight: 1.2 },
-    { name: 'sweepRight', lanes: ['left', 'center', 'right'], weight: 1.2 },
-    { name: 'bounceLeft', lanes: ['center', 'left', 'center'], weight: 1.05, denseOnly: true },
-    { name: 'bounceRight', lanes: ['center', 'right', 'center'], weight: 1.05, denseOnly: true },
-    { name: 'crossLeft', lanes: ['right', 'left', 'center'], weight: 0.9, minScore: 18, sparseOnly: true },
-    { name: 'crossRight', lanes: ['left', 'right', 'center'], weight: 0.9, minScore: 18, sparseOnly: true },
-    { name: 'outsideInLeft', lanes: ['farRight', 'center', 'left'], weight: 0.7, minScore: 28, sparseOnly: true },
-    { name: 'outsideInRight', lanes: ['farLeft', 'center', 'right'], weight: 0.7, minScore: 28, sparseOnly: true },
+    { name: 'centerTriple', lanes: ['center', 'center', 'center'], weight: 1 },
   ],
 }
 
@@ -84,22 +66,8 @@ const PHASE_RAIL_ALLOWLIST = {
 }
 
 const PHASE_PLACEMENT_ALLOWLIST = {
-  early: new Set(['centerSingle', 'leftSingle', 'rightSingle', 'leftRight', 'rightLeft', 'centerLeft', 'centerRight']),
-  mid: new Set([
-    'centerSingle',
-    'leftSingle',
-    'rightSingle',
-    'leftRight',
-    'rightLeft',
-    'centerLeft',
-    'centerRight',
-    'leftCenter',
-    'rightCenter',
-    'sweepLeft',
-    'sweepRight',
-    'bounceLeft',
-    'bounceRight',
-  ]),
+  early: new Set(['centerSingle', 'centerDouble', 'centerTriple']),
+  mid: new Set(['centerSingle', 'centerDouble', 'centerTriple']),
   late: null,
 }
 

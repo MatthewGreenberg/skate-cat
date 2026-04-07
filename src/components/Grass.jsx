@@ -136,7 +136,7 @@ const grassFragmentShader = /* glsl */ `
   }
 `
 
-export default function Grass() {
+export default function Grass({ quality = 'auto' }) {
   const meshRef = useRef()
 
   const { windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
@@ -170,6 +170,10 @@ export default function Grass() {
       sunsetColorDry: '#8a7a44',
     }, { collapsed: true }),
   }, [])
+  const resolvedBladeCount = Math.min(
+    bladeCount,
+    quality === 'high' ? 3000 : quality === 'quiet' ? 1400 : 2200
+  )
   const {
     nightColorBase,
     nightColorTip,
@@ -277,7 +281,8 @@ export default function Grass() {
     u.uWindSpeed.value = windSpeed
     u.uWindStrength.value = windStrength
     u.uThickness.value = thickness
-    u.uVisibleCount.value = bladeCount
+    u.uVisibleCount.value = resolvedBladeCount
+    meshRef.current.count = resolvedBladeCount
 
     // Lerp grass colors — warm hazy tint during sunset/sunrise
     lerpDayNightColor(u.uColorBase.value, dayColorBase, nightColorBase, nightFactor, sunsetColorBase, warmFactor)
@@ -298,6 +303,7 @@ export default function Grass() {
       ref={(el) => {
         meshRef.current = el
         if (el) {
+          el.count = resolvedBladeCount
           el.userData.cannotReceiveAO = true
           updateInstanceMatrices(el, bladeMinHeight, bladeMaxHeight)
         }

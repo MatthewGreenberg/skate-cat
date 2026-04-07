@@ -22,20 +22,15 @@ const fluidFragmentShader = /* glsl */ `
   uniform vec2 uPointerVelocity;
   uniform float uTime;
   uniform float uMix;
-  uniform float uDistortionPixels;
-  uniform float uFlowScale;
-  uniform float uFlowSpeed;
-  uniform float uCellSize;
-  uniform float uPixelatePixels;
-  uniform float uBlendStrength;
-  uniform float uDesaturateBias;
-  uniform float uDesaturateAmount;
+  uniform float uWarpStrength;
+  uniform float uScanlineFrequency;
+  uniform float uScanlineStrength;
+  uniform float uRgbSplit;
+  uniform float uHighlightStrength;
+  uniform float uEdgeGlowStrength;
+  uniform float uVelocityWarp;
   uniform float uBrushRadius;
   varying vec2 vUv;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-  }
 
   void main() {
     vec4 base = texture2D(inputBuffer, vUv);
@@ -54,57 +49,54 @@ const fluidFragmentShader = /* glsl */ `
 
     vec2 safeResolution = max(uResolution, vec2(1.0));
     vec2 safeMaskResolution = max(uMaskResolution, vec2(1.0));
-    float cellSize = max(uCellSize, 1.0);
-    vec2 flowStep = vec2(cellSize) / safeResolution;
-    vec2 flowUv = (floor(vUv * safeResolution / cellSize) + 0.5) * flowStep;
     vec2 maskTexel = 1.0 / safeMaskResolution;
-
-    float time = uTime * uFlowSpeed;
-    float waveA = sin(flowUv.y * uFlowScale * 6.2831853 + time * 1.3);
-    float waveB = cos(flowUv.x * uFlowScale * 5.6548668 - time * 1.1);
-    float waveC = sin((flowUv.x + flowUv.y) * uFlowScale * 4.3982297 + time * 0.8);
-    float jitter = hash(floor(flowUv * safeResolution * 0.5) + floor(time * 4.0)) - 0.5;
-
-    vec2 offset = vec2(
-      waveA + waveC * 0.55 + jitter * 0.35,
-      waveB - waveC * 0.45 - jitter * 0.2
-    );
     float maskDx = texture2D(uMask, vUv + vec2(maskTexel.x, 0.0)).r - texture2D(uMask, vUv - vec2(maskTexel.x, 0.0)).r;
     float maskDy = texture2D(uMask, vUv + vec2(0.0, maskTexel.y)).r - texture2D(uMask, vUv - vec2(0.0, maskTexel.y)).r;
     float coreInk = smoothstep(0.08, 0.95, rawMask) * uMix;
     vec2 pointerDelta = vUv - uPointerUv;
     float pointerInfluence = 1.0 - smoothstep(uBrushRadius * 0.45, uBrushRadius * 2.2, length(pointerDelta));
-    vec2 pointerFlow = clamp(uPointerVelocity * safeResolution * 0.08, vec2(-2.0), vec2(2.0)) * pointerInfluence;
-    vec2 maskFlow = vec2(maskDx, -maskDy) * 0.9;
-    vec2 coreFlow = vec2(waveA, waveB) * coreInk * 0.65;
-    offset = (offset * 0.22 + maskFlow * 0.2 + coreFlow + pointerFlow) * (uDistortionPixels / safeResolution) * ink;
+    vec2 pointerFlow = uPointerVelocity * safeResolution;
+    float velocitySignal = clamp(
+      (pointerFlow.x * 0.018 + pointerFlow.y * 0.006) * uVelocityWarp,
+      -6.0,
+      6.0
+    ) * pointerInfluence;
 
-    vec2 warpedUv = clamp(vUv + offset, vec2(0.0), vec2(1.0));
-    vec2 backgroundWarpUv = clamp(vUv + offset * (1.65 + coreInk * 0.55), vec2(0.0), vec2(1.0));
-    vec3 warped = texture2D(inputBuffer, warpedUv).rgb;
-    vec3 backgroundWarp = texture2D(inputBuffer, backgroundWarpUv).rgb;
-    float pixelatePixels = max(uPixelatePixels, 1.0);
-    vec2 pixelStep = vec2(pixelatePixels) / safeResolution;
-    vec2 pixelatedUv = (floor(backgroundWarpUv * safeResolution / pixelatePixels) + 0.5) * pixelStep;
-    pixelatedUv = clamp(pixelatedUv, pixelStep * 0.5, vec2(1.0) - pixelStep * 0.5);
-    vec3 pixelated = texture2D(inputBuffer, pixelatedUv).rgb;
-    float pixelMix = smoothstep(0.03, 0.88, rawMask) * ink;
-    float distortionPresence = smoothstep(0.04, 0.92, rawMask);
-    vec3 distortedBg = mix(warped, backgroundWarp, distortionPresence * 0.7);
-    vec3 effected = mix(distortedBg, pixelated, pixelMix * 0.82);
-    vec3 blended = mix(base.rgb, effected, min(1.0, (uBlendStrength + 0.14) * ink));
+    float scanPhase = vUv.y * uScanlineFrequency * 6.2831853;
+    float scanWaveA = sin(scanPhase + uTime * 13.0);
+    float scanWaveB = sin(scanPhase * 0.57 - uTime * 7.0);
+    float scanMix = (scanWaveA + scanWaveB * 0.55) * uScanlineStrength;
+    float edgeBand = smoothstep(0.05, 0.22, rawMask) * (1.0 - smoothstep(0.38, 0.72, rawMask));
+    float warpEnvelope = ink * (0.45 + coreInk * 0.55 + edgeBand * 0.35);
 
-    float luma = dot(blended, vec3(0.2126, 0.7152, 0.0722));
-    vec3 desaturated = vec3(luma);
-    float shadowMask = 1.0 - smoothstep(0.2, 0.82, luma);
-    float desaturateMask = mix(1.0, shadowMask, clamp(uDesaturateBias, 0.0, 1.0));
-    blended = mix(blended, desaturated, desaturateMask * uDesaturateAmount * ink);
+    vec2 warpOffset = vec2(
+      (scanMix + velocitySignal + maskDx * 2.2 + maskDy * 0.35) * (uWarpStrength / safeResolution.x) * warpEnvelope,
+      maskDy * 0.18 * (uWarpStrength / safeResolution.y) * warpEnvelope
+    );
+
+    vec2 warpedUv = clamp(vUv + warpOffset, vec2(0.0), vec2(1.0));
+    float splitPixels = (uRgbSplit / safeResolution.x) * warpEnvelope;
+    vec2 splitOffset = vec2(splitPixels * (0.55 + edgeBand * 0.75), 0.0);
+    float red = texture2D(inputBuffer, clamp(warpedUv + splitOffset, vec2(0.0), vec2(1.0))).r;
+    float green = texture2D(inputBuffer, warpedUv).g;
+    float blue = texture2D(inputBuffer, clamp(warpedUv - splitOffset, vec2(0.0), vec2(1.0))).b;
+    vec3 crtSample = vec3(red, green, blue);
+
+    float luma = dot(crtSample, vec3(0.2126, 0.7152, 0.0722));
+    vec3 contrastLift = mix(vec3(luma), crtSample, 1.0 + uHighlightStrength * 0.22);
+    contrastLift *= 1.0 + uHighlightStrength * 0.24 * ink;
+
+    float ringPulse = 0.55 + 0.45 * sin(scanPhase * 0.42 - uTime * 8.0);
+    vec3 edgeTint = mix(vec3(1.0), vec3(0.52, 0.93, 1.0), 0.78);
+    vec3 effected = contrastLift + edgeTint * edgeBand * ringPulse * uEdgeGlowStrength * 0.24;
+    vec3 blended = mix(base.rgb, effected, ink);
 
     gl_FragColor = vec4(blended, base.a);
   }
 `
 
 const MASK_SIZE = 512
+const MIN_POINTER_MOVE_PIXELS = 5
 
 function drawBrushStamp(ctx, x, y, radius, strength) {
   const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius)
@@ -153,14 +145,13 @@ class IntroFluidPass extends Pass {
         uPointerVelocity: new THREE.Uniform(new THREE.Vector2()),
         uTime: new THREE.Uniform(0),
         uMix: new THREE.Uniform(0),
-        uDistortionPixels: new THREE.Uniform(1.35),
-        uFlowScale: new THREE.Uniform(4.2),
-        uFlowSpeed: new THREE.Uniform(0.28),
-        uCellSize: new THREE.Uniform(3),
-        uPixelatePixels: new THREE.Uniform(10),
-        uBlendStrength: new THREE.Uniform(0.34),
-        uDesaturateBias: new THREE.Uniform(0.55),
-        uDesaturateAmount: new THREE.Uniform(0.83),
+        uWarpStrength: new THREE.Uniform(2.2),
+        uScanlineFrequency: new THREE.Uniform(180),
+        uScanlineStrength: new THREE.Uniform(0.22),
+        uRgbSplit: new THREE.Uniform(1.1),
+        uHighlightStrength: new THREE.Uniform(0.16),
+        uEdgeGlowStrength: new THREE.Uniform(0.42),
+        uVelocityWarp: new THREE.Uniform(1.6),
         uBrushRadius: new THREE.Uniform(0.06),
       },
       vertexShader: fluidVertexShader,
@@ -293,6 +284,22 @@ export default function IntroFluidEffect({ active, mixRef, settings }) {
         THREE.MathUtils.clamp(normalizedX, 0, 1),
         THREE.MathUtils.clamp(1 - normalizedY, 0, 1)
       )
+      if (maskGpu.pointer == null) {
+        maskGpu.pointer = { x, y }
+        maskGpu.pointerUv.copy(nextUv)
+        maskGpu.velocity.set(0, 0)
+        return
+      }
+
+      const moveDx = x - maskGpu.pointer.x
+      const moveDy = y - maskGpu.pointer.y
+      const moveDistance = Math.hypot(moveDx, moveDy)
+      const minMoveDistance = Math.max(MIN_POINTER_MOVE_PIXELS, radius * 0.22)
+      if (moveDistance < minMoveDistance) {
+        maskGpu.velocity.multiplyScalar(0.65)
+        return
+      }
+
       const previousUv = maskGpu.pointerUv
 
       maskGpu.ctx.globalCompositeOperation = 'lighter'
@@ -324,14 +331,13 @@ export default function IntroFluidEffect({ active, mixRef, settings }) {
 
   useEffect(() => {
     const uniforms = pass.material.uniforms
-    uniforms.uDistortionPixels.value = settings.distortionPixels
-    uniforms.uFlowScale.value = settings.flowScale
-    uniforms.uFlowSpeed.value = settings.flowSpeed
-    uniforms.uCellSize.value = settings.cellSize
-    uniforms.uPixelatePixels.value = settings.pixelatePixels
-    uniforms.uBlendStrength.value = settings.blendStrength
-    uniforms.uDesaturateBias.value = settings.desaturateBias
-    uniforms.uDesaturateAmount.value = settings.desaturateAmount
+    uniforms.uWarpStrength.value = settings.warpStrength
+    uniforms.uScanlineFrequency.value = settings.scanlineFrequency
+    uniforms.uScanlineStrength.value = settings.scanlineStrength
+    uniforms.uRgbSplit.value = settings.rgbSplit
+    uniforms.uHighlightStrength.value = settings.highlightStrength
+    uniforms.uEdgeGlowStrength.value = settings.edgeGlowStrength
+    uniforms.uVelocityWarp.value = settings.velocityWarp
     uniforms.uBrushRadius.value = settings.brushRadius
   }, [pass, settings])
 

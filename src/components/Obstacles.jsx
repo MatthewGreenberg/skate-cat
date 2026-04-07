@@ -90,17 +90,14 @@ const OBSTACLE_HIT_DISTANCE_CORRECTION_NEAR = 0.8
 const HIT_RECOVERY_SECONDS = 1.05
 const HIT_SLOW_SPEED_FACTOR = 0.58
 const LATE_JUMP_FAIL_OFFSET_SECONDS = 0.045
-const JUMP_TUTORIAL_PROMPT = 'SPACE / W / D TO JUMP ON THE BEAT'
-const SPIN_TUTORIAL_PROMPT = 'A / S FOR 360'
+const JUMP_TUTORIAL_PROMPT = 'SPACE / UP / W / D TO JUMP ON THE BEAT'
+const SPIN_TUTORIAL_PROMPT = 'LEFT / A / S FOR 360'
 const PHASE_SPEED_BONUS = {
   early: 0,
   mid: 1.1,
   late: 2.2,
 }
-const PHASE_ANNOUNCEMENTS = {
-  mid: 'PICKING UP',
-  late: 'FINAL STRETCH',
-}
+const PHASE_ANNOUNCEMENTS = {}
 const TIMING_DEBUG_PATTERN_LIBRARY = [
   { name: 'centerSingle', offsets: [1], lanes: ['center'] },
   { name: 'leftSingle', offsets: [1], lanes: ['left'] },
@@ -343,12 +340,11 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
 
   const updateTutorialPrompt = (currentBeat) => {
     let nextPrompt = ''
-    if (currentBeat < STARTUP_SAFE_BEATS + 8 && gameState.progressScore <= 0) {
+    if (currentBeat < STARTUP_SAFE_BEATS + 16 && gameState.progressScore < 6) {
       nextPrompt = JUMP_TUTORIAL_PROMPT
     } else if (
-      gameState.progressScore >= TIMING_POINTS.Perfect &&
       gameState.groundSpinCount.current <= 0 &&
-      currentBeat < STARTUP_SAFE_BEATS + 24
+      currentBeat < STARTUP_SAFE_BEATS + 40
     ) {
       nextPrompt = SPIN_TUTORIAL_PROMPT
     }
@@ -835,7 +831,8 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
     }
 
     // Collision detection — cat is at z=0, check if log is near
-    if (canCollide && graceTimer.current <= 0 && hitRecoveryTimer.current <= 0) {
+    const isInGracePeriod = graceTimer.current > 0
+    if (canCollide && hitRecoveryTimer.current <= 0) {
       collisionLoop:
       for (let i = 0; i < POOL_SIZE; i++) {
         const ob = active.current[i]
@@ -872,7 +869,7 @@ export default function Obstacles({ musicRef, active: isActive = true, isRunning
           : null
 
         if (ob.z > obstacleWindowMinZ && ob.z < obstacleWindowMaxZ && !ob.scored) {
-          if (((!ob.isVertical && !hasLogClearance) || (ob.isVertical && !isGrindingThisObstacle)) && !isDebug) {
+          if (((!ob.isVertical && !hasLogClearance) || (ob.isVertical && !isGrindingThisObstacle)) && !isDebug && !isInGracePeriod) {
             const failReason = getFailureReason({
               obstacle: ob,
               matchedTiming,

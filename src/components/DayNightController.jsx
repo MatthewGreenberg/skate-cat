@@ -9,17 +9,16 @@ import {
   getNightContrastOffset,
   getSunsetFactor,
   getSunriseFactor,
-  qualityMode,
   lerpDayNightColor,
 } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
 
-export default function DayNightController({ isRunning }) {
+export default function DayNightController({ isRunning, quality = 'auto' }) {
   const dirLightRef = useRef()
   const ambientRef = useRef()
   const hemiRef = useRef()
   const { scene } = useThree()
-  const shadowMapSize = qualityMode === 'high' ? 1024 : qualityMode === 'quiet' ? 256 : 512
+  const shadowMapSize = quality === 'high' ? 1024 : quality === 'quiet' ? 256 : 512
   const { timeOfDay, paused } = useOptionalControls('Game', {
     'Day/Night': folder({
       timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },

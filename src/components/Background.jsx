@@ -288,10 +288,10 @@ export default function Background({ active = true }) {
   useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
+    if (!active) return
+
     const gameDelta = getGameDelta(delta)
-    if (active) {
-      motionTime.current += gameDelta
-    }
+    motionTime.current += gameDelta
 
     const t = gameState.timeOfDay.current
     const nightFactor = getNightFactor(t)
@@ -299,7 +299,7 @@ export default function Background({ active = true }) {
     const sunriseFactor = getSunriseFactor(t)
     const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
     const isSunrise = sunriseFactor > 0
-    const speed = active && !gameState.gameOver ? gameState.speed.current || 0 : 0
+    const speed = !gameState.gameOver ? gameState.speed.current || 0 : 0
     const speedFactor = Math.min(speed / Math.max(gameState.baseSpeed, 0.001), 1.45)
     scrollOffset.current += speed * gameDelta * 0.009
     const lateralOffset = camera.position.x * 0.14

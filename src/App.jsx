@@ -46,7 +46,8 @@ import { loadLeaderboard, isHighScore, insertScore } from './lib/leaderboard'
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 const AUTO_DPR = [1, 1.25]
-const HIGH_DPR = [1, 2]
+const AUTO_HIGH_DPR = [1, 1.5]
+const FORCED_HIGH_DPR = [1, 2]
 const QUIET_DPR = [1, 1]
 const BOOT_PHASE_LOADING = 'loading'
 const BOOT_PHASE_PRIMING = 'priming'
@@ -65,12 +66,13 @@ const CAPTURE_MODE_LAUNCH = 'launch'
 const CAPTURE_MODE_RETURN = 'return'
 const RETURN_SCREEN_TITLE = 'title'
 const RETURN_SCREEN_SUMMARY = 'summary'
-const END_GLITCH_DURATION_MS = 900
+const END_GLITCH_DURATION_MS = 300
 const LOADING_PHASE_MIN_MS = 950
 const PRIMING_PHASE_MIN_MS = 700
 const BOOT_REVEAL_DURATION_MS = 1100
 const BOOT_ATTRACT_SETTLE_MS = 480
 const START_CONFIRM_MS = 220
+const FAILED_RETURN_DURATION_SECONDS = 0.9
 
 function clamp01(value) {
   return Math.min(Math.max(value, 0), 1)
@@ -235,6 +237,7 @@ const SceneCanvas = memo(function SceneCanvas({
   introButtonLabel,
   introInstructionLabel,
   gpuTier,
+  quality,
   chromaticSpike,
   cameraMode,
   onDismissIntroScreen,
@@ -246,96 +249,115 @@ const SceneCanvas = memo(function SceneCanvas({
   leaderboard,
   initialsEntry,
   onAction,
+  reverseTransitionDuration,
 }) {
+  const statsParentRef = useRef(null)
+
   return (
-    <Canvas
-      dpr={canvasDpr}
-      style={{
-        width: '100vw',
-        height: '100vh',
-      }}
-      gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
-      shadows={{ type: (gpuTier?.tier ?? 3) <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
-    >
-      {debugControlsEnabled && <StatsGl />}
-      <SceneCapture
-        shouldCaptureRef={shouldCaptureSceneRef}
-        snapshotTextureRef={transitionSnapshotTextureRef}
-        onCaptured={onSceneCaptured}
-      />
-      <CameraRig
-        runActive={runActive}
-        showGameWorld={showGameWorld}
-        isTransitioning={isTransitioning}
-        transitionProgressRef={transitionProgressRef}
-        transitionDirection={transitionDirection}
-        cameraMode={cameraMode}
-      />
-      {!showGameWorld && phase !== PHASE_LAUNCHING && (
-        <IntroScene
-          onStart={onStart}
-          onDismiss={onDismissIntroScreen}
-          onAction={onAction}
-          disabled={introDisabled}
-          buttonLabel={introButtonLabel}
-          instructionLabel={introInstructionLabel}
-          screenMode={introScreenMode}
-          summary={introSummary}
-          showDismissButton={showIntroDismissButton}
-          bootVisualMix={bootVisualMix}
-          bootStatusLabel={bootStatusLabel}
-          bootProgress={bootDisplayedProgress}
-          bootReady={bootReady}
-          highScore={highScore}
-          leaderboard={leaderboard}
-          initialsEntry={initialsEntry}
+    <>
+      {debugControlsEnabled && (
+        <div
+          ref={statsParentRef}
+          style={{
+            position: 'fixed',
+            top: '0.75rem',
+            left: '0.75rem',
+            zIndex: 1400,
+          }}
         />
       )}
-      {shouldMountGameWorld && (
-        <GameWorld
-          visible={showGameWorld}
-          sceneActive={sceneActive}
+      <Canvas
+        dpr={canvasDpr}
+        style={{
+          width: '100vw',
+          height: '100vh',
+        }}
+        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}
+        shadows={{ type: (gpuTier?.tier ?? 3) <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
+      >
+        {debugControlsEnabled && <StatsGl parent={statsParentRef} />}
+        <SceneCapture
+          shouldCaptureRef={shouldCaptureSceneRef}
+          snapshotTextureRef={transitionSnapshotTextureRef}
+          onCaptured={onSceneCaptured}
+        />
+        <CameraRig
           runActive={runActive}
-          isGameOver={isGameOver}
-          isCountdownActive={isCountdownActive}
+          showGameWorld={showGameWorld}
           isTransitioning={isTransitioning}
-          useOriginalMaterials={useOriginalMaterials}
-          freezeMotion={phase === PHASE_END_GLITCH || transitionCaptureMode === CAPTURE_MODE_RETURN || phase === PHASE_RETURNING}
-          trailTargetRef={trailTargetRef}
-          musicRef={musicRef}
-          onJumpSfx={onJumpSfx}
-          onLogHit={onLogHit}
-          foliageSegmentCount={foliageSegmentCount}
+          transitionProgressRef={transitionProgressRef}
+          transitionDirection={transitionDirection}
+          cameraMode={cameraMode}
         />
-      )}
-      {shouldMountGameWorld && (
-        <GameWorldWarmup
-          active={isWarmingGameWorld}
-          onComplete={onGameWorldPrimed}
+        {!showGameWorld && phase !== PHASE_LAUNCHING && (
+          <IntroScene
+            onStart={onStart}
+            onDismiss={onDismissIntroScreen}
+            onAction={onAction}
+            quality={quality}
+            disabled={introDisabled}
+            buttonLabel={introButtonLabel}
+            instructionLabel={introInstructionLabel}
+            screenMode={introScreenMode}
+            summary={introSummary}
+            showDismissButton={showIntroDismissButton}
+            bootVisualMix={bootVisualMix}
+            bootStatusLabel={bootStatusLabel}
+            bootProgress={bootDisplayedProgress}
+            bootReady={bootReady}
+            highScore={highScore}
+            leaderboard={leaderboard}
+            initialsEntry={initialsEntry}
+          />
+        )}
+        {shouldMountGameWorld && (
+          <GameWorld
+            visible={showGameWorld}
+            sceneActive={sceneActive}
+            runActive={runActive}
+            isGameOver={isGameOver}
+            isCountdownActive={isCountdownActive}
+            isTransitioning={isTransitioning}
+            useOriginalMaterials={useOriginalMaterials}
+            freezeMotion={phase === PHASE_END_GLITCH || transitionCaptureMode === CAPTURE_MODE_RETURN || phase === PHASE_RETURNING}
+            quality={quality}
+            trailTargetRef={trailTargetRef}
+            musicRef={musicRef}
+            onJumpSfx={onJumpSfx}
+            onLogHit={onLogHit}
+            foliageSegmentCount={foliageSegmentCount}
+          />
+        )}
+        {shouldMountGameWorld && (
+          <GameWorldWarmup
+            active={isWarmingGameWorld}
+            onComplete={onGameWorldPrimed}
+          />
+        )}
+        <TransitionAnimator
+          progressRef={transitionProgressRef}
+          isTransitioning={isTransitioning}
+          duration={transitionDirection === 'reverse' ? reverseTransitionDuration : transitionSettings.duration}
+          onComplete={onTransitionComplete}
         />
-      )}
-      <TransitionAnimator
-        progressRef={transitionProgressRef}
-        isTransitioning={isTransitioning}
-        duration={transitionDirection === 'reverse' ? transitionSettings.reverseDuration : transitionSettings.duration}
-        onComplete={onTransitionComplete}
-      />
-      <PostEffects
-        introSettings={introPost}
-        gameSettings={gamePost}
-        transitionSettings={transitionSettings}
-        transitionProgressRef={transitionProgressRef}
-        isTransitioning={isTransitioning}
-        transitionDirection={transitionDirection}
-        showGameWorld={showGameWorld}
-        showIntroOverlay={showIntroOverlay}
-        runActive={runActive}
-        capturedTexture={capturedTransitionTexture}
-        gpuTier={gpuTier}
-        chromaticSpike={chromaticSpike}
-        introOverlaySettings={introOverlaySettings}
-      />
-    </Canvas>
+        <PostEffects
+          introSettings={introPost}
+          gameSettings={gamePost}
+          transitionSettings={transitionSettings}
+          transitionProgressRef={transitionProgressRef}
+          isTransitioning={isTransitioning}
+          transitionDirection={transitionDirection}
+          showGameWorld={showGameWorld}
+          showIntroOverlay={showIntroOverlay}
+          runActive={runActive}
+          capturedTexture={capturedTransitionTexture}
+          gpuTier={gpuTier}
+          quality={quality}
+          chromaticSpike={chromaticSpike}
+          introOverlaySettings={introOverlaySettings}
+        />
+      </Canvas>
+    </>
   )
 })
 
@@ -398,14 +420,21 @@ export default function App() {
   const sceneActive = phase === PHASE_LAUNCHING || (phase === PHASE_RUNNING && !isEndingLocked)
   const isGameOver = isEndingLocked || isPreReturnGlitching || phase === PHASE_RETURNING || phase === PHASE_RESULTS
   const gpuTier = useDetectGPU()
-  // GPU-aware quality: URL param overrides auto-detection
+  const detectedQuality = gpuTier.tier === 0 ? 'quiet'
+    : gpuTier.tier === 1 ? 'quiet'
+      : gpuTier.tier === 2 ? 'auto'
+        : 'high'
+  // GPU-aware quality: URL param overrides auto-detection.
   const effectiveQuality = qualityMode !== 'auto'
     ? qualityMode
-    : gpuTier.tier === 0 ? 'quiet'
-      : gpuTier.tier === 1 ? 'quiet'
-        : gpuTier.tier === 2 ? 'auto'
-          : 'high'
-  const canvasDpr = effectiveQuality === 'high' ? HIGH_DPR : effectiveQuality === 'quiet' ? QUIET_DPR : AUTO_DPR
+    : detectedQuality
+  const canvasDpr = qualityMode === 'high'
+    ? FORCED_HIGH_DPR
+    : effectiveQuality === 'high'
+      ? AUTO_HIGH_DPR
+      : effectiveQuality === 'quiet'
+        ? QUIET_DPR
+        : AUTO_DPR
   const foliageSegmentCount = effectiveQuality === 'quiet' ? 1 : 2
   const currentRunSummary = gameState.lastRunSummary.current
   const currentOutcome = currentRunSummary?.outcome ?? null
@@ -434,18 +463,20 @@ export default function App() {
         : introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
   const introSummary = introScreenMode === RETURN_SCREEN_SUMMARY ? currentRunSummary : null
   const chromaticSpike = isPreReturnGlitching ? 1 : 0
-  const cameraMode = isReturnScreenActive
-    ? introScreenMode === RETURN_SCREEN_SUMMARY
-      ? currentOutcome === 'failed'
-        ? showDeathFullscreen ? 'death' : 'intro'
-        : 'results'
-      : 'intro'
-    : 'intro'
-  const canDismissDeathFullscreen = (
-    phase === PHASE_RESULTS &&
+  const shouldUseDeathCamera = (
+    isPreReturnGlitching &&
     introScreenMode === RETURN_SCREEN_SUMMARY &&
     currentOutcome === 'failed' &&
     showDeathFullscreen
+  )
+  const cameraMode = shouldUseDeathCamera
+    ? 'death'
+    : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome !== 'failed'
+      ? 'results'
+      : 'intro'
+  const canDismissResultsSummary = (
+    phase === PHASE_RESULTS &&
+    introScreenMode === RETURN_SCREEN_SUMMARY
   )
   const bootOverlayOpacity = bootPhase === BOOT_PHASE_REVEALING ? 1 - bootVisualMix : bootPhase === BOOT_PHASE_ATTRACT ? 0 : 1
   const bootStatusLabel = bootPhase === BOOT_PHASE_LOADING
@@ -537,11 +568,26 @@ export default function App() {
     setCountdownText('')
   }, [])
 
+  const createHighScoreEntry = useCallback((summary) => ({
+    initials: ['A', 'A', 'A'],
+    cursorPos: 0,
+    score: summary.totalScore,
+    rank: summary.rank,
+  }), [])
+
   const queueReturnToIntro = useCallback(({ summary = null, screenMode = RETURN_SCREEN_SUMMARY } = {}) => {
     if (phase !== PHASE_RUNNING || isGameOver || isTransitionBusy || isEndingLocked) return
 
+    const shouldShowHighScoreEntry = (
+      screenMode === RETURN_SCREEN_SUMMARY &&
+      summary &&
+      isHighScore(summary.totalScore)
+    )
+
     setReturnScreenMode(screenMode)
     gameState.lastRunSummary.current = screenMode === RETURN_SCREEN_SUMMARY ? summary : null
+    setTvScreenOverride(shouldShowHighScoreEntry ? 'initials' : null)
+    setInitialsEntry(shouldShowHighScoreEntry ? createHighScoreEntry(summary) : null)
     transitionProgressRef.current = 0
     setTransitionDirection('reverse')
     setIsEndingLocked(true)
@@ -572,7 +618,7 @@ export default function App() {
     shouldCaptureSceneRef.current = true
     transitionCaptureModeRef.current = CAPTURE_MODE_RETURN
     setTransitionCaptureMode(CAPTURE_MODE_RETURN)
-  }, [clearPlaybackState, isEndingLocked, isGameOver, isTransitionBusy, phase])
+  }, [clearPlaybackState, createHighScoreEntry, isEndingLocked, isGameOver, isTransitionBusy, phase])
 
   const handleReturnToIntro = useCallback(() => {
     window.clearTimeout(endGlitchTimeoutRef.current)
@@ -661,6 +707,11 @@ export default function App() {
       },
     }, { collapsed: true }),
   }, [])
+  const reverseTransitionDuration = (
+    currentOutcome === 'failed'
+      ? Math.min(transitionSettings.reverseDuration, FAILED_RETURN_DURATION_SECONDS)
+      : transitionSettings.reverseDuration
+  )
 
   useEffect(() => {
     returnFreezeDurationRef.current = transitionSettings.returnFreezeDuration
@@ -778,9 +829,10 @@ export default function App() {
 
     const onKeyDown = (event) => {
       if (event.repeat) return
-      if (canDismissDeathFullscreen && event.key.toLowerCase() === 'x') {
+      if (canDismissResultsSummary && event.key.toLowerCase() === 'x') {
         event.preventDefault()
         setShowDeathFullscreen(false)
+        setReturnScreenMode(RETURN_SCREEN_TITLE)
         return
       }
 
@@ -807,7 +859,7 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canDismissDeathFullscreen, handleReturnToIntro, isTransitionBusy, phase, queueReturnToIntro, runActive])
+  }, [canDismissResultsSummary, handleReturnToIntro, isTransitionBusy, phase, queueReturnToIntro, runActive])
 
   useEffect(() => {
     gameState.onGameOver = (payload = {}) => {
@@ -977,6 +1029,7 @@ export default function App() {
         handleReturnToIntro()
         return
       }
+
       setStartPhase(START_PHASE_IDLE)
       setPhase(PHASE_RESULTS)
       setIsEndingLocked(false)
@@ -984,7 +1037,12 @@ export default function App() {
     }
 
     activateRun()
-  }, [activateRun, handleReturnToIntro, returnScreenMode, transitionDirection])
+  }, [
+    activateRun,
+    handleReturnToIntro,
+    returnScreenMode,
+    transitionDirection,
+  ])
 
   const handleSongComplete = useCallback(() => {
     queueReturnToIntro({
@@ -1019,34 +1077,6 @@ export default function App() {
   const flipToScreen = useCallback((targetMode) => {
     setTvScreenOverride(targetMode)
   }, [])
-
-  // Leaderboard: auto-trigger initials entry after summary if high score
-  const hasTriggeredInitialsRef = useRef(false)
-  useEffect(() => {
-    if (introScreenMode !== RETURN_SCREEN_SUMMARY) {
-      hasTriggeredInitialsRef.current = false
-      return
-    }
-    // Already triggered or already in initials
-    if (hasTriggeredInitialsRef.current || tvScreenOverride) return
-    const summary = currentRunSummary
-    if (!summary) return
-
-    // Wait for the summary animation to complete before triggering
-    const timer = window.setTimeout(() => {
-      if (isHighScore(summary.totalScore)) {
-        hasTriggeredInitialsRef.current = true
-        setInitialsEntry({
-          initials: ['A', 'A', 'A'],
-          cursorPos: 0,
-          score: summary.totalScore,
-          rank: summary.rank,
-        })
-        flipToScreen('initials')
-      }
-    }, 3200) // After summary animation (~2.5s) + brief pause
-    return () => window.clearTimeout(timer)
-  }, [currentRunSummary, introScreenMode, flipToScreen, tvScreenOverride])
 
   const handleTvAction = useCallback((action, payload) => {
     if (action === 'highscores') {
@@ -1107,7 +1137,9 @@ export default function App() {
       )
       setLeaderboard(updated)
       setInitialsEntry(null)
-      flipToScreen(null)
+      setTvScreenOverride(null)
+      setReturnScreenMode(RETURN_SCREEN_SUMMARY)
+      return
     }
   }, [initialsEntry, flipToScreen])
 
@@ -1311,10 +1343,14 @@ export default function App() {
           introButtonLabel={introButtonLabel}
           introInstructionLabel={introInstructionLabel}
           gpuTier={gpuTier}
+          quality={effectiveQuality}
           chromaticSpike={chromaticSpike}
           cameraMode={cameraMode}
-          onDismissIntroScreen={() => setShowDeathFullscreen(false)}
-          showIntroDismissButton={canDismissDeathFullscreen}
+          onDismissIntroScreen={() => {
+            setShowDeathFullscreen(false)
+            setReturnScreenMode(RETURN_SCREEN_TITLE)
+          }}
+          showIntroDismissButton={canDismissResultsSummary}
           bootStatusLabel={bootStatusLabel}
           bootDisplayedProgress={displayedBootProgress}
           bootReady={isAssetLoadComplete && isGameWorldPrimed && isMusicReady}
@@ -1322,6 +1358,7 @@ export default function App() {
           leaderboard={leaderboard}
           initialsEntry={initialsEntry}
           onAction={handleTvAction}
+          reverseTransitionDuration={reverseTransitionDuration}
         />
       </Suspense>
     </>

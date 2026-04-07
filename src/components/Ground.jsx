@@ -93,7 +93,7 @@ const roadFragmentShader = /* glsl */ `
   }
 `
 
-export default function Ground({ active = true, foliageSegmentCount = 2 }) {
+export default function Ground({ active = true, foliageSegmentCount = 2, quality = 'auto' }) {
   const {
     baseSpeed, roadColor, roadDetail, edgeColor,
     toonSteps, shadowBrightness, grainAmount, grainScale,
@@ -145,6 +145,8 @@ export default function Ground({ active = true, foliageSegmentCount = 2 }) {
   const scrollOffset = useRef(0)
 
   useFrame((_, delta) => {
+    if (!active || gameState.gameOver) return
+
     const gameDelta = getGameDelta(delta)
     const t = gameState.timeOfDay.current
     const nightFactor = getNightFactor(t)
@@ -169,7 +171,6 @@ export default function Ground({ active = true, foliageSegmentCount = 2 }) {
     // Lerp ground green color — warm tint at sunset/sunrise
     lerpDayNightColor(groundMaterial.color, '#4CB944', '#1a3318', nightFactor, '#7a8a30', warmFactor)
 
-    if (!active || gameState.gameOver) return
     scrollOffset.current += gameState.speed.current * gameDelta
     for (let i = 0; i < SEGMENT_COUNT; i++) {
       // Each segment has a fixed slot; we wrap the scroll offset modularly
@@ -210,7 +211,7 @@ export default function Ground({ active = true, foliageSegmentCount = 2 }) {
           </mesh>
           <Pebbles segmentSeed={i} />
           <group ref={(el) => (detailRefs.current[i] = el)}>
-            <Grass />
+            <Grass quality={quality} />
             <Wildflowers />
           </group>
         </group>

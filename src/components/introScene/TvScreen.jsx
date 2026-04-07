@@ -11,6 +11,12 @@ import { CRT_FRAGMENT_SHADER, CRT_VERTEX_SHADER } from './crtShaders'
 import { createCurvedScreenGeometry } from './curvedScreenGeometry'
 import { drawTvScreen, getTvScreenActionAtPoint } from './tvScreenCanvas'
 
+function getScreenTextureSize(quality) {
+  if (quality === 'high') return 1024
+  if (quality === 'quiet') return 512
+  return 768
+}
+
 export function TvScreen({
   position,
   size,
@@ -24,6 +30,7 @@ export function TvScreen({
   glowOpacity = 0.05,
   glowOffsetZ = -0.01,
   crt = DEFAULT_TV_CRT,
+  quality = 'auto',
   onStart,
   onDismiss,
   onAction,
@@ -47,6 +54,7 @@ export function TvScreen({
   const glowWidth = screenWidth * glowScale[0]
   const glowHeight = screenHeight * glowScale[1]
   const curveDepth = Math.max(screenWidth, screenHeight) * curveAmount
+  const screenTextureSize = getScreenTextureSize(quality)
   const screenGeometry = useMemo(
     () => createCurvedScreenGeometry(screenWidth, screenHeight, curveDepth),
     [curveDepth, screenHeight, screenWidth]
@@ -59,12 +67,16 @@ export function TvScreen({
   const gpu = useMemo(() => {
     if (typeof document === 'undefined') return null
     const canvas = document.createElement('canvas')
-    canvas.width = 1024
-    canvas.height = 1024
+    canvas.width = screenTextureSize
+    canvas.height = screenTextureSize
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
     const texture = new THREE.CanvasTexture(canvas)
     texture.flipY = true
     texture.colorSpace = THREE.SRGBColorSpace
-    texture.anisotropy = 8
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.generateMipmaps = false
     const c0 = DEFAULT_TV_CRT
     const material = new THREE.ShaderMaterial({
       uniforms: {
@@ -93,8 +105,8 @@ export function TvScreen({
       depthTest: false,
       side: THREE.DoubleSide,
     })
-    return { canvas, texture, material }
-  }, [])
+    return { canvas, ctx, texture, material }
+  }, [screenTextureSize])
 
   useCursor(Boolean(hoveredAction) && !disabled)
 
@@ -222,9 +234,7 @@ export function TvScreen({
       initialsElapsedRef.current += delta
     }
     if (!gpu) return
-    const ctx = gpu.canvas.getContext('2d')
-    if (!ctx) return
-    drawTvScreen(ctx, gpu.canvas, state.clock.elapsedTime, {
+    drawTvScreen(gpu.ctx, gpu.canvas, state.clock.elapsedTime, {
       hovered: hoveredAction === 'start' || hoveredAction === 'back' || hoveredAction === 'confirmInitials',
       disabled,
       buttonLabel,

@@ -38,6 +38,7 @@ export default function GameWorld({
   useOriginalMaterials,
   freezeMotion = false,
   foliageSegmentCount = 2,
+  quality = 'auto',
   trailTargetRef,
   musicRef,
   onJumpSfx,
@@ -47,8 +48,8 @@ export default function GameWorld({
     <>
       <color attach="background" args={['#000000']} />
       <group visible={visible}>
-        <DayNightController isRunning={sceneActive && !isGameOver} />
-        <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} />
+        <DayNightController isRunning={sceneActive && !isGameOver} quality={quality} />
+        <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} quality={quality} />
         <Background active={sceneActive} />
         <Sky active={sceneActive} />
         <group visible={visible}>

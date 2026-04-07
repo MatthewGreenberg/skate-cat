@@ -102,6 +102,7 @@ export default function Sky({ active = true }) {
   useFrame((_, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
+    if (!active) return
 
     const dummy = dummyRef.current
     const tempMatrix = tempMatrixRef.current
@@ -126,7 +127,7 @@ export default function Sky({ active = true }) {
       return
     }
 
-    const speed = active && !gameState.gameOver ? gameState.speed.current || 0 : 0
+    const speed = !gameState.gameOver ? gameState.speed.current || 0 : 0
     const drift = (0.3 + speed * 0.1) * delta
 
     const nightFactor = getNightFactor(gameState.timeOfDay.current)

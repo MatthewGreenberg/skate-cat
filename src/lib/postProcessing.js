@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 export const POST_CONTROL_LIMITS = {
   bloomIntensity: { min: 0, max: 10, step: 0.1 },
-  bloomThreshold: { min: 0, max: 1, step: 0.05 },
+  bloomThreshold: { min: 0, max: 1, step: 0.01 },
   bloomSmoothing: { min: 0, max: 1, step: 0.05 },
   brightness: { min: -0.3, max: 0.3, step: 0.01 },
   contrast: { min: -0.5, max: 0.5, step: 0.01 },
@@ -13,8 +13,8 @@ export const POST_CONTROL_LIMITS = {
 };
 
 export const DEFAULT_GAME_POST_SETTINGS = {
-  bloomIntensity: 2.1,
-  bloomThreshold: 0.35,
+  bloomIntensity: 2.3,
+  bloomThreshold: 0.24,
   bloomSmoothing: 0.1,
   brightness: 0.0,
   contrast: 0.1,
@@ -37,14 +37,13 @@ export const DEFAULT_INTRO_POST_SETTINGS = {
 };
 
 export const INTRO_OVERLAY_CONTROL_LIMITS = {
-  distortionPixels: { min: 0, max: 4, step: 0.05 },
-  flowScale: { min: 0.5, max: 12, step: 0.1 },
-  flowSpeed: { min: 0, max: 2, step: 0.01 },
-  cellSize: { min: 1, max: 16, step: 0.25 },
-  pixelatePixels: { min: 1, max: 48, step: 1 },
-  blendStrength: { min: 0, max: 1, step: 0.01 },
-  desaturateBias: { min: 0, max: 1, step: 0.01 },
-  desaturateAmount: { min: 0, max: 1, step: 0.01 },
+  warpStrength: { min: 0, max: 6, step: 0.05 },
+  scanlineFrequency: { min: 20, max: 420, step: 1 },
+  scanlineStrength: { min: 0, max: 1, step: 0.01 },
+  rgbSplit: { min: 0, max: 6, step: 0.05 },
+  highlightStrength: { min: 0, max: 1, step: 0.01 },
+  edgeGlowStrength: { min: 0, max: 1.5, step: 0.01 },
+  velocityWarp: { min: 0, max: 4, step: 0.05 },
   brushRadius: { min: 0.01, max: 0.18, step: 0.0025 },
   brushStrength: { min: 0.05, max: 1, step: 0.01 },
   decayRate: { min: 0.2, max: 6, step: 0.05 },
@@ -52,17 +51,16 @@ export const INTRO_OVERLAY_CONTROL_LIMITS = {
 
 export const DEFAULT_INTRO_OVERLAY_SETTINGS = {
   enabled: true,
-  distortionPixels: 4,
-  flowScale: 2.3,
-  flowSpeed: 0.28,
-  cellSize: 3,
-  pixelatePixels: 27,
-  blendStrength: 0.28,
-  desaturateBias: 0.55,
-  desaturateAmount: 0.83,
-  brushRadius: 0.06,
-  brushStrength: 1,
-  decayRate: 1.5,
+  brushRadius: 0.05,
+  brushStrength: 0.14,
+  decayRate: 1.75,
+  warpStrength: 6,
+  scanlineFrequency: 420,
+  scanlineStrength: 0.72,
+  rgbSplit: 5.05,
+  highlightStrength: 0,
+  edgeGlowStrength: 0.96,
+  velocityWarp: 1.6,
 };
 
 export function createPostProcessingControls(defaults) {
@@ -103,37 +101,33 @@ export function createPostProcessingControls(defaults) {
 export function createIntroOverlayControls(defaults) {
   return {
     enabled: defaults.enabled,
-    distortionPixels: {
-      value: defaults.distortionPixels,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.distortionPixels,
+    warpStrength: {
+      value: defaults.warpStrength,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.warpStrength,
     },
-    flowScale: {
-      value: defaults.flowScale,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.flowScale,
+    scanlineFrequency: {
+      value: defaults.scanlineFrequency,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.scanlineFrequency,
     },
-    flowSpeed: {
-      value: defaults.flowSpeed,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.flowSpeed,
+    scanlineStrength: {
+      value: defaults.scanlineStrength,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.scanlineStrength,
     },
-    cellSize: {
-      value: defaults.cellSize,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.cellSize,
+    rgbSplit: {
+      value: defaults.rgbSplit,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.rgbSplit,
     },
-    pixelatePixels: {
-      value: defaults.pixelatePixels,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.pixelatePixels,
+    highlightStrength: {
+      value: defaults.highlightStrength,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.highlightStrength,
     },
-    blendStrength: {
-      value: defaults.blendStrength,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.blendStrength,
+    edgeGlowStrength: {
+      value: defaults.edgeGlowStrength,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.edgeGlowStrength,
     },
-    desaturateBias: {
-      value: defaults.desaturateBias,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.desaturateBias,
-    },
-    desaturateAmount: {
-      value: defaults.desaturateAmount,
-      ...INTRO_OVERLAY_CONTROL_LIMITS.desaturateAmount,
+    velocityWarp: {
+      value: defaults.velocityWarp,
+      ...INTRO_OVERLAY_CONTROL_LIMITS.velocityWarp,
     },
     brushRadius: {
       value: defaults.brushRadius,

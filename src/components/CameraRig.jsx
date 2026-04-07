@@ -9,6 +9,7 @@ const INTRO_LERP_SPEED = 2.5
 const INTRO_FOV = 43
 const GAME_FOV = 75
 const DEATH_FOV = 46
+const REVERSE_INTRO_ENTRY_BLEND = 0.4
 const INTRO_MOUSE_YAW_MAX = THREE.MathUtils.degToRad(4.5)
 const INTRO_MOUSE_PITCH_SHIFT = 0.14
 const INTRO_MOUSE_YAW_RESPONSE = 5
@@ -144,23 +145,35 @@ export default function CameraRig({
         ? targetResultsLook
         : targetIntroLook
     const idleTargetFov = cameraMode === 'death' ? deathFov : INTRO_FOV
+    const reverseTargetPos = cameraMode === 'death' ? targetIntroPos : idleTargetPos
+    const reverseTargetLook = cameraMode === 'death' ? targetIntroLook : idleTargetLook
+    const reverseTargetFov = cameraMode === 'death' ? INTRO_FOV : idleTargetFov
+    const shouldBiasReverseEntry = transitionDirection === 'reverse' && cameraMode === 'intro'
 
     if (isTransitioning && !wasTransitioning.current) {
-      posAtCapture.current.copy(camera.position)
-      lookAtCapture.current.copy(camLook.current)
-      fovAtCapture.current = camera.fov
+      if (shouldBiasReverseEntry) {
+        // Start the intro reveal closer to the TV front, but leave enough travel for a visible pan during the wipe.
+        posAtCapture.current.lerpVectors(camera.position, reverseTargetPos, REVERSE_INTRO_ENTRY_BLEND)
+        lookAtCapture.current.lerpVectors(camLook.current, reverseTargetLook, REVERSE_INTRO_ENTRY_BLEND)
+        fovAtCapture.current = THREE.MathUtils.lerp(camera.fov, reverseTargetFov, REVERSE_INTRO_ENTRY_BLEND)
+      } else {
+        posAtCapture.current.copy(camera.position)
+        lookAtCapture.current.copy(camLook.current)
+        fovAtCapture.current = camera.fov
+      }
     }
     wasTransitioning.current = isTransitioning
 
     if (isTransitioning) {
-      const t = transitionEase(transitionProgressRef?.current ?? 0)
-      const targetFov = transitionDirection === 'reverse' ? idleTargetFov : GAME_FOV
+      const transitionProgress = transitionProgressRef?.current ?? 0
+      const t = transitionEase(transitionProgress)
+      const targetFov = transitionDirection === 'reverse' ? reverseTargetFov : GAME_FOV
       const nextFov = THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
       const gameTargetPos = _vecA.set(posX, posY, posZ)
       const gameTargetLook = _vecB.set(lookX, lookY, lookZ)
 
-      camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? idleTargetPos : gameTargetPos, t)
-      camLook.current.lerpVectors(lookAtCapture.current, transitionDirection === 'reverse' ? idleTargetLook : gameTargetLook, t)
+      camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? reverseTargetPos : gameTargetPos, t)
+      camLook.current.lerpVectors(lookAtCapture.current, transitionDirection === 'reverse' ? reverseTargetLook : gameTargetLook, t)
       applyCameraPose(camera, camPos.current, camLook.current, nextFov)
       return
     }

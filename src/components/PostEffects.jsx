@@ -44,6 +44,7 @@ export default function PostEffects({
   runActive,
   capturedTexture,
   gpuTier,
+  quality = 'auto',
   chromaticSpike = 0,
   introOverlaySettings,
 }) {
@@ -56,6 +57,7 @@ export default function PostEffects({
     aoDistanceFalloff: { value: 1.05, min: 0, max: 2, step: 0.05 },
     aoHalfRes: true,
   }, [])
+  const shouldEnableAo = aoCtrl.aoEnabled && showGameWorld && quality !== 'quiet' && tier >= 2
 
   const aoRef = useRef(null)
   const bloomRef = useRef(null)
@@ -216,16 +218,16 @@ export default function PostEffects({
 
   return (
     <EffectComposer multisampling={0}>
-      {aoCtrl.aoEnabled && tier >= 2 && (
+      {shouldEnableAo && (
         <N8AO
           ref={aoRef}
           aoRadius={aoCtrl.aoRadius}
           intensity={aoCtrl.aoIntensityIntro}
           distanceFalloff={aoCtrl.aoDistanceFalloff}
           color={new THREE.Color('#1a0a2e')}
-          halfRes={aoCtrl.aoHalfRes || tier === 2}
+          halfRes={aoCtrl.aoHalfRes || tier === 2 || quality !== 'high'}
           depthAwareUpsampling
-          quality={tier >= 3 ? 'medium' : 'performance'}
+          quality={tier >= 3 && quality === 'high' ? 'medium' : 'performance'}
         />
       )}
       <primitive object={bloom} />
@@ -238,11 +240,13 @@ export default function PostEffects({
           direction={transitionDirection}
         />
       )}
-      <IntroFluidEffect
-        active={showIntroOverlay && introOverlaySettings.enabled}
-        mixRef={introOverlayMixRef}
-        settings={introOverlaySettings}
-      />
+      {showIntroOverlay && introOverlaySettings.enabled && (
+        <IntroFluidEffect
+          active
+          mixRef={introOverlayMixRef}
+          settings={introOverlaySettings}
+        />
+      )}
       <primitive object={brightnessContrast} />
       <primitive object={hueSaturation} />
       <primitive object={lensDistortion} />

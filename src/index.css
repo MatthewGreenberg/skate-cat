@@ -43,6 +43,12 @@ body {
   100% { transform: translateX(-50%) translateY(-56px) scale(0.85); opacity: 0; }
 }
 
+@keyframes tutorialPopIn {
+  0% { transform: translateX(-50%) translateY(12px) scale(0.6); opacity: 0; }
+  60% { transform: translateX(-50%) translateY(-2px) scale(1.06); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(0px) scale(1); opacity: 1; }
+}
+
 @keyframes hudJudgementPop {
   0% { transform: translateX(-50%) translateY(16px) rotate(2deg) scale(0.5); opacity: 0; }
   35% { transform: translateX(-50%) translateY(-4px) rotate(-1deg) scale(1.15); opacity: 1; }

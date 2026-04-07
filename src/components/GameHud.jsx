@@ -176,9 +176,6 @@ export default function GameHud({ musicRef, visible }) {
   const [pointsTone, setPointsTone] = useState('Perfect')
   const [pointsKey, setPointsKey] = useState(0)
   const [showPoints, setShowPoints] = useState(false)
-  const [showTrick, setShowTrick] = useState(false)
-  const [trickKey, setTrickKey] = useState(0)
-  const [trickText, setTrickText] = useState('360!')
   const [phaseBanner, setPhaseBanner] = useState('')
   const [phaseKey, setPhaseKey] = useState(0)
   const [streakKey, setStreakKey] = useState(0)
@@ -225,11 +222,6 @@ export default function GameHud({ musicRef, visible }) {
           setPointsTone(pointsTone)
           setPointsKey((prev) => prev + 1)
           setShowPoints(true)
-        }
-        if (scoringEvent.trickName) {
-          setTrickText(`${scoringEvent.trickName}!`)
-          setTrickKey((prev) => prev + 1)
-          setShowTrick(true)
         }
       }
 
@@ -284,8 +276,6 @@ export default function GameHud({ musicRef, visible }) {
   if (!visible) return null
 
   const pointsStyle = popToneStyles[pointsTone] || popToneStyles.Perfect
-  const trickStyle = popToneStyles.Trick
-
   return (
     <>
       {showJudgement && judgementText && (
@@ -398,57 +388,28 @@ export default function GameHud({ musicRef, visible }) {
           {streak} STREAK
         </div>
       )}
-      {showTrick && (
-        <div
-          key={`trick-${trickKey}`}
-          onAnimationEnd={() => setShowTrick(false)}
-          style={{
-            position: 'fixed',
-            bottom: '3rem',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            fontFamily: 'Knewave',
-            fontSize: '1.9rem',
-            letterSpacing: '0.1em',
-            color: trickStyle.color,
-            WebkitTextStroke: '1.5px #10283b',
-            textShadow: `
-              2px 2px 0 #10283b,
-              4px 4px 0 #2f6d92,
-              -3px -3px 0 rgba(255, 255, 255, 0.75),
-              ${trickStyle.shadow}
-            `,
-            padding: '0.08rem 0.45rem',
-            background: 'radial-gradient(circle at center, rgba(255,255,255,0.18) 0%, rgba(138,228,255,0.12) 45%, rgba(138,228,255,0) 78%)',
-            borderRadius: '999px',
-            pointerEvents: 'none',
-            zIndex: 62,
-            animation: 'trickPop 480ms cubic-bezier(0.16, 0.88, 0.34, 1) both',
-          }}
-        >
-          {trickText}
-        </div>
-      )}
       {tutorialPrompt && (
         <div
+          key={tutorialPrompt}
           style={{
             position: 'fixed',
             bottom: '6.2rem',
             left: '50%',
             transform: 'translateX(-50%)',
-            padding: '0.6rem 1rem',
+            padding: '0.5rem 1.1rem',
             borderRadius: '999px',
-            background: 'rgba(8, 14, 22, 0.72)',
-            border: '2px solid rgba(255, 255, 255, 0.14)',
-            color: 'rgba(255, 255, 255, 0.9)',
-            fontFamily: 'Nunito, sans-serif',
-            fontWeight: 900,
-            fontSize: '0.78rem',
-            letterSpacing: '0.14em',
+            background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.72), rgba(255, 160, 72, 0.72))',
+            border: '2px solid rgba(255, 255, 255, 0.25)',
+            boxShadow: '0 4px 20px rgba(255, 107, 53, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15)',
+            color: '#fff',
+            fontFamily: 'Knewave',
+            fontSize: '0.85rem',
+            letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            boxShadow: '0 10px 28px rgba(0, 0, 0, 0.24)',
+            textShadow: '0 1px 4px rgba(0, 0, 0, 0.3)',
             pointerEvents: 'none',
             zIndex: 62,
+            animation: 'tutorialPopIn 400ms cubic-bezier(0.17, 0.9, 0.35, 1) both',
           }}
         >
           {tutorialPrompt}

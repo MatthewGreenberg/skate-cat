@@ -9,7 +9,8 @@ export function createBufferedMusicTransport(url) {
   let context = null
   let gainNode = null
   let buffer = null
-  let loadPromise = null
+  let rawArrayBuffer = null
+  let fetchPromise = null
   let source = null
   let paused = true
   let playbackRate = 1
@@ -79,6 +80,24 @@ export function createBufferedMusicTransport(url) {
     return context
   }
 
+  const fetchAudio = () => {
+    if (rawArrayBuffer) return Promise.resolve(rawArrayBuffer)
+    if (!fetchPromise) {
+      fetchPromise = fetch(url)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to load music: ${response.status}`)
+          }
+          return response.arrayBuffer()
+        })
+        .then((arrayBuffer) => {
+          rawArrayBuffer = arrayBuffer
+          return arrayBuffer
+        })
+    }
+    return fetchPromise
+  }
+
   const ensureReady = async () => {
     const audioContext = await createContext()
     if (audioContext.state === 'suspended') {
@@ -86,21 +105,9 @@ export function createBufferedMusicTransport(url) {
     }
 
     if (buffer) return buffer
-    if (!loadPromise) {
-      loadPromise = fetch(url)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to load music: ${response.status}`)
-          }
-          return response.arrayBuffer()
-        })
-        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer.slice(0)))
-        .then((decodedBuffer) => {
-          buffer = decodedBuffer
-          return decodedBuffer
-        })
-    }
-    return loadPromise
+    const arrayBuffer = await fetchAudio()
+    buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0))
+    return buffer
   }
 
   const startSourceAt = async (startMediaTime) => {
@@ -138,7 +145,7 @@ export function createBufferedMusicTransport(url) {
   const transport = {
     async preload() {
       if (disposed) return null
-      return ensureReady()
+      return fetchAudio()
     },
     async play() {
       if (disposed) return

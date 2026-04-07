@@ -26,6 +26,7 @@ export default function IntroScene({
   onStart,
   onDismiss,
   onAction,
+  quality = 'auto',
   disabled = false,
   buttonLabel = 'PRESS START',
   instructionLabel = 'SPACE / ENTER TO SHRED',
@@ -575,6 +576,7 @@ export default function IntroScene({
           onStart={onStart}
           onDismiss={onDismiss}
           onAction={onAction}
+          quality={quality}
           disabled={disabled}
           buttonLabel={buttonLabel}
           instructionLabel={instructionLabel}
