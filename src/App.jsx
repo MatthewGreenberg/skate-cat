@@ -1,4 +1,4 @@
-import { Suspense, memo, useRef, useState, useCallback, useEffect } from 'react'
+import { Suspense, memo, useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
@@ -78,6 +78,22 @@ function clamp01(value) {
   return Math.min(Math.max(value, 0), 1)
 }
 
+function shouldUseSafariGameplayContactShadows() {
+  if (typeof navigator === 'undefined') return false
+
+  const { userAgent, vendor = '' } = navigator
+  return (
+    vendor.includes('Apple') &&
+    userAgent.includes('Safari') &&
+    !userAgent.includes('Chrome') &&
+    !userAgent.includes('Chromium') &&
+    !userAgent.includes('CriOS') &&
+    !userAgent.includes('FxiOS') &&
+    !userAgent.includes('EdgiOS') &&
+    !userAgent.includes('OPiOS')
+  )
+}
+
 function BootOverlay({
   visible,
   opacity,
@@ -88,6 +104,7 @@ function BootOverlay({
 }) {
   if (!visible && opacity <= 0.001) return null
 
+  const isSafari = shouldUseSafariGameplayContactShadows()
   const showProgress = phase === BOOT_PHASE_LOADING || phase === BOOT_PHASE_PRIMING
   const roundedProgress = Math.round(progress)
 
@@ -104,12 +121,14 @@ function BootOverlay({
         opacity,
         pointerEvents: opacity > 0.15 ? 'auto' : 'none',
         transition: phase === BOOT_PHASE_REVEALING ? 'none' : 'opacity 240ms ease-out',
-        background: `
-          radial-gradient(circle at 50% 18%, rgba(255, 188, 116, 0.18), transparent 36%),
-          radial-gradient(circle at 50% 120%, rgba(80, 220, 255, 0.16), transparent 40%),
-          linear-gradient(180deg, rgba(5, 6, 14, 0.86), rgba(4, 4, 10, 0.96))
-        `,
-        backdropFilter: 'blur(16px)',
+        background: isSafari
+          ? 'linear-gradient(180deg, rgba(5, 6, 14, 0.97), rgba(4, 4, 10, 0.99))'
+          : `
+            radial-gradient(circle at 50% 18%, rgba(255, 188, 116, 0.18), transparent 36%),
+            radial-gradient(circle at 50% 120%, rgba(80, 220, 255, 0.16), transparent 40%),
+            linear-gradient(180deg, rgba(5, 6, 14, 0.86), rgba(4, 4, 10, 0.96))
+          `,
+        backdropFilter: isSafari ? 'none' : 'blur(16px)',
       }}
     >
       <div
@@ -238,6 +257,7 @@ const SceneCanvas = memo(function SceneCanvas({
   introInstructionLabel,
   gpuTier,
   quality,
+  gameplayShadowMode,
   chromaticSpike,
   cameraMode,
   onDismissIntroScreen,
@@ -326,6 +346,7 @@ const SceneCanvas = memo(function SceneCanvas({
             onJumpSfx={onJumpSfx}
             onLogHit={onLogHit}
             foliageSegmentCount={foliageSegmentCount}
+            shadowMode={gameplayShadowMode}
           />
         )}
         {shouldMountGameWorld && (
@@ -436,6 +457,10 @@ export default function App() {
         ? QUIET_DPR
         : AUTO_DPR
   const foliageSegmentCount = effectiveQuality === 'quiet' ? 1 : 2
+  const gameplayShadowMode = useMemo(
+    () => (shouldUseSafariGameplayContactShadows() ? 'contact' : 'map'),
+    []
+  )
   const currentRunSummary = gameState.lastRunSummary.current
   const currentOutcome = currentRunSummary?.outcome ?? null
   const isReturnScreenActive = phase === PHASE_RETURNING || phase === PHASE_RESULTS
@@ -1344,6 +1369,7 @@ export default function App() {
           introInstructionLabel={introInstructionLabel}
           gpuTier={gpuTier}
           quality={effectiveQuality}
+          gameplayShadowMode={gameplayShadowMode}
           chromaticSpike={chromaticSpike}
           cameraMode={cameraMode}
           onDismissIntroScreen={() => {
