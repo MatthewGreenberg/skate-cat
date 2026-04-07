@@ -30,7 +30,6 @@ const _vecH = new THREE.Vector3()
 const _vecI = new THREE.Vector3()
 const _vecJ = new THREE.Vector3()
 const _vecK = new THREE.Vector3()
-const _vecL = new THREE.Vector3()
 const _worldUp = new THREE.Vector3(0, 1, 0)
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
@@ -139,28 +138,33 @@ export default function CameraRig({
     const targetResultsLook = _vecD.set(resultsLookX, resultsLookY, resultsLookZ)
     const deathTargetPos = _vecE.set(deathCamX, deathCamY, deathCamZ)
     const deathTargetLook = _vecF.set(deathLookX, deathLookY, deathLookZ)
-    const failedTargetLook = _vecJ.set(resultsLookX, resultsLookY, resultsLookZ)
-    const failedTargetPos = _vecK.set(resultsLookX, resultsCamY, resultsCamZ)
+    const failedTargetPos = _vecJ.copy(targetIntroPos)
+    const failedTargetLook = _vecK.copy(targetIntroLook)
+    const failedTargetFov = INTRO_FOV
     const idleTargetPos = cameraMode === 'death'
       ? deathTargetPos
       : cameraMode === 'failed'
         ? failedTargetPos
-      : cameraMode === 'results'
+        : cameraMode === 'results'
         ? targetResultsPos
         : targetIntroPos
     const idleTargetLook = cameraMode === 'death'
       ? deathTargetLook
       : cameraMode === 'failed'
         ? failedTargetLook
-      : cameraMode === 'results'
+        : cameraMode === 'results'
         ? targetResultsLook
         : targetIntroLook
-    const idleTargetFov = cameraMode === 'death' ? deathFov : INTRO_FOV
+    const idleTargetFov = cameraMode === 'death'
+      ? deathFov
+      : cameraMode === 'failed'
+        ? failedTargetFov
+        : INTRO_FOV
     const reverseTargetPos = cameraMode === 'death' ? targetIntroPos : idleTargetPos
     const reverseTargetLook = cameraMode === 'death' ? targetIntroLook : idleTargetLook
     const reverseTargetFov = cameraMode === 'death' ? INTRO_FOV : idleTargetFov
     const shouldUseReverseIntroStartShot = transitionDirection === 'reverse' && cameraMode === 'failed'
-    const reverseIntroStartPos = _vecL
+    const reverseIntroStartPos = _vecE
       .copy(failedTargetPos)
       .addScaledVector(
         _vecI.copy(failedTargetPos).sub(failedTargetLook).normalize(),
@@ -172,7 +176,7 @@ export default function CameraRig({
         // Failed reverse reveals should stay centered on the TV and dolly straight into the summary framing.
         posAtCapture.current.copy(reverseIntroStartPos)
         lookAtCapture.current.copy(failedTargetLook)
-        fovAtCapture.current = INTRO_FOV
+        fovAtCapture.current = failedTargetFov
       } else {
         posAtCapture.current.copy(camera.position)
         lookAtCapture.current.copy(camLook.current)
@@ -184,13 +188,20 @@ export default function CameraRig({
     if (isTransitioning) {
       const transitionProgress = transitionProgressRef?.current ?? 0
       const t = transitionEase(transitionProgress)
+      const isFailedReverseDolly = transitionDirection === 'reverse' && cameraMode === 'failed'
       const targetFov = transitionDirection === 'reverse' ? reverseTargetFov : GAME_FOV
-      const nextFov = THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
+      const nextFov = isFailedReverseDolly
+        ? failedTargetFov
+        : THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
       const gameTargetPos = _vecA.set(posX, posY, posZ)
       const gameTargetLook = _vecB.set(lookX, lookY, lookZ)
 
       camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? reverseTargetPos : gameTargetPos, t)
-      camLook.current.lerpVectors(lookAtCapture.current, transitionDirection === 'reverse' ? reverseTargetLook : gameTargetLook, t)
+      if (isFailedReverseDolly) {
+        camLook.current.copy(failedTargetLook)
+      } else {
+        camLook.current.lerpVectors(lookAtCapture.current, transitionDirection === 'reverse' ? reverseTargetLook : gameTargetLook, t)
+      }
       applyCameraPose(camera, camPos.current, camLook.current, nextFov)
       return
     }
