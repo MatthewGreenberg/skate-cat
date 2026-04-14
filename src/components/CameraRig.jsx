@@ -113,10 +113,10 @@ function getResponsiveIntroFraming(
     mobileBackOffset = -0.6
     mobileFovOffset = -4
   } else if (cameraMode === 'results') {
-    backOffset = 0.35
-    posYOffset = 0.06
-    fovOffset = 2
-    mobileBackOffset = 0.2
+    backOffset = 0.55
+    posYOffset = 0.08
+    fovOffset = 3
+    mobileBackOffset = 0.3
     mobileFovOffset = 2
   } else if (cameraMode === 'failed') {
     backOffset = 0.45
@@ -204,12 +204,12 @@ export default function CameraRig({
     resultsLookZ,
   } = useOptionalControls('Intro', {
     'Results Camera': folder({
-      resultsCamX: { value: 0.5, min: -5, max: 5, step: 0.1 },
-      resultsCamY: { value: 1.0, min: -2, max: 5, step: 0.1 },
-      resultsCamZ: { value: 0.7, min: -5, max: 10, step: 0.1 },
-      resultsLookX: { value: 0.36, min: -5, max: 5, step: 0.1 },
-      resultsLookY: { value: 0.88, min: -2, max: 5, step: 0.1 },
-      resultsLookZ: { value: -1.22, min: -5, max: 5, step: 0.1 },
+      resultsCamX: { value: 0.51, min: -5, max: 5, step: 0.1 },
+      resultsCamY: { value: 1.12, min: -2, max: 5, step: 0.1 },
+      resultsCamZ: { value: 1.26, min: -5, max: 10, step: 0.1 },
+      resultsLookX: { value: 0.3, min: -5, max: 5, step: 0.1 },
+      resultsLookY: { value: 0.92, min: -2, max: 5, step: 0.1 },
+      resultsLookZ: { value: -1.6, min: -5, max: 5, step: 0.1 },
     }),
   }, [])
 
@@ -261,10 +261,10 @@ export default function CameraRig({
       introMobileLookX: { value: 0, min: -2, max: 2, step: 0.02 },
       introMobileLookY: { value: 0.7, min: -2, max: 2, step: 0.02 },
       introMobileLookZ: { value: 0, min: -2, max: 2, step: 0.02 },
-      resultsMobileBack: { value: -1.1, min: -3, max: 3, step: 0.05 },
-      resultsMobileFov: { value: -5, min: -20, max: 20, step: 0.5 },
-      resultsMobileLookX: { value: 0.16, min: -2, max: 2, step: 0.02 },
-      resultsMobileLookY: { value: 0.38, min: -2, max: 2, step: 0.02 },
+      resultsMobileBack: { value: -1.6, min: -3, max: 3, step: 0.05 },
+      resultsMobileFov: { value: -3, min: -20, max: 20, step: 0.5 },
+      resultsMobileLookX: { value: 0.06, min: -2, max: 2, step: 0.02 },
+      resultsMobileLookY: { value: 0.36, min: -2, max: 2, step: 0.02 },
       resultsMobileLookZ: { value: 0, min: -2, max: 2, step: 0.02 },
       failedMobileBack: { value: 0.25, min: -3, max: 3, step: 0.05 },
       failedMobileFov: { value: 2, min: -20, max: 20, step: 0.5 },

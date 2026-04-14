@@ -352,6 +352,10 @@ export default function Obstacles({
   }
 
   const updateTutorialPrompt = (currentBeat) => {
+    if (renderProfile.isMobileDevice) {
+      setTutorialPrompt('')
+      return
+    }
     let nextPrompt = ''
     if (currentBeat < STARTUP_SAFE_BEATS + 16 && gameState.progressScore < 6) {
       nextPrompt = JUMP_TUTORIAL_PROMPT

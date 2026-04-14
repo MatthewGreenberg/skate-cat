@@ -80,7 +80,7 @@ export function createRenderProfile({
     disableIntroFluid: isConstrainedMobile,
     disableAmbientParticles: isConstrainedMobile,
     disableDustTrail: isConstrainedMobile,
-    disableSpeedLines: isConstrainedMobile,
+    disableSpeedLines: false,
     disableWildflowers: false,
     disableSkyClouds: false,
     grassBladeCountCap: isConstrainedMobile ? 1200 : null,

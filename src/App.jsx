@@ -426,7 +426,6 @@ export default function App() {
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownText, setCountdownText] = useState('')
   const [countdownAnimationKey, setCountdownAnimationKey] = useState(0)
-  const [volume, setVolume] = useState(0.5)
   const [useOriginalMaterials] = useState(false)
   const transitionProgressRef = useRef(0)
   const returnFreezeDurationRef = useRef(0.2)
@@ -543,9 +542,9 @@ export default function App() {
     : startPhase === START_PHASE_LAUNCHING
       ? 'DROPPING IN'
       : introScreenMode === RETURN_SCREEN_SUMMARY
-        ? 'SPACE / ENTER TO PLAY AGAIN'
+        ? (isTouchDevice ? '' : 'SPACE / ENTER TO PLAY AGAIN')
         : isMusicReady
-          ? 'SPACE / ENTER TO SHRED'
+          ? (isTouchDevice ? '' : 'SPACE / ENTER TO SHRED')
           : 'AUDIO DECK OFFLINE'
   const introDisabled = tvScreenOverride
     ? false
@@ -553,10 +552,6 @@ export default function App() {
       ? isTransitionBusy || phase === PHASE_RETURNING || startPhase !== START_PHASE_IDLE
       : !introStartEnabled
   const showIntroOverlay = phase === PHASE_INTRO || phase === PHASE_RESULTS
-
-  const handleVolumePointerDone = useCallback((event) => {
-    event.currentTarget.blur()
-  }, [])
 
   const resetRunState = useCallback(({ speed = 0, speedLinesOn = false, speedBoostActive = false } = {}) => {
     gameState.gameOver = false
@@ -986,11 +981,6 @@ export default function App() {
   }, [orientationBlocked, phase, isGameOver])
 
   useEffect(() => {
-    if (!musicRef.current) return
-    musicRef.current.volume = volume * volume
-  }, [volume])
-
-  useEffect(() => {
     if ((!runActive && !isTransitioning) || isGameOver || !hasConfirmedMusicStart) {
       return
     }
@@ -1077,6 +1067,11 @@ export default function App() {
 
   const queueLaunchStart = useCallback((launchAction) => {
     if (startPhase !== START_PHASE_IDLE || isTransitionBusy) return
+
+    // iOS unlocks Web Audio only during a user gesture. queueLaunchStart runs
+    // directly in the tap handler; startMusicPlayback runs later after a
+    // setTimeout + scene capture, past the gesture window.
+    void sfxPlayerRef.current?.prepare()
 
     window.clearTimeout(startArmingTimeoutRef.current)
     setStartPhase(START_PHASE_ARMING)
@@ -1338,47 +1333,7 @@ export default function App() {
           </span>
         </button>
       )}
-      {runActive && (
-        <div
-          style={{
-            position: 'fixed',
-            left: '1rem',
-            bottom: '1rem',
-            zIndex: 220,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.45rem 0.75rem',
-            borderRadius: '999px',
-            border: '2px solid rgba(255, 255, 255, 0.18)',
-            background: 'rgba(0, 0, 0, 0.4)',
-            backdropFilter: 'blur(8px)',
-            color: 'rgba(255, 255, 255, 0.7)',
-            fontFamily: 'Nunito, sans-serif',
-            fontWeight: 800,
-            fontSize: '0.65rem',
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-          }}
-        >
-          <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>
-            {volume > 0.6 ? '🔊' : volume > 0.3 ? '🔉' : '🔈'}
-          </span>
-          <input
-            type="range"
-            className="skate-slider"
-            min="0.1"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            onPointerUp={handleVolumePointerDone}
-            onKeyUp={handleVolumePointerDone}
-            style={{ width: '100px' }}
-          />
-        </div>
-      )}
-      <GameHud musicRef={musicRef} visible={runActive && !isGameOver} />
+      <GameHud musicRef={musicRef} visible={runActive && !isGameOver} isTouchDevice={isTouchDevice} />
       <Suspense fallback={null}>
         <SceneCanvas
           phase={phase}

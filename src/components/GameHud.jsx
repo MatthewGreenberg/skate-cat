@@ -160,7 +160,7 @@ function getJudgementStyle(tone, shouldAnimate) {
   }
 }
 
-export default function GameHud({ musicRef, visible }) {
+export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
   const [score, setScore] = useState(gameState.score)
   const [multiplier, setMultiplier] = useState(gameState.scoreMultiplier.current)
   const [activeBeat, setActiveBeat] = useState(0)
@@ -415,6 +415,85 @@ export default function GameHud({ musicRef, visible }) {
           {tutorialPrompt}
         </div>
       )}
+      {isTouchDevice && visible && <MobileControlHints />}
     </>
+  )
+}
+
+function MobileControlHints() {
+  const [pressedSide, setPressedSide] = useState(null)
+  const releaseTimeoutRef = useRef(0)
+
+  useEffect(() => {
+    const pulse = (side) => {
+      setPressedSide(side)
+      window.clearTimeout(releaseTimeoutRef.current)
+      releaseTimeoutRef.current = window.setTimeout(() => setPressedSide(null), 160)
+    }
+    const onStart = (e) => {
+      for (const touch of e.changedTouches) {
+        pulse(touch.clientX < window.innerWidth / 2 ? 'left' : 'right')
+      }
+    }
+    window.addEventListener('touchstart', onStart, { passive: true })
+    return () => {
+      window.removeEventListener('touchstart', onStart)
+      window.clearTimeout(releaseTimeoutRef.current)
+    }
+  }, [])
+
+  return (
+    <>
+      <MobileControlHint side="left" glyph="↻" label="SPIN" pressed={pressedSide === 'left'} />
+      <MobileControlHint side="right" glyph="↑" label="JUMP" pressed={pressedSide === 'right'} />
+    </>
+  )
+}
+
+function MobileControlHint({ side, glyph, label, pressed }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: '1.75rem',
+        [side]: '1.75rem',
+        width: '5.5rem',
+        height: '5.5rem',
+        borderRadius: '50%',
+        background: pressed
+          ? 'linear-gradient(135deg, rgba(255, 107, 53, 0.75), rgba(255, 180, 92, 0.75))'
+          : 'linear-gradient(135deg, rgba(255, 107, 53, 0.30), rgba(255, 160, 72, 0.30))',
+        border: pressed
+          ? '2px solid rgba(255, 255, 255, 0.7)'
+          : '2px solid rgba(255, 255, 255, 0.35)',
+        boxShadow: pressed
+          ? '0 6px 22px rgba(255, 107, 53, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25)'
+          : '0 4px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.18)',
+        color: '#fff',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.12rem',
+        opacity: pressed ? 1 : 0.6,
+        transform: pressed ? 'scale(0.92)' : 'scale(1)',
+        transition: 'transform 120ms cubic-bezier(0.2, 0.8, 0.3, 1), opacity 120ms ease-out, background 120ms ease-out, box-shadow 120ms ease-out, border-color 120ms ease-out',
+        pointerEvents: 'none',
+        textShadow: '0 1px 3px rgba(0, 0, 0, 0.4)',
+        zIndex: 62,
+      }}
+    >
+      <span style={{ fontFamily: 'Knewave', fontSize: '2.2rem', lineHeight: 1 }}>{glyph}</span>
+      <span
+        style={{
+          fontFamily: 'Nunito, sans-serif',
+          fontWeight: 800,
+          fontSize: '0.62rem',
+          letterSpacing: '0.14em',
+        }}
+      >
+        {label}
+      </span>
+    </div>
   )
 }
