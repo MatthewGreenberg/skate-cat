@@ -277,7 +277,7 @@ export default function Background({ active = true, renderProfile = {} }) {
     uSunColor: { value: new THREE.Color('#ffd17a') },
     uMoonColor: { value: new THREE.Color('#d9e6ff') },
     uStarColor: { value: new THREE.Color('#9ed3ff') },
-    uFbmOctaves: { value: renderProfile.backgroundLowCost ? 1 : isSafari ? 2 : 4 },
+    uFbmOctaves: { value: (renderProfile.backgroundLowCost || isSafari) ? 2 : 4 },
   }), [renderProfile.backgroundLowCost])
 
   const material = useMemo(() => new THREE.ShaderMaterial({

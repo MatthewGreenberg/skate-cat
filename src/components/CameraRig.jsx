@@ -204,9 +204,9 @@ export default function CameraRig({
     resultsLookZ,
   } = useOptionalControls('Intro', {
     'Results Camera': folder({
-      resultsCamX: { value: 0.52, min: -5, max: 5, step: 0.1 },
-      resultsCamY: { value: 1.08, min: -2, max: 5, step: 0.1 },
-      resultsCamZ: { value: 1.55, min: -5, max: 10, step: 0.1 },
+      resultsCamX: { value: 0.5, min: -5, max: 5, step: 0.1 },
+      resultsCamY: { value: 1.0, min: -2, max: 5, step: 0.1 },
+      resultsCamZ: { value: 0.7, min: -5, max: 10, step: 0.1 },
       resultsLookX: { value: 0.36, min: -5, max: 5, step: 0.1 },
       resultsLookY: { value: 0.88, min: -2, max: 5, step: 0.1 },
       resultsLookZ: { value: -1.22, min: -5, max: 5, step: 0.1 },
