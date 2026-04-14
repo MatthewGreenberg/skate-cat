@@ -182,7 +182,7 @@ const bgFragmentShader = /* glsl */ `
   }
 `
 
-export default function Background({ active = true }) {
+export default function Background({ active = true, renderProfile = {} }) {
   const meshRef = useRef()
   const motionTime = useRef(0)
   const scrollOffset = useRef(0)
@@ -277,8 +277,8 @@ export default function Background({ active = true }) {
     uSunColor: { value: new THREE.Color('#ffd17a') },
     uMoonColor: { value: new THREE.Color('#d9e6ff') },
     uStarColor: { value: new THREE.Color('#9ed3ff') },
-    uFbmOctaves: { value: isSafari ? 2 : 4 },
-  }), [])
+    uFbmOctaves: { value: renderProfile.backgroundLowCost ? 1 : isSafari ? 2 : 4 },
+  }), [renderProfile.backgroundLowCost])
 
   const material = useMemo(() => new THREE.ShaderMaterial({
     uniforms,
@@ -304,7 +304,9 @@ export default function Background({ active = true }) {
     const isSunrise = sunriseFactor > 0
     const speed = !gameState.gameOver ? gameState.speed.current || 0 : 0
     const speedFactor = Math.min(speed / Math.max(gameState.baseSpeed, 0.001), 1.45)
-    scrollOffset.current += speed * gameDelta * 0.009
+    const motionScale = renderProfile.backgroundLowCost ? 0.6 : 1
+    const parallaxScale = renderProfile.backgroundLowCost ? 0.72 : 1
+    scrollOffset.current += speed * gameDelta * 0.009 * motionScale
     const lateralOffset = camera.position.x * 0.14
     const depthOffset = camera.position.z * 0.05
     const sharedOffset = lateralOffset + depthOffset + scrollOffset.current
@@ -312,20 +314,20 @@ export default function Background({ active = true }) {
     uniforms.uTime.value = motionTime.current
     uniforms.uBrightness.value = THREE.MathUtils.lerp(brightness, 0.42, nightFactor)
     uniforms.uSaturation.value = THREE.MathUtils.lerp(saturation, saturation * 0.88, nightFactor)
-    uniforms.uParallaxStrength.value = parallaxStrength
-    uniforms.uLayerSeparation.value = layerSeparation
+    uniforms.uParallaxStrength.value = parallaxStrength * parallaxScale
+    uniforms.uLayerSeparation.value = renderProfile.backgroundLowCost ? layerSeparation * 0.85 : layerSeparation
     uniforms.uHazeStrength.value = THREE.MathUtils.lerp(hazeStrength + speedFactor * 0.03, hazeStrength * 0.75, nightFactor)
     uniforms.uCloudStreakStrength.value = THREE.MathUtils.lerp(
-      cloudStreakStrength + speedFactor * 0.03,
+      (renderProfile.backgroundLowCost ? cloudStreakStrength * 0.35 : cloudStreakStrength) + speedFactor * 0.03 * motionScale,
       cloudStreakStrength * 0.42,
       nightFactor
     )
     uniforms.uStarVisibility.value = Math.max(0, (nightFactor - 0.34) / 0.66)
     uniforms.uNightFactor.value = nightFactor
-    uniforms.uSkyOffset.value = sharedOffset * (0.04 + parallaxStrength * 0.02)
-    uniforms.uFarOffset.value = sharedOffset * (0.11 + parallaxStrength * 0.06)
-    uniforms.uMidOffset.value = sharedOffset * (0.2 + parallaxStrength * 0.11)
-    uniforms.uNearOffset.value = sharedOffset * (0.34 + parallaxStrength * 0.17)
+    uniforms.uSkyOffset.value = sharedOffset * (0.04 + parallaxStrength * 0.02) * parallaxScale
+    uniforms.uFarOffset.value = sharedOffset * (0.11 + parallaxStrength * 0.06) * parallaxScale
+    uniforms.uMidOffset.value = sharedOffset * (0.2 + parallaxStrength * 0.11) * parallaxScale
+    uniforms.uNearOffset.value = sharedOffset * (0.34 + parallaxStrength * 0.17) * parallaxScale
 
     lerpDayNightColor(uniforms.uSkyTop.value, daySkyTop, nightSkyTop, nightFactor, isSunrise ? '#f3a15f' : '#6e5db6', warmFactor)
     lerpDayNightColor(uniforms.uSkyMid.value, daySkyMid, nightSkyMid, nightFactor, isSunrise ? '#ffb070' : '#d188ac', warmFactor)

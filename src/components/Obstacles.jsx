@@ -119,6 +119,7 @@ export default function Obstacles({
   canCollide = true,
   onLogHit,
   shadowMode = 'map',
+  renderProfile = {},
 }) {
   const useShadowMap = shadowMode === 'map'
   const log = useGLTF('/models/obstacles/large_tree_log/scene.gltf')
@@ -161,7 +162,10 @@ export default function Obstacles({
   const hasAssignedHoldTutorial = useRef(false)
   const nextObstacleId = useRef(1)
   const timingDebugPatternIndex = useRef(0)
-  const contactShadowTexture = useMemo(() => createContactShadowTexture(), [])
+  const contactShadowTexture = useMemo(
+    () => (renderProfile.disableObstacleContactShadows ? null : createContactShadowTexture()),
+    [renderProfile.disableObstacleContactShadows]
+  )
   const recentDebugObstacles = useRef(new Map())
   const worldScrollDistance = useRef(0)
   const needsCursorSync = useRef(true)
@@ -1220,26 +1224,28 @@ export default function Obstacles({
             ref={(el) => (refs.current[i] = el)}
             visible={false}
           >
-            <mesh
-              ref={(el) => (shadowRefs.current[i] = el)}
-              position={[0, shadowY, 0]}
-              rotation={[-Math.PI / 2, 0, 0]}
-              scale={[logScale * logShadowScaleX, logScale * logShadowScaleZ, 1]}
-              renderOrder={2}
-            >
-              <planeGeometry args={[1, 1]} />
-              <meshBasicMaterial
-                map={contactShadowTexture}
-                color={shadowColor}
-                transparent
-                opacity={logShadowOpacity}
-                blending={THREE.MultiplyBlending}
-                premultipliedAlpha
-                toneMapped={false}
-                depthWrite={false}
-                depthTest={false}
-              />
-            </mesh>
+            {!renderProfile.disableObstacleContactShadows && contactShadowTexture && (
+              <mesh
+                ref={(el) => (shadowRefs.current[i] = el)}
+                position={[0, shadowY, 0]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                scale={[logScale * logShadowScaleX, logScale * logShadowScaleZ, 1]}
+                renderOrder={2}
+              >
+                <planeGeometry args={[1, 1]} />
+                <meshBasicMaterial
+                  map={contactShadowTexture}
+                  color={shadowColor}
+                  transparent
+                  opacity={logShadowOpacity}
+                  blending={THREE.MultiplyBlending}
+                  premultipliedAlpha
+                  toneMapped={false}
+                  depthWrite={false}
+                  depthTest={false}
+                />
+              </mesh>
+            )}
             <primitive
               ref={(el) => (logRefs.current[i] = el)}
               object={scene}
@@ -1291,37 +1297,39 @@ export default function Obstacles({
                 </mesh>
               </group>
             </group>
-            <group
-              ref={(el) => (signRefs.current[i] = el)}
-              visible={false}
-              scale={[1.22, 1.22, 1.22]}
-            >
-              <mesh position={[0, -0.1, 0]} material={holdSignPoleMaterial}>
-                <boxGeometry args={[0.07, 0.55, 0.06]} />
-              </mesh>
-              <mesh position={[0, 0.18, 0]} material={holdSignBoardMaterial}>
-                <boxGeometry args={[0.58, 0.34, 0.08]} />
-              </mesh>
-              <Text
-                position={[0, 0.24, 0.05]}
-                fontSize={0.115}
-                color="#8ae4ff"
-                outlineWidth={0.012}
-                outlineColor="#2b1d11"
-                anchorX="center"
-                anchorY="middle"
+            {!renderProfile.disableHoldSign && (
+              <group
+                ref={(el) => (signRefs.current[i] = el)}
+                visible={false}
+                scale={[1.22, 1.22, 1.22]}
               >
-                HOLD
-              </Text>
-              <group position={[0, 0.08, 0.05]}>
-                <mesh material={holdGlowMaterial}>
-                  <boxGeometry args={[0.018, 0.05, 0.02]} />
+                <mesh position={[0, -0.1, 0]} material={holdSignPoleMaterial}>
+                  <boxGeometry args={[0.07, 0.55, 0.06]} />
                 </mesh>
-                <mesh position={[0, 0.043, 0]} material={holdGlowMaterial}>
-                  <coneGeometry args={[0.038, 0.058, 3]} />
+                <mesh position={[0, 0.18, 0]} material={holdSignBoardMaterial}>
+                  <boxGeometry args={[0.58, 0.34, 0.08]} />
                 </mesh>
+                <Text
+                  position={[0, 0.24, 0.05]}
+                  fontSize={0.115}
+                  color="#8ae4ff"
+                  outlineWidth={0.012}
+                  outlineColor="#2b1d11"
+                  anchorX="center"
+                  anchorY="middle"
+                >
+                  HOLD
+                </Text>
+                <group position={[0, 0.08, 0.05]}>
+                  <mesh material={holdGlowMaterial}>
+                    <boxGeometry args={[0.018, 0.05, 0.02]} />
+                  </mesh>
+                  <mesh position={[0, 0.043, 0]} material={holdGlowMaterial}>
+                    <coneGeometry args={[0.038, 0.058, 3]} />
+                  </mesh>
+                </group>
               </group>
-            </group>
+            )}
           </group>
           <group ref={(el) => (timingMarkerRefs.current[i] = el)} visible={false}>
             <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>

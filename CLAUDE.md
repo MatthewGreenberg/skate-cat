@@ -32,6 +32,7 @@
 - `src/store.js` — Mutable game state refs
 - `src/rhythm.js` — Beat timing, scoring windows
 - `src/audioTransport.js` — Web Audio API music playback
+- `src/sfxPlayer.js` — Web Audio API SFX playback (jump/die). Routed through Web Audio because mobile Safari ignores `<audio>` element `volume`; the context is unlocked inside `startMusicPlayback` on the same user gesture that starts music.
 
 ### Directory Layout
 ```

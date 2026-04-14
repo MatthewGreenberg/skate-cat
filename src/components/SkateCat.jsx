@@ -34,9 +34,12 @@ export default function SkateCat({
   musicRef,
   onJumpSfx,
   shadowMode = 'map',
+  renderProfile = {},
 }) {
   const useShadowMap = shadowMode === 'map'
   const useContactShadow = shadowMode === 'contact'
+  const showOutlines = !renderProfile.disableCatOutlines
+  const showAccentLights = !renderProfile.disableCatAccentLights
   const { catRotX, catRotY, catRotZ } = useOptionalControls('Game', {
     Cat: folder({
       catRotX: { value: 0, min: -Math.PI, max: Math.PI, step: 0.05 },
@@ -153,7 +156,7 @@ export default function SkateCat({
       child.material = flatMat
       child.userData.__originalMaterial = flatMat
       child.userData.__toonMaterial = mat
-      if (!oldMat.transparent && child.geometry) {
+      if (showOutlines && !oldMat.transparent && child.geometry) {
         const outlineMat = createOutlineMaterial()
         const outlineMesh = new THREE.Mesh(child.geometry, outlineMat)
         outlineMesh.matrixAutoUpdate = false
@@ -164,7 +167,7 @@ export default function SkateCat({
       }
     })
     return clone
-  }, [catScene, paintedBodyMap, originalBodyMap, useShadowMap])
+  }, [catScene, paintedBodyMap, originalBodyMap, showOutlines, useShadowMap])
 
   // --- Cache mesh refs for per-frame shader sync ---
   const toonMeshesRef = useRef([])
@@ -261,14 +264,16 @@ export default function SkateCat({
             rotation={[0, Math.PI / 2, 0]}
             position={[0, 0, 0]}
           />
-          <pointLight
-            ref={grindLightRef}
-            position={[0.14, 0.04, 0.38]}
-            intensity={0}
-            distance={0.01}
-            decay={2}
-            color="#ffb764"
-          />
+          {showAccentLights && (
+            <pointLight
+              ref={grindLightRef}
+              position={[0.14, 0.04, 0.38]}
+              intensity={0}
+              distance={0.01}
+              decay={2}
+              color="#ffb764"
+            />
+          )}
         </group>
         <group ref={catRef} position={[0, 0.2, 0]}>
           <primitive
@@ -279,13 +284,15 @@ export default function SkateCat({
           />
         </group>
         <group ref={trailTargetRef} position={[0, 0.2, 1.5]} />
-        <pointLight
-          position={[0.3, 0.8, 0.3]}
-          intensity={3}
-          distance={1.2}
-          decay={2}
-          color="#ffe8cc"
-        />
+        {showAccentLights && (
+          <pointLight
+            position={[0.3, 0.8, 0.3]}
+            intensity={3}
+            distance={1.2}
+            decay={2}
+            color="#ffe8cc"
+          />
+        )}
       </group>
     </>
   )

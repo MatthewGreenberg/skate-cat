@@ -2,7 +2,13 @@ import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
-export default function SceneCapture({ shouldCaptureRef, snapshotTextureRef, onCaptured, renderPriority = 2 }) {
+export default function SceneCapture({
+  shouldCaptureRef,
+  snapshotTextureRef,
+  onCaptured,
+  renderPriority = 2,
+  skipCapture = false,
+}) {
   const { gl } = useThree()
   const capturedRef = useRef(false)
   const copyOrigin = useRef(new THREE.Vector2())
@@ -20,6 +26,12 @@ export default function SceneCapture({ shouldCaptureRef, snapshotTextureRef, onC
     }
     if (capturedRef.current) return
     capturedRef.current = true
+
+    if (skipCapture) {
+      shouldCaptureRef.current = false
+      onCaptured(null)
+      return
+    }
 
     gl.getDrawingBufferSize(drawingBufferSize.current)
     const width = Math.max(1, Math.floor(drawingBufferSize.current.x))

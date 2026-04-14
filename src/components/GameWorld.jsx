@@ -40,19 +40,31 @@ export default function GameWorld({
   foliageSegmentCount = 2,
   quality = 'auto',
   shadowMode = 'map',
+  renderProfile = {},
   trailTargetRef,
   musicRef,
   onJumpSfx,
   onLogHit,
 }) {
+  const showSpeedLines = !renderProfile.disableSpeedLines
+  const showDustTrail = !renderProfile.disableDustTrail
+  const showAmbientParticles = !renderProfile.disableAmbientParticles
+  const showSky = !renderProfile.disableSkyClouds
+
   return (
     <>
       <color attach="background" args={['#000000']} />
       <group visible={visible}>
         <DayNightController isRunning={sceneActive && !isGameOver} quality={quality} shadowMode={shadowMode} />
-        <Ground active={sceneActive} foliageSegmentCount={foliageSegmentCount} quality={quality} shadowMode={shadowMode} />
-        <Background active={sceneActive} />
-        <Sky active={sceneActive} />
+        <Ground
+          active={sceneActive}
+          foliageSegmentCount={foliageSegmentCount}
+          quality={quality}
+          shadowMode={shadowMode}
+          renderProfile={renderProfile}
+        />
+        <Background active={sceneActive} renderProfile={renderProfile} />
+        {showSky && <Sky active={sceneActive} />}
         <group visible={visible}>
           <SkateCat
             trailTargetRef={trailTargetRef}
@@ -63,6 +75,7 @@ export default function GameWorld({
             musicRef={musicRef}
             onJumpSfx={onJumpSfx}
             shadowMode={shadowMode}
+            renderProfile={renderProfile}
           />
         </group>
         <Obstacles
@@ -72,11 +85,12 @@ export default function GameWorld({
           canCollide={runActive && !isCountdownActive}
           onLogHit={onLogHit}
           shadowMode={shadowMode}
+          renderProfile={renderProfile}
         />
-        <SpeedLines active={sceneActive} />
+        {showSpeedLines && <SpeedLines active={sceneActive} />}
         <KickflipSparks active={sceneActive} />
-        <DustTrail active={sceneActive} />
-        <AmbientParticles active={sceneActive} />
+        {showDustTrail && <DustTrail active={sceneActive} />}
+        {showAmbientParticles && <AmbientParticles active={sceneActive} />}
       </group>
     </>
   )

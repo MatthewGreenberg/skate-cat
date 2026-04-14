@@ -19,9 +19,11 @@ import {
   DEFAULT_INTRO_POST_SETTINGS,
   DEFAULT_GAME_POST_SETTINGS,
 } from './lib/postProcessing'
+import { createRenderProfile } from './lib/renderProfile'
 import TimingDebugHud from './components/TimingDebugHud'
 import ObstacleSpacingDebugHud from './components/ObstacleSpacingDebugHud'
 import { createBufferedMusicTransport } from './audioTransport'
+import { createSfxPlayer } from './sfxPlayer'
 import {
   buildRunSummary,
   gameState,
@@ -50,10 +52,6 @@ import {
 import { fetchLeaderboards, isHighScore, submitScore } from './lib/leaderboard'
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
-const AUTO_DPR = [1, 1.25]
-const AUTO_HIGH_DPR = [1, 1.5]
-const FORCED_HIGH_DPR = [1, 2]
-const QUIET_DPR = [1, 1]
 const BOOT_PHASE_LOADING = 'loading'
 const BOOT_PHASE_PRIMING = 'priming'
 const BOOT_PHASE_REVEALING = 'revealing'
@@ -264,6 +262,7 @@ const SceneCanvas = memo(function SceneCanvas({
   initialsEntry,
   onAction,
   reverseTransitionDuration,
+  renderProfile,
 }) {
   const statsParentRef = useRef(null)
 
@@ -286,14 +285,20 @@ const SceneCanvas = memo(function SceneCanvas({
           width: '100vw',
           height: '100vh',
         }}
-        gl={{ toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15, powerPreference: 'high-performance' }}
-        shadows={{ type: (gpuTier?.tier ?? 3) <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap }}
+        gl={{
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.15,
+          powerPreference: 'high-performance',
+          antialias: renderProfile.antialias,
+        }}
+        shadows={renderProfile.useShadowMaps ? { type: renderProfile.shadowType } : false}
       >
         {debugControlsEnabled && <StatsGl parent={statsParentRef} />}
         <SceneCapture
           shouldCaptureRef={shouldCaptureSceneRef}
           snapshotTextureRef={transitionSnapshotTextureRef}
           onCaptured={onSceneCaptured}
+          skipCapture={renderProfile.skipSceneCapture}
         />
         <CameraRig
           runActive={runActive}
@@ -323,6 +328,7 @@ const SceneCanvas = memo(function SceneCanvas({
             leaderboards={leaderboards}
             leaderboardTab={leaderboardTab}
             initialsEntry={initialsEntry}
+            renderProfile={renderProfile}
           />
         )}
         {shouldMountGameWorld && (
@@ -342,6 +348,7 @@ const SceneCanvas = memo(function SceneCanvas({
             onLogHit={onLogHit}
             foliageSegmentCount={foliageSegmentCount}
             shadowMode={gameplayShadowMode}
+            renderProfile={renderProfile}
           />
         )}
         {shouldMountGameWorld && (
@@ -371,6 +378,7 @@ const SceneCanvas = memo(function SceneCanvas({
           quality={quality}
           chromaticSpike={chromaticSpike}
           introOverlaySettings={introOverlaySettings}
+          renderProfile={renderProfile}
         />
       </Canvas>
     </>
@@ -380,9 +388,7 @@ const SceneCanvas = memo(function SceneCanvas({
 export default function App() {
   const trailTarget = useRef()
   const musicRef = useRef(null)
-  const jumpSfxRef = useRef(null)
-  const jump2SfxRef = useRef(null)
-  const dieSfxRef = useRef(null)
+  const sfxPlayerRef = useRef(null)
   const hasStartedMusicRef = useRef(false)
   const handleSongCompleteRef = useRef(() => { })
   const endGlitchTimeoutRef = useRef(0)
@@ -425,6 +431,7 @@ export default function App() {
   const transitionProgressRef = useRef(0)
   const returnFreezeDurationRef = useRef(0.2)
   const { active: isLoadingAssets, progress: loadingProgress } = useProgress()
+  const { isTouchDevice, shouldBlock: orientationBlocked } = useOrientation()
   const isAssetLoadComplete = !isLoadingAssets && loadingProgress >= 100
   const isMusicReady = musicLoadState === 'ready'
   const isMusicLoadSettled = musicLoadState !== 'pending'
@@ -452,20 +459,16 @@ export default function App() {
   const effectiveQuality = qualityMode !== 'auto'
     ? qualityMode
     : detectedQuality
-  const canvasDpr = isSafari
-    ? QUIET_DPR
-    : qualityMode === 'high'
-      ? FORCED_HIGH_DPR
-      : effectiveQuality === 'high'
-        ? AUTO_HIGH_DPR
-        : effectiveQuality === 'quiet'
-          ? QUIET_DPR
-          : AUTO_DPR
-  const foliageSegmentCount = effectiveQuality === 'quiet' ? 1 : 2
-  const gameplayShadowMode = useMemo(
-    () => (shouldUseSafariGameplayContactShadows() ? 'contact' : 'map'),
-    []
-  )
+  const renderProfile = useMemo(() => createRenderProfile({
+    qualityMode,
+    effectiveQuality,
+    gpuTier,
+    isTouchDevice,
+    isSafari,
+  }), [effectiveQuality, gpuTier, isTouchDevice])
+  const canvasDpr = renderProfile.canvasDpr
+  const foliageSegmentCount = renderProfile.foliageSegmentCount
+  const gameplayShadowMode = renderProfile.shadowMode
   const currentRunSummary = gameState.lastRunSummary.current
   const currentOutcome = currentRunSummary?.outcome ?? null
   const isReturnScreenActive = phase === PHASE_RETURNING || phase === PHASE_RESULTS
@@ -769,6 +772,14 @@ export default function App() {
         }
       })
 
+    const sfx = createSfxPlayer({
+      jump: '/audio/sfx/jump.wav',
+      jump2: '/audio/sfx/jump2.wav',
+      die: '/audio/sfx/die.wav',
+    })
+    sfxPlayerRef.current = sfx
+    void sfx.preload()
+
     return () => {
       cancelled = true
       hasStartedMusicRef.current = false
@@ -776,6 +787,10 @@ export default function App() {
         musicRef.current = null
       }
       music.dispose()
+      if (sfxPlayerRef.current === sfx) {
+        sfxPlayerRef.current = null
+      }
+      sfx.dispose()
     }
   }, [])
 
@@ -943,7 +958,6 @@ export default function App() {
     }
   }, [isGameOver, phase])
 
-  const { shouldBlock: orientationBlocked } = useOrientation()
   const pauseStateRef = useRef({ active: false, savedTimeScale: 1 })
 
   useEffect(() => {
@@ -1020,6 +1034,7 @@ export default function App() {
     music.currentTime = 0
     try {
       await music.play()
+      void sfxPlayerRef.current?.prepare()
       hasStartedMusicRef.current = true
       setHasConfirmedMusicStart(true)
       setIsCountdownActive(true)
@@ -1215,28 +1230,14 @@ export default function App() {
   }, [initialsEntry, flipToScreen])
 
   const playJumpSfx = useCallback(() => {
-    const jump = jumpSfxRef.current
-    const jump2 = jump2SfxRef.current
-
-    if (jump) {
-      jump.currentTime = 0
-      jump.volume = 0.18
-      jump.play().catch(() => { })
-    }
-
-    if (jump2) {
-      jump2.currentTime = 0
-      jump2.volume = 0.18
-      jump2.play().catch(() => { })
-    }
+    const player = sfxPlayerRef.current
+    if (!player) return
+    player.play('jump', 0.18)
+    player.play('jump2', 0.18)
   }, [])
 
   const playDieSfx = useCallback(() => {
-    const sfx = dieSfxRef.current
-    if (!sfx) return
-    sfx.currentTime = 0
-    sfx.volume = 0.24
-    sfx.play().catch(() => { })
+    sfxPlayerRef.current?.play('die', 0.24)
   }, [])
 
   return (
@@ -1249,9 +1250,6 @@ export default function App() {
         statusLabel={bootStatusLabel}
         detailLabel={bootStatusDetail}
       />
-      <audio ref={jumpSfxRef} src="/audio/sfx/jump.wav" preload="auto" />
-      <audio ref={jump2SfxRef} src="/audio/sfx/jump2.wav" preload="auto" />
-      <audio ref={dieSfxRef} src="/audio/sfx/die.wav" preload="auto" />
       <CinematicLetterbox
         active={
           bootPhase === BOOT_PHASE_ATTRACT
@@ -1440,6 +1438,7 @@ export default function App() {
           initialsEntry={initialsEntry}
           onAction={handleTvAction}
           reverseTransitionDuration={reverseTransitionDuration}
+          renderProfile={renderProfile}
         />
       </Suspense>
     </>

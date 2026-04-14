@@ -41,6 +41,7 @@ export default function IntroScene({
   leaderboards = { daily: [], weekly: [], alltime: [] },
   leaderboardTab = 'alltime',
   initialsEntry = null,
+  renderProfile = {},
 }) {
   const { camera, gl } = useThree()
   const tvGlowRef = useRef()
@@ -574,7 +575,7 @@ export default function IntroScene({
           size={screenSize.toArray()}
           sizeScale={[tvUiCtrl.uiScaleX, tvUiCtrl.uiScaleY]}
           curveAmount={tvUiCtrl.uiCurve}
-          showGlow={tvUiCtrl.glowEnabled}
+          showGlow={tvUiCtrl.glowEnabled && !renderProfile.disableIntroScreenGlow}
           glowScale={[tvUiCtrl.glowScaleX, tvUiCtrl.glowScaleY]}
           glowOpacity={tvUiCtrl.glowOpacity * THREE.MathUtils.lerp(0.18, 1, bootVisualMix)}
           glowOffsetZ={tvUiCtrl.glowOffsetZ}
@@ -614,6 +615,7 @@ export default function IntroScene({
           leaderboards={leaderboards}
           leaderboardTab={leaderboardTab}
           initialsEntry={initialsEntry}
+          renderProfile={renderProfile}
         />
       </group>
 

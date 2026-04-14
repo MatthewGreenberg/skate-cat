@@ -47,6 +47,7 @@ export default function PostEffects({
   quality = 'auto',
   chromaticSpike = 0,
   introOverlaySettings,
+  renderProfile = {},
 }) {
   const tier = gpuTier?.tier ?? 3
   const aoCtrl = useOptionalControls('AO', {
@@ -57,7 +58,19 @@ export default function PostEffects({
     aoDistanceFalloff: { value: 1.05, min: 0, max: 2, step: 0.05 },
     aoHalfRes: true,
   }, [])
-  const shouldEnableAo = aoCtrl.aoEnabled && showGameWorld && quality !== 'quiet' && tier >= 2 && !isSafari
+  const shouldEnableAo = aoCtrl.aoEnabled
+    && showGameWorld
+    && quality !== 'quiet'
+    && tier >= 2
+    && !isSafari
+    && !renderProfile.disableAo
+  const shouldEnableBloom = !renderProfile.disableBloom
+  const shouldEnableChromatic = !renderProfile.disableChromaticAberration
+  const shouldEnableLensDistortion = !renderProfile.disableLensDistortion
+  const shouldEnableVignette = !renderProfile.disableVignette
+  const shouldEnableIntroFluid = showIntroOverlay && introOverlaySettings.enabled && !renderProfile.disableIntroFluid
+  const shouldEnableTransition = isTransitioning && (renderProfile.simpleTransition || capturedTexture)
+  const shouldEnableColorGrading = true
 
   const aoRef = useRef(null)
   const bloomRef = useRef(null)
@@ -202,24 +215,35 @@ export default function PostEffects({
     // Vignette: darken edges
     vignette.offset = THREE.MathUtils.lerp(0.3, 0.05, freezeT)
     vignette.darkness = THREE.MathUtils.lerp(0, 0.85, freezeT)
-    bloom.luminanceMaterial.threshold = activeSettings.bloomThreshold
-    bloom.luminanceMaterial.smoothing = activeSettings.bloomSmoothing
-
-    // Suppress bloom during early transition so the live intro buffer renders cleanly.
-    if (isTransitioning && transitionProgressRef.current < 0.15) {
-      bloom.intensity = 0
-      return
+    if (shouldEnableBloom) {
+      bloom.luminanceMaterial.threshold = activeSettings.bloomThreshold
+      bloom.luminanceMaterial.smoothing = activeSettings.bloomSmoothing
     }
 
-    const nightFactor = runActive ? getNightFactor(gameState.timeOfDay.current) : 0
-    bloom.intensity = THREE.MathUtils.lerp(activeSettings.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
-    bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(activeSettings.bloomThreshold, 0, nightFactor)
+    // Suppress bloom during early transition so the live intro buffer renders cleanly.
+    if (shouldEnableBloom && isTransitioning && transitionProgressRef.current < 0.15) {
+      bloom.intensity = 0
+    } else if (shouldEnableBloom) {
+      const nightFactor = runActive ? getNightFactor(gameState.timeOfDay.current) : 0
+      bloom.intensity = THREE.MathUtils.lerp(activeSettings.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
+      bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(activeSettings.bloomThreshold, 0, nightFactor)
+    }
 
     // Disable effects that have no visual contribution to save full-screen passes
-    chromaticAberration.enabled = chromaticStrengthRef.current > 0.001 || chromaticSpike > 0
-    lensDistortion.enabled = !isSafari || freezeT > 0.001
-    vignette.enabled = vignette.darkness > 0.001
+    chromaticAberration.enabled = shouldEnableChromatic && (chromaticStrengthRef.current > 0.001 || chromaticSpike > 0)
+    lensDistortion.enabled = shouldEnableLensDistortion && (!isSafari || freezeT > 0.001)
+    vignette.enabled = shouldEnableVignette && vignette.darkness > 0.001
   })
+
+  const shouldMountComposer = shouldEnableAo
+    || shouldEnableBloom
+    || shouldEnableTransition
+    || shouldEnableIntroFluid
+    || shouldEnableColorGrading
+    || shouldEnableLensDistortion
+    || shouldEnableVignette
+
+  if (!shouldMountComposer) return null
 
   return (
     <EffectComposer multisampling={0}>
@@ -235,17 +259,18 @@ export default function PostEffects({
           quality={tier >= 3 && quality === 'high' ? 'medium' : 'performance'}
         />
       )}
-      <primitive object={bloom} />
-      <primitive object={chromaticAberration} />
-      {isTransitioning && capturedTexture && (
+      {shouldEnableBloom && <primitive object={bloom} />}
+      {shouldEnableChromatic && <primitive object={chromaticAberration} />}
+      {shouldEnableTransition && (
         <TransitionEffect
           capturedTexture={capturedTexture}
           progressRef={transitionProgressRef}
           settings={transitionSettings}
           direction={transitionDirection}
+          simpleMode={renderProfile.simpleTransition}
         />
       )}
-      {showIntroOverlay && introOverlaySettings.enabled && (
+      {shouldEnableIntroFluid && (
         <IntroFluidEffect
           active
           mixRef={introOverlayMixRef}
@@ -254,8 +279,8 @@ export default function PostEffects({
       )}
       <primitive object={brightnessContrast} />
       <primitive object={hueSaturation} />
-      <primitive object={lensDistortion} />
-      <primitive object={vignette} />
+      {shouldEnableLensDistortion && <primitive object={lensDistortion} />}
+      {shouldEnableVignette && <primitive object={vignette} />}
     </EffectComposer>
   )
 }

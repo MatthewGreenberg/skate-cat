@@ -134,6 +134,57 @@ const compositeFragmentShader = /* glsl */ `
   }
 `
 
+const simpleFadeFragmentShader = /* glsl */ `
+  uniform sampler2D inputBuffer;
+  uniform float uProgress;
+  uniform vec3 uTint;
+  varying vec2 vUv;
+
+  void main() {
+    vec4 inputColor = texture2D(inputBuffer, vUv);
+    float reveal = smoothstep(0.0, 1.0, uProgress);
+    vec3 veil = mix(vec3(0.0), uTint * 0.22, 0.35);
+    vec3 color = mix(veil, inputColor.rgb, reveal);
+    gl_FragColor = vec4(color, inputColor.a);
+  }
+`
+
+class SimpleFadeTransitionPass extends Pass {
+  constructor() {
+    super('SimpleFadeTransitionPass')
+    this.progressRef = null
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        inputBuffer: new THREE.Uniform(null),
+        uProgress: new THREE.Uniform(0),
+        uTint: new THREE.Uniform(new THREE.Color('#000000')),
+      },
+      vertexShader: transitionVertexShader,
+      fragmentShader: simpleFadeFragmentShader,
+      blending: THREE.NoBlending,
+      toneMapped: false,
+      depthWrite: false,
+      depthTest: false,
+    })
+
+    this.fullscreenMaterial = this.material
+    this.needsSwap = true
+  }
+
+  render(renderer, inputBuffer, outputBuffer) {
+    this.material.uniforms.inputBuffer.value = inputBuffer.texture
+    this.material.uniforms.uProgress.value = this.progressRef?.current ?? 0
+    this.screen.material = this.material
+    renderer.setRenderTarget(this.renderToScreen ? null : outputBuffer)
+    renderer.render(this.scene, this.camera)
+  }
+
+  dispose() {
+    this.material.dispose()
+    super.dispose()
+  }
+}
+
 class IntroTransitionPass extends Pass {
   constructor() {
     super('IntroTransitionPass')
@@ -295,20 +346,38 @@ class IntroTransitionPass extends Pass {
   }
 }
 
-export default function TransitionEffect({ capturedTexture, progressRef, settings, direction = 'forward' }) {
-  const pass = useMemo(() => new IntroTransitionPass(), [])
+export default function TransitionEffect({
+  capturedTexture,
+  progressRef,
+  settings,
+  direction = 'forward',
+  simpleMode = false,
+}) {
+  const pass = useMemo(
+    () => (simpleMode ? new SimpleFadeTransitionPass() : new IntroTransitionPass()),
+    [simpleMode]
+  )
 
   useLayoutEffect(() => {
     pass.progressRef = progressRef
-    pass.capturedTexture = capturedTexture
+    if ('capturedTexture' in pass) {
+      pass.capturedTexture = capturedTexture
+    }
 
     return () => {
       pass.progressRef = null
-      pass.capturedTexture = null
+      if ('capturedTexture' in pass) {
+        pass.capturedTexture = null
+      }
     }
   }, [capturedTexture, pass, progressRef])
 
   useEffect(() => {
+    if (simpleMode) {
+      pass.material.uniforms.uTint.value.set(direction === 'reverse' ? settings.returnGlowColor : settings.glowColor)
+      return
+    }
+
     const d = pass.diffusionMaterial.uniforms
     const isReverse = direction === 'reverse'
     d.uRevealCurve.value = isReverse ? settings.returnRevealCurve : settings.revealCurve
@@ -330,7 +399,7 @@ export default function TransitionEffect({ capturedTexture, progressRef, setting
     c.uDollyAmount.value = direction === 'reverse' ? 0 : settings.dollyAmount
     c.uDollyStart.value = settings.dollyStart ?? 0.06
     c.uFlashStrength.value = isReverse ? settings.returnFlashStrength : (settings.flashStrength ?? 0.6)
-  }, [direction, pass, settings])
+  }, [direction, pass, settings, simpleMode])
 
   useEffect(() => () => {
     pass.dispose()

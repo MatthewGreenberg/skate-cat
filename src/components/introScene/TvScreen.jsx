@@ -12,7 +12,8 @@ import { createCurvedScreenGeometry } from './curvedScreenGeometry'
 import { drawTvScreen, getTvScreenActionAtPoint } from './tvScreenCanvas'
 import { isSafari } from '../../store'
 
-function getScreenTextureSize(quality) {
+function getScreenTextureSize(quality, renderProfile) {
+  if (renderProfile?.introScreenTextureSize) return renderProfile.introScreenTextureSize
   if (isSafari) return 512
   if (quality === 'high') return 1024
   if (quality === 'quiet') return 512
@@ -50,6 +51,7 @@ export function TvScreen({
   leaderboards = { daily: [], weekly: [], alltime: [] },
   leaderboardTab = 'alltime',
   initialsEntry = null,
+  renderProfile = {},
 }) {
   const [hoveredAction, setHoveredAction] = useState(null)
   const screenWidth = size[0] * sizeScale[0]
@@ -57,7 +59,7 @@ export function TvScreen({
   const glowWidth = screenWidth * glowScale[0]
   const glowHeight = screenHeight * glowScale[1]
   const curveDepth = Math.max(screenWidth, screenHeight) * curveAmount
-  const screenTextureSize = getScreenTextureSize(quality)
+  const screenTextureSize = getScreenTextureSize(quality, renderProfile)
   const screenGeometry = useMemo(
     () => createCurvedScreenGeometry(screenWidth, screenHeight, curveDepth),
     [curveDepth, screenHeight, screenWidth]

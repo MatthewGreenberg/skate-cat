@@ -93,7 +93,13 @@ const roadFragmentShader = /* glsl */ `
   }
 `
 
-export default function Ground({ active = true, foliageSegmentCount = 2, quality = 'auto', shadowMode = 'map' }) {
+export default function Ground({
+  active = true,
+  foliageSegmentCount = 2,
+  quality = 'auto',
+  shadowMode = 'map',
+  renderProfile = {},
+}) {
   const {
     baseSpeed, roadColor, roadDetail, edgeColor,
     toonSteps, shadowBrightness, grainAmount, grainScale,
@@ -213,8 +219,8 @@ export default function Ground({ active = true, foliageSegmentCount = 2, quality
           )}
           <Pebbles segmentSeed={i} />
           <group ref={(el) => (detailRefs.current[i] = el)}>
-            <Grass quality={quality} />
-            <Wildflowers />
+            <Grass quality={quality} renderProfile={renderProfile} />
+            {!renderProfile.disableWildflowers && <Wildflowers />}
           </group>
         </group>
       ))}

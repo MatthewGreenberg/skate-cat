@@ -134,7 +134,7 @@ const grassFragmentShader = /* glsl */ `
   }
 `
 
-export default function Grass({ quality = 'auto' }) {
+export default function Grass({ quality = 'auto', renderProfile = {} }) {
   const meshRef = useRef()
 
   const { windEnabled, windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
@@ -171,7 +171,7 @@ export default function Grass({ quality = 'auto' }) {
   }, [])
   const resolvedBladeCount = Math.min(
     bladeCount,
-    quality === 'high' ? 6000 : quality === 'quiet' ? 2800 : 4400
+    renderProfile.grassBladeCountCap ?? (quality === 'high' ? 6000 : quality === 'quiet' ? 2800 : 4400)
   )
   const {
     nightColorBase,
@@ -276,9 +276,9 @@ export default function Grass({ quality = 'auto' }) {
     const sunriseFactor = getSunriseFactor(t)
     const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
 
-    if (windEnabled) u.uTime.value += delta
+    if (windEnabled && !renderProfile.disableGrassWind) u.uTime.value += delta
     u.uWindSpeed.value = windSpeed
-    u.uWindStrength.value = windEnabled ? windStrength : 0
+    u.uWindStrength.value = windEnabled && !renderProfile.disableGrassWind ? windStrength : 0
     u.uThickness.value = thickness
     u.uVisibleCount.value = resolvedBladeCount
     meshRef.current.count = resolvedBladeCount
