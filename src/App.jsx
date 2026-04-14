@@ -10,6 +10,8 @@ import GameWorld, { GameWorldWarmup } from './components/GameWorld'
 import PostEffects, { TransitionAnimator } from './components/PostEffects'
 import SceneCapture from './components/SceneCapture'
 import CinematicLetterbox from './components/CinematicLetterbox'
+import RotationPrompt from './components/RotationPrompt'
+import useOrientation from './hooks/useOrientation'
 import {
   createIntroOverlayControls,
   createPostProcessingControls,
@@ -24,6 +26,7 @@ import {
   buildRunSummary,
   gameState,
   createAccuracyStats,
+  createPerformanceStats,
   createEmptyScoringEvent,
   createIdleGrindState,
   createIdleGrindSparkState,
@@ -44,7 +47,7 @@ import {
   getPerceivedMusicTime,
   TRACK_BEAT_PHASE_OFFSET_SECONDS,
 } from './rhythm'
-import { fetchLeaderboard, isHighScore, submitScore } from './lib/leaderboard'
+import { fetchLeaderboards, isHighScore, submitScore } from './lib/leaderboard'
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 const AUTO_DPR = [1, 1.25]
@@ -256,7 +259,8 @@ const SceneCanvas = memo(function SceneCanvas({
   bootDisplayedProgress,
   bootReady,
   highScore,
-  leaderboard,
+  leaderboards,
+  leaderboardTab,
   initialsEntry,
   onAction,
   reverseTransitionDuration,
@@ -316,7 +320,8 @@ const SceneCanvas = memo(function SceneCanvas({
             bootProgress={bootDisplayedProgress}
             bootReady={bootReady}
             highScore={highScore}
-            leaderboard={leaderboard}
+            leaderboards={leaderboards}
+            leaderboardTab={leaderboardTab}
             initialsEntry={initialsEntry}
           />
         )}
@@ -397,11 +402,12 @@ export default function App() {
   const [transitionDirection, setTransitionDirection] = useState('forward')
   const [transitionCaptureMode, setTransitionCaptureMode] = useState(null)
   const [returnScreenMode, setReturnScreenMode] = useState(RETURN_SCREEN_SUMMARY)
-  const [leaderboard, setLeaderboard] = useState([])
+  const [leaderboards, setLeaderboards] = useState({ daily: [], weekly: [], alltime: [] })
+  const [leaderboardTab, setLeaderboardTab] = useState('alltime')
   useEffect(() => {
     let cancelled = false
-    fetchLeaderboard().then(board => {
-      if (!cancelled) setLeaderboard(board)
+    fetchLeaderboards().then(boards => {
+      if (!cancelled) setLeaderboards(boards)
     })
     return () => { cancelled = true }
   }, [])
@@ -479,7 +485,7 @@ export default function App() {
     !tvScreenOverride
   )
   const introScreenMode = tvScreenOverride ?? (isReturnScreenActive ? returnScreenMode : RETURN_SCREEN_TITLE)
-  const highScore = leaderboard.length > 0 ? leaderboard[0].score : 0
+  const highScore = leaderboards.alltime.length > 0 ? leaderboards.alltime[0].score : 0
   const introButtonLabel = startPhase !== START_PHASE_IDLE
     ? 'STARTING RUN'
     : introScreenMode === 'leaderboard' ? 'BACK'
@@ -564,6 +570,7 @@ export default function App() {
     gameState.railCount.current = 0
     gameState.bestStreak.current = 0
     gameState.accuracyStats.current = createAccuracyStats()
+    gameState.performanceStats.current = createPerformanceStats()
     gameState.pendingJumpTiming.current = null
     resetObstacleTargets()
     gameState.upArrowHeld.current = false
@@ -609,7 +616,7 @@ export default function App() {
     const shouldShowHighScoreEntry = (
       screenMode === RETURN_SCREEN_SUMMARY &&
       summary &&
-      isHighScore(summary.totalScore, leaderboard)
+      isHighScore(summary.totalScore, leaderboards.daily)
     )
 
     setReturnScreenMode(screenMode)
@@ -646,7 +653,7 @@ export default function App() {
     shouldCaptureSceneRef.current = true
     transitionCaptureModeRef.current = CAPTURE_MODE_RETURN
     setTransitionCaptureMode(CAPTURE_MODE_RETURN)
-  }, [clearPlaybackState, createHighScoreEntry, isEndingLocked, isGameOver, isTransitionBusy, leaderboard, phase])
+  }, [clearPlaybackState, createHighScoreEntry, isEndingLocked, isGameOver, isTransitionBusy, leaderboards, phase])
 
   const handleReturnToIntro = useCallback(() => {
     window.clearTimeout(endGlitchTimeoutRef.current)
@@ -936,6 +943,34 @@ export default function App() {
     }
   }, [isGameOver, phase])
 
+  const { shouldBlock: orientationBlocked } = useOrientation()
+  const pauseStateRef = useRef({ active: false, savedTimeScale: 1 })
+
+  useEffect(() => {
+    const pauseState = pauseStateRef.current
+    if (orientationBlocked && !pauseState.active) {
+      pauseState.active = true
+      pauseState.savedTimeScale = gameState.timeScale.current ?? 1
+      gameState.timeScale.current = 0
+      gameState.paused = true
+      if (musicRef.current && !musicRef.current.paused) {
+        musicRef.current.pause()
+      }
+    } else if (!orientationBlocked && pauseState.active) {
+      pauseState.active = false
+      gameState.timeScale.current = pauseState.savedTimeScale
+      gameState.paused = false
+      if (
+        musicRef.current
+        && hasStartedMusicRef.current
+        && !isGameOver
+        && (phase === PHASE_RUNNING || phase === PHASE_LAUNCHING)
+      ) {
+        musicRef.current.play().catch(() => { })
+      }
+    }
+  }, [orientationBlocked, phase, isGameOver])
+
   useEffect(() => {
     if (!musicRef.current) return
     musicRef.current.volume = volume * volume
@@ -1156,10 +1191,25 @@ export default function App() {
         initialsEntry.initials.join(''),
         initialsEntry.score,
         initialsEntry.rank,
-      ).then(setLeaderboard)
+      ).then(setLeaderboards)
       setInitialsEntry(null)
       setTvScreenOverride(null)
       setReturnScreenMode(RETURN_SCREEN_SUMMARY)
+      return
+    }
+    if (action === 'selectLeaderboardTab') {
+      if (payload === 'daily' || payload === 'weekly' || payload === 'alltime') {
+        setLeaderboardTab(payload)
+      }
+      return
+    }
+    if (action === 'cycleLeaderboardTab') {
+      const order = ['daily', 'weekly', 'alltime']
+      setLeaderboardTab(prev => {
+        const idx = Math.max(0, order.indexOf(prev))
+        const delta = payload === -1 ? -1 : 1
+        return order[(idx + delta + order.length) % order.length]
+      })
       return
     }
   }, [initialsEntry, flipToScreen])
@@ -1204,11 +1254,12 @@ export default function App() {
       <audio ref={dieSfxRef} src="/audio/sfx/die.wav" preload="auto" />
       <CinematicLetterbox
         active={
-          phase === PHASE_INTRO
-          && bootPhase === BOOT_PHASE_ATTRACT
-          && introScreenMode === RETURN_SCREEN_TITLE
+          bootPhase === BOOT_PHASE_ATTRACT
+          && cameraMode === 'intro'
+          && (phase === PHASE_INTRO || phase === PHASE_RESULTS)
         }
       />
+      <RotationPrompt shouldBlock={orientationBlocked} />
       {isCountdownActive && (
         <>
           <div
@@ -1384,7 +1435,8 @@ export default function App() {
           bootDisplayedProgress={displayedBootProgress}
           bootReady={isAssetLoadComplete && isGameWorldPrimed && isMusicReady}
           highScore={highScore}
-          leaderboard={leaderboard}
+          leaderboards={leaderboards}
+          leaderboardTab={leaderboardTab}
           initialsEntry={initialsEntry}
           onAction={handleTvAction}
           reverseTransitionDuration={reverseTransitionDuration}

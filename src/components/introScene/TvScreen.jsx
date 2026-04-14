@@ -47,7 +47,8 @@ export function TvScreen({
   bootProgress = 0,
   bootReady = false,
   highScore = 0,
-  leaderboard = [],
+  leaderboards = { daily: [], weekly: [], alltime: [] },
+  leaderboardTab = 'alltime',
   initialsEntry = null,
 }) {
   const [hoveredAction, setHoveredAction] = useState(null)
@@ -133,6 +134,16 @@ export function TvScreen({
       if (event.repeat) return
 
       if (screenMode === 'leaderboard') {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault()
+          onAction?.('cycleLeaderboardTab', -1)
+          return
+        }
+        if (event.key === 'ArrowRight') {
+          event.preventDefault()
+          onAction?.('cycleLeaderboardTab', 1)
+          return
+        }
         if (
           event.key === 'Enter' ||
           event.key === ' ' ||
@@ -171,7 +182,9 @@ export function TvScreen({
       }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [disabled, onAction, onDismiss, onStart, screenMode, showDismissButton])
 
   const resolveActionFromEvent = (event) => {
@@ -272,7 +285,8 @@ export function TvScreen({
         bootReady,
         highScore,
         highScoresHovered: hoveredAction === 'highscores',
-        leaderboard,
+        leaderboards,
+        leaderboardTab,
         leaderboardElapsed: leaderboardElapsedRef.current,
         initials: initialsEntry?.initials ?? null,
         cursorPos: initialsEntry?.cursorPos ?? 0,
@@ -337,6 +351,11 @@ export function TvScreen({
       const slotIndex = parseInt(action.split('_')[1], 10)
       onAction?.('slotSelect', slotIndex)
       onAction?.(action.startsWith('slotUp_') ? 'letterUp' : 'letterDown')
+      return
+    }
+    // Leaderboard tab pill clicks (tab_daily / tab_weekly / tab_alltime)
+    if (action.startsWith('tab_')) {
+      onAction?.('selectLeaderboardTab', action.slice(4))
       return
     }
     onStart?.()

@@ -529,6 +529,93 @@ export default function useCatAnimation({
     }
   }, [controlsEnabled, startJump, triggerGrindSpin, triggerGroundSpin, triggerSpinTrick])
 
+  // --- Touch input (mobile) ---
+  useEffect(() => {
+    const heldKeys = heldJumpKeys.current
+    const activeTouches = new Map() // identifier -> 'jump' | 'spin'
+    const synthKeyFor = (identifier) => `TouchJump-${identifier}`
+
+    const handleSpinTouch = () => {
+      if (gameState.gameOver) return
+      const canTriggerGroundSpin = (
+        !jumpState.current.active &&
+        !gameState.activeGrind.current.active &&
+        !spinState.current.active
+      )
+      const canTriggerSpinTrick = (
+        jumpState.current.active &&
+        jumpState.current.canSpinTrick &&
+        !jumpState.current.didSpinTrick &&
+        !spinState.current.active
+      )
+      const canTriggerGrindSpin = (
+        gameState.activeGrind.current.active &&
+        !spinState.current.active
+      )
+      if (canTriggerGroundSpin) triggerGroundSpin()
+      else if (canTriggerSpinTrick) triggerSpinTrick()
+      else if (canTriggerGrindSpin) triggerGrindSpin()
+      else spinInputBuffer.current = SPIN_INPUT_BUFFER_DURATION
+    }
+
+    const handleJumpTouch = (identifier) => {
+      heldKeys.add(synthKeyFor(identifier))
+      gameState.upArrowHeld.current = true
+      if (gameState.gameOver) return
+      if (!jumpState.current.active) {
+        startJump({ fromGrind: Boolean(gameState.activeGrind.current.active) })
+      }
+    }
+
+    const onTouchStart = (e) => {
+      if (!controlsEnabled) return
+      if (gameState.paused) return
+      if (!(e.target instanceof HTMLCanvasElement)) return
+      const touches = Array.from(e.changedTouches)
+      let handled = false
+      for (const touch of touches) {
+        const side = touch.clientX < window.innerWidth / 2 ? 'spin' : 'jump'
+        activeTouches.set(touch.identifier, side)
+        handled = true
+        if (side === 'jump') {
+          handleJumpTouch(touch.identifier)
+        } else {
+          handleSpinTouch()
+        }
+      }
+      if (handled && e.cancelable) e.preventDefault()
+    }
+
+    const releaseTouch = (identifier) => {
+      const side = activeTouches.get(identifier)
+      if (!side) return
+      activeTouches.delete(identifier)
+      if (side === 'jump') {
+        heldKeys.delete(synthKeyFor(identifier))
+        if (heldKeys.size === 0) gameState.upArrowHeld.current = false
+      }
+    }
+
+    const onTouchEnd = (e) => {
+      const touches = Array.from(e.changedTouches)
+      for (const touch of touches) releaseTouch(touch.identifier)
+    }
+
+    window.addEventListener('touchstart', onTouchStart, { passive: false })
+    window.addEventListener('touchend', onTouchEnd)
+    window.addEventListener('touchcancel', onTouchEnd)
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart)
+      window.removeEventListener('touchend', onTouchEnd)
+      window.removeEventListener('touchcancel', onTouchEnd)
+      for (const identifier of activeTouches.keys()) {
+        heldKeys.delete(synthKeyFor(identifier))
+      }
+      activeTouches.clear()
+      if (heldKeys.size === 0) gameState.upArrowHeld.current = false
+    }
+  }, [controlsEnabled, startJump, triggerGrindSpin, triggerGroundSpin, triggerSpinTrick])
+
   // --- Main animation useFrame ---
   useFrame((state, delta) => {
     if (!groupRef.current || !catRef.current) return

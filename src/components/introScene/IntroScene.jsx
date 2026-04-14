@@ -38,7 +38,8 @@ export default function IntroScene({
   bootProgress = 0,
   bootReady = false,
   highScore = 0,
-  leaderboard = [],
+  leaderboards = { daily: [], weekly: [], alltime: [] },
+  leaderboardTab = 'alltime',
   initialsEntry = null,
 }) {
   const { camera, gl } = useThree()
@@ -610,7 +611,8 @@ export default function IntroScene({
           bootProgress={bootProgress}
           bootReady={bootReady}
           highScore={highScore}
-          leaderboard={leaderboard}
+          leaderboards={leaderboards}
+          leaderboardTab={leaderboardTab}
           initialsEntry={initialsEntry}
         />
       </group>

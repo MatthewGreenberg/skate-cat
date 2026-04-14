@@ -1,14 +1,19 @@
 const MAX_ENTRIES = 10
+const EMPTY = { daily: [], weekly: [], alltime: [] }
 
-export async function fetchLeaderboard() {
+export async function fetchLeaderboards() {
   try {
     const res = await fetch('/api/leaderboard')
     if (!res.ok) throw new Error(`status ${res.status}`)
-    const { entries } = await res.json()
-    return Array.isArray(entries) ? entries : []
+    const data = await res.json()
+    return {
+      daily: Array.isArray(data.daily) ? data.daily : [],
+      weekly: Array.isArray(data.weekly) ? data.weekly : [],
+      alltime: Array.isArray(data.alltime) ? data.alltime : [],
+    }
   } catch (err) {
     console.error('[leaderboard] fetch failed', err)
-    return []
+    return EMPTY
   }
 }
 
@@ -28,5 +33,5 @@ export async function submitScore(initials, score, rank) {
   } catch (err) {
     console.error('[leaderboard] submit failed', err)
   }
-  return fetchLeaderboard()
+  return fetchLeaderboards()
 }

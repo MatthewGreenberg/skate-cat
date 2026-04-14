@@ -67,7 +67,15 @@ function getResponsiveMix(size) {
   const shortSide = Math.min(width, height)
   const aspectMix = THREE.MathUtils.clamp((1.45 - aspect) / (1.45 - 0.9), 0, 1)
   const sizeMix = THREE.MathUtils.clamp((900 - shortSide) / (900 - 600), 0, 1)
-  return Math.max(aspectMix, sizeMix)
+  const isLandscape = width > height
+  // Narrow-tall landscape viewport (phone held sideways): short side 320–500px.
+  const mobileLandscapeMix = isLandscape && shortSide > 0 && shortSide <= 500
+    ? THREE.MathUtils.clamp((500 - shortSide) / (500 - 320), 0, 1)
+    : 0
+  return {
+    mix: Math.max(aspectMix, sizeMix),
+    mobileLandscapeMix,
+  }
 }
 
 function getResponsiveIntroFraming(
@@ -76,13 +84,15 @@ function getResponsiveIntroFraming(
   baseFov,
   cameraMode,
   responsiveMix,
+  mobileLandscapeMix,
   positionTarget,
-  lookTarget
+  lookTarget,
+  mobileOverride
 ) {
   positionTarget.copy(basePos)
   lookTarget.copy(baseLook)
 
-  if (cameraMode === 'death' || responsiveMix <= 0) {
+  if (cameraMode === 'death' || (responsiveMix <= 0 && mobileLandscapeMix <= 0)) {
     return baseFov
   }
 
@@ -91,6 +101,8 @@ function getResponsiveIntroFraming(
   let posXOffset = 0
   let lookYOffset = 0
   let fovOffset = 0
+  let mobileBackOffset = 0
+  let mobileFovOffset = 0
 
   if (cameraMode === 'intro') {
     backOffset = 0.85
@@ -98,18 +110,38 @@ function getResponsiveIntroFraming(
     posXOffset = -0.08
     lookYOffset = 0.04
     fovOffset = 4
+    mobileBackOffset = -0.6
+    mobileFovOffset = -4
   } else if (cameraMode === 'results') {
     backOffset = 0.35
     posYOffset = 0.06
     fovOffset = 2
+    mobileBackOffset = 0.2
+    mobileFovOffset = 2
   } else if (cameraMode === 'failed') {
     backOffset = 0.45
     posYOffset = 0.06
     fovOffset = 2
+    mobileBackOffset = 0.25
+    mobileFovOffset = 2
   } else if (cameraMode === 'leaderboard') {
     backOffset = 0.55
     posYOffset = 0.08
     fovOffset = 3
+    mobileBackOffset = 0.3
+    mobileFovOffset = 2
+  }
+
+  let mobileLookX = 0
+  let mobileLookY = 0
+  let mobileLookZ = 0
+
+  if (mobileOverride) {
+    if (typeof mobileOverride.back === 'number') mobileBackOffset = mobileOverride.back
+    if (typeof mobileOverride.fov === 'number') mobileFovOffset = mobileOverride.fov
+    if (typeof mobileOverride.lookX === 'number') mobileLookX = mobileOverride.lookX
+    if (typeof mobileOverride.lookY === 'number') mobileLookY = mobileOverride.lookY
+    if (typeof mobileOverride.lookZ === 'number') mobileLookZ = mobileOverride.lookZ
   }
 
   _responsiveViewDir.copy(basePos).sub(baseLook)
@@ -119,12 +151,18 @@ function getResponsiveIntroFraming(
     _responsiveViewDir.set(0, 0, 1)
   }
 
-  positionTarget.addScaledVector(_responsiveViewDir, backOffset * responsiveMix)
+  positionTarget.addScaledVector(
+    _responsiveViewDir,
+    backOffset * responsiveMix + mobileBackOffset * mobileLandscapeMix
+  )
   positionTarget.y += posYOffset * responsiveMix
   positionTarget.x += posXOffset * responsiveMix
   lookTarget.y += lookYOffset * responsiveMix
+  lookTarget.x += mobileLookX * mobileLandscapeMix
+  lookTarget.y += mobileLookY * mobileLandscapeMix
+  lookTarget.z += mobileLookZ * mobileLandscapeMix
 
-  return baseFov + fovOffset * responsiveMix
+  return baseFov + fovOffset * responsiveMix + mobileFovOffset * mobileLandscapeMix
 }
 
 export default function CameraRig({
@@ -195,6 +233,52 @@ export default function CameraRig({
     }),
   }, [])
 
+  const {
+    introMobileBack,
+    introMobileFov,
+    introMobileLookX,
+    introMobileLookY,
+    introMobileLookZ,
+    resultsMobileBack,
+    resultsMobileFov,
+    resultsMobileLookX,
+    resultsMobileLookY,
+    resultsMobileLookZ,
+    failedMobileBack,
+    failedMobileFov,
+    failedMobileLookX,
+    failedMobileLookY,
+    failedMobileLookZ,
+    leaderboardMobileBack,
+    leaderboardMobileFov,
+    leaderboardMobileLookX,
+    leaderboardMobileLookY,
+    leaderboardMobileLookZ,
+  } = useOptionalControls('Intro', {
+    'Mobile Landscape': folder({
+      introMobileBack: { value: -2.2, min: -3, max: 3, step: 0.05 },
+      introMobileFov: { value: -4, min: -20, max: 20, step: 0.5 },
+      introMobileLookX: { value: 0, min: -2, max: 2, step: 0.02 },
+      introMobileLookY: { value: 0.7, min: -2, max: 2, step: 0.02 },
+      introMobileLookZ: { value: 0, min: -2, max: 2, step: 0.02 },
+      resultsMobileBack: { value: -1.1, min: -3, max: 3, step: 0.05 },
+      resultsMobileFov: { value: -5, min: -20, max: 20, step: 0.5 },
+      resultsMobileLookX: { value: 0.16, min: -2, max: 2, step: 0.02 },
+      resultsMobileLookY: { value: 0.38, min: -2, max: 2, step: 0.02 },
+      resultsMobileLookZ: { value: 0, min: -2, max: 2, step: 0.02 },
+      failedMobileBack: { value: 0.25, min: -3, max: 3, step: 0.05 },
+      failedMobileFov: { value: 2, min: -20, max: 20, step: 0.5 },
+      failedMobileLookX: { value: 0, min: -2, max: 2, step: 0.02 },
+      failedMobileLookY: { value: 0, min: -2, max: 2, step: 0.02 },
+      failedMobileLookZ: { value: 0, min: -2, max: 2, step: 0.02 },
+      leaderboardMobileBack: { value: -1.6, min: -3, max: 3, step: 0.05 },
+      leaderboardMobileFov: { value: -3, min: -20, max: 20, step: 0.5 },
+      leaderboardMobileLookX: { value: 0.06, min: -2, max: 2, step: 0.02 },
+      leaderboardMobileLookY: { value: 0.36, min: -2, max: 2, step: 0.02 },
+      leaderboardMobileLookZ: { value: 0, min: -2, max: 2, step: 0.02 },
+    }, { collapsed: true }),
+  }, [])
+
   const camPos = useRef(new THREE.Vector3(introCamX, introCamY, introCamZ))
   const camLook = useRef(new THREE.Vector3(introLookX, introLookY, introLookZ))
 
@@ -213,11 +297,29 @@ export default function CameraRig({
     }, { collapsed: true }),
   }, [])
 
+  const {
+    mobileFovExtra,
+    mobilePullbackZ,
+    mobilePullbackY,
+    mobileLookOffsetX,
+    mobileLookOffsetY,
+    mobileLookOffsetZ,
+  } = useOptionalControls('Game', {
+    'Mobile Landscape': folder({
+      mobileFovExtra: { value: 6, min: 0, max: 20, step: 0.5 },
+      mobilePullbackZ: { value: 1.2, min: -2, max: 6, step: 0.1 },
+      mobilePullbackY: { value: -0.1, min: -2, max: 3, step: 0.05 },
+      mobileLookOffsetX: { value: -1.3, min: -5, max: 5, step: 0.05 },
+      mobileLookOffsetY: { value: -1.2, min: -5, max: 5, step: 0.05 },
+      mobileLookOffsetZ: { value: 0.75, min: -5, max: 5, step: 0.05 },
+    }, { collapsed: true }),
+  }, [])
+
   useFrame((state, rawDelta) => {
     // Clamp delta to prevent camera overshoot after tab-away (large accumulated delta)
     const delta = Math.min(rawDelta, 0.1)
     const gameDelta = getGameDelta(delta)
-    const responsiveMix = getResponsiveMix(size)
+    const { mix: responsiveMix, mobileLandscapeMix } = getResponsiveMix(size)
     const targetIntroPos = _vecA.set(introCamX, introCamY, introCamZ)
     const targetIntroLook = _vecB.set(introLookX, introLookY, introLookZ)
     const targetResultsPos = _vecC.set(resultsCamX, resultsCamY, resultsCamZ)
@@ -230,8 +332,16 @@ export default function CameraRig({
       INTRO_FOV,
       'intro',
       responsiveMix,
+      mobileLandscapeMix,
       _responsiveIntroPos,
-      _responsiveIntroLook
+      _responsiveIntroLook,
+      {
+        back: introMobileBack,
+        fov: introMobileFov,
+        lookX: introMobileLookX,
+        lookY: introMobileLookY,
+        lookZ: introMobileLookZ,
+      }
     )
     const failedTargetLook = _vecK.copy(targetIntroLook)
     const failedTargetPos = _vecJ
@@ -246,8 +356,16 @@ export default function CameraRig({
       INTRO_FOV,
       'results',
       responsiveMix,
+      mobileLandscapeMix,
       _responsiveResultsPos,
-      _responsiveResultsLook
+      _responsiveResultsLook,
+      {
+        back: resultsMobileBack,
+        fov: resultsMobileFov,
+        lookX: resultsMobileLookX,
+        lookY: resultsMobileLookY,
+        lookZ: resultsMobileLookZ,
+      }
     )
     const responsiveFailedFov = getResponsiveIntroFraming(
       failedTargetPos,
@@ -255,8 +373,16 @@ export default function CameraRig({
       INTRO_FOV,
       'failed',
       responsiveMix,
+      mobileLandscapeMix,
       _responsiveFailedPos,
-      _responsiveFailedLook
+      _responsiveFailedLook,
+      {
+        back: failedMobileBack,
+        fov: failedMobileFov,
+        lookX: failedMobileLookX,
+        lookY: failedMobileLookY,
+        lookZ: failedMobileLookZ,
+      }
     )
     const leaderboardTargetLook = _vecL.copy(targetIntroLook)
     leaderboardTargetLook.y += LEADERBOARD_LOOK_Y_OFFSET
@@ -269,8 +395,16 @@ export default function CameraRig({
       INTRO_FOV,
       'leaderboard',
       responsiveMix,
+      mobileLandscapeMix,
       _responsiveLeaderboardPos,
-      _responsiveLeaderboardLook
+      _responsiveLeaderboardLook,
+      {
+        back: leaderboardMobileBack,
+        fov: leaderboardMobileFov,
+        lookX: leaderboardMobileLookX,
+        lookY: leaderboardMobileLookY,
+        lookZ: leaderboardMobileLookZ,
+      }
     )
     const idleTargetPos = cameraMode === 'death'
       ? deathTargetPos
@@ -324,16 +458,27 @@ export default function CameraRig({
     }
     wasTransitioning.current = isTransitioning
 
+    const mobileGameFov = GAME_FOV + mobileFovExtra * mobileLandscapeMix
+    const mobileGameOffsetY = mobilePullbackY * mobileLandscapeMix
+    const mobileGameOffsetZ = mobilePullbackZ * mobileLandscapeMix
+    const mobileGameLookX = mobileLookOffsetX * mobileLandscapeMix
+    const mobileGameLookY = mobileLookOffsetY * mobileLandscapeMix
+    const mobileGameLookZ = mobileLookOffsetZ * mobileLandscapeMix
+
     if (isTransitioning) {
       const transitionProgress = transitionProgressRef?.current ?? 0
       const t = transitionEase(transitionProgress)
       const isFailedReverseDolly = transitionDirection === 'reverse' && cameraMode === 'failed'
-      const targetFov = transitionDirection === 'reverse' ? reverseTargetFov : GAME_FOV
+      const targetFov = transitionDirection === 'reverse' ? reverseTargetFov : mobileGameFov
       const nextFov = isFailedReverseDolly
         ? responsiveFailedFov
         : THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
-      const gameTargetPos = _vecO.set(posX, posY, posZ)
-      const gameTargetLook = _vecP.set(lookX, lookY, lookZ)
+      const gameTargetPos = _vecO.set(posX, posY + mobileGameOffsetY, posZ + mobileGameOffsetZ)
+      const gameTargetLook = _vecP.set(
+        lookX + mobileGameLookX,
+        lookY + mobileGameLookY,
+        lookZ + mobileGameLookZ
+      )
 
       camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? reverseTargetPos : gameTargetPos, t)
       if (isFailedReverseDolly) {
@@ -353,9 +498,9 @@ export default function CameraRig({
 
       if (showGameWorld) {
         introYaw.current = THREE.MathUtils.lerp(introYaw.current, 0, gameDelta * INTRO_MOUSE_YAW_RESPONSE)
-        camPos.current.set(posX, posY, posZ)
-        camLook.current.set(lookX, lookY, lookZ)
-        applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
+        camPos.current.set(posX, posY + mobileGameOffsetY, posZ + mobileGameOffsetZ)
+        camLook.current.set(lookX + mobileGameLookX, lookY + mobileGameLookY, lookZ + mobileGameLookZ)
+        applyCameraPose(camera, camPos.current, camLook.current, mobileGameFov)
       } else {
         const baseMouseScale = cameraMode === 'intro' ? 1 : cameraMode === 'failed' || cameraMode === 'leaderboard' ? 0 : 0.35
         const mouseScale = cameraMode === 'intro'
@@ -408,11 +553,15 @@ export default function CameraRig({
     const z = currentZoom.current + jumpZoom.current
     const targetPos = _vecA.set(
       posX + jumpZoom.current * kickflipAngleX + shakeX,
-      posY + jumpZoom.current * kickflipAngleY + shakeY,
-      posZ + z
+      posY + jumpZoom.current * kickflipAngleY + shakeY + mobileGameOffsetY,
+      posZ + z + mobileGameOffsetZ
     )
-    const targetLook = _vecB.set(lookX, lookY, lookZ)
-    const targetFov = GAME_FOV
+    const targetLook = _vecB.set(
+      lookX + mobileGameLookX,
+      lookY + mobileGameLookY,
+      lookZ + mobileGameLookZ
+    )
+    const targetFov = mobileGameFov
     const nextFov = THREE.MathUtils.lerp(camera.fov, targetFov, gameDelta * 5)
 
     camPos.current.lerp(targetPos, gameDelta * INTRO_LERP_SPEED)

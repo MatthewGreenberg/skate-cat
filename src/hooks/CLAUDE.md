@@ -21,7 +21,10 @@ any  -> death (hop off -> walk away)
 - Board landing recoil: pitch/roll bounce on landing
 - Cat spin: full 360 rotation in 0.29s
 
-Also handles keyboard input (ArrowUp = jump, ArrowLeft/Down = spin trick).
+Also handles keyboard input (ArrowUp = jump, ArrowLeft/Down = spin trick) and touch input (right half of screen = jump, left half = spin).
 
 ### useToonShaderSync.js (~100 lines)
 Per-frame sync of toon shader uniforms (light direction, rim, steps, etc.) and blink animation. Lerps between intro and gameplay shader values. Skips when `useOriginalMaterials` is true.
+
+### useOrientation.js
+Returns `{ isPortrait, isTouchDevice, shouldBlock }`. `shouldBlock` is `isTouchDevice && isPortrait` and drives the rotation prompt + gameplay pause in `App.jsx`. Uses `matchMedia('(orientation: portrait)')` with `resize`/`orientationchange` fallbacks.

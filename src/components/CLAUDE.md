@@ -3,7 +3,7 @@
 ## Core Game Components
 - **SkateCat.jsx** — Cat character: GLTF model loading, toon material setup, animation state machine (jump/grind/spin/death/powerslide), keyboard input, rhythm scoring integration. The main `useFrame` has all pose/movement logic.
 - **Obstacles.jsx** — Beat-aligned obstacle spawning, procedural grind rail geometry, log collision detection, scoring, difficulty scaling. Pure logic extracted to `src/lib/`.
-- **CameraRig.jsx** — Camera positioning for intro/game/transition with FOV changes and screen shake.
+- **CameraRig.jsx** — Camera positioning for intro/game/transition with FOV changes and screen shake. `getResponsiveMix` returns `{ mix, mobileLandscapeMix }`; the mobile factor fires for narrow-tall landscape viewports (short side ≤ 500px) and adds extra back-off + FOV bump for intro/results/failed/leaderboard framing and the gameplay camera (Leva: Game → Mobile Landscape).
 
 ## Scene Composition
 - **GameWorld.jsx** — Assembles the game scene: Ground, Background, Sky, SkateCat, Obstacles, particles, effects.
@@ -27,7 +27,8 @@
 
 ## UI Overlays
 - **GameHud.jsx** — Score, beat dots, timing feedback.
-- **GameOverScreen.jsx** — End game modal with animated score counter.
+- **GameOverScreen.jsx** — End game modal with animated score counter. Restart via keyboard or tap/click.
+- **RotationPrompt.jsx** — Full-screen overlay (z-index 1500) shown on touch devices in portrait. Pairs with `useOrientation` hook; when visible, `gameState.paused` is set and gameplay freezes.
 - **TimingDebugHud.jsx** — Dev: live timing offset visualization.
 - **ObstacleSpacingDebugHud.jsx** — Dev: obstacle spacing conflict debug.
 

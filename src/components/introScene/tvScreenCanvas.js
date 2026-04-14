@@ -438,6 +438,12 @@ export function getTvScreenActionAtPoint(
   }
 
   if (screenMode === "leaderboard") {
+    const tabs = getLeaderboardTabBounds(width, height);
+    for (const tab of tabs) {
+      if (isPointInBounds(x, y, tab)) {
+        return `tab_${tab.id}`;
+      }
+    }
     if (isPointInBounds(x, y, actionBounds)) {
       return "back";
     }
@@ -836,10 +842,13 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
 
   // Stat cards — stagger in from below with bounce
   const cardsY = isComplete || !summary?.failReason ? height * 0.65 : height * 0.67;
+  const clearsLabel = summary?.obstacleOpportunities
+    ? `${summary.obstaclesCleared || 0}/${summary.obstacleOpportunities}`
+    : "0/0";
   const cardData = [
-    { x: 0.2, label: "PERFECT", value: accuracyStats.Perfect || 0, color: "#ffd166" },
-    { x: 0.4, label: "GOOD", value: accuracyStats.Good || 0, color: "#7cf7ff" },
-    { x: 0.6, label: "SLOPPY", value: accuracyStats.Sloppy || 0, color: "#ff8db3" },
+    { x: 0.2, label: "CORE %", value: `${summary?.timingPercent || 0}%`, color: "#ffd166" },
+    { x: 0.4, label: "CLEARS", value: clearsLabel, color: "#7cf7ff" },
+    { x: 0.6, label: "PERFECT", value: accuracyStats.Perfect || 0, color: "#ff8db3" },
     { x: 0.8, label: "BEST STREAK", value: summary?.bestStreak || 0, color: accent },
   ];
   cardData.forEach((card, i) => {
@@ -952,7 +961,64 @@ const RANK_COLORS = {
   F: "#6e6e6e",
 };
 
-function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed = 0 }) {
+const LEADERBOARD_TABS = [
+  { id: "daily", label: "DAILY" },
+  { id: "weekly", label: "WEEKLY" },
+  { id: "alltime", label: "ALL-TIME" },
+];
+
+export function getLeaderboardTabBounds(width, height) {
+  const tabW = 170;
+  const tabH = 44;
+  const gap = 22;
+  const totalW = tabW * 3 + gap * 2;
+  const startX = Math.round(width / 2 - totalW / 2);
+  const y = Math.round(height * 0.175 - tabH / 2);
+  return LEADERBOARD_TABS.map((t, i) => ({
+    id: t.id,
+    label: t.label,
+    x: startX + i * (tabW + gap),
+    y,
+    width: tabW,
+    height: tabH,
+  }));
+}
+
+function drawLeaderboardTabs(ctx, width, height, { selectedTab, elapsed }) {
+  const appear = easeOutBack(animProgress(elapsed, 0.12, 0.35));
+  if (appear <= 0) return;
+  for (const tab of getLeaderboardTabBounds(width, height)) {
+    const active = tab.id === selectedTab;
+    ctx.save();
+    ctx.globalAlpha = clamp01(appear);
+    const cx = tab.x + tab.width / 2;
+    const cy = tab.y + tab.height / 2;
+    if (active) {
+      const pulse = 1 + 0.04 * Math.sin(elapsed * 4);
+      ctx.translate(cx, cy);
+      ctx.scale(pulse, pulse);
+      ctx.translate(-cx, -cy);
+    }
+    drawHudPill(ctx, cx, cy, tab.width, tab.height, tab.label, {
+      fill: active ? "rgba(122, 240, 255, 0.22)" : "rgba(30, 20, 50, 0.72)",
+      stroke: active ? "#7cf7ff" : "rgba(255,255,255,0.28)",
+      text: active ? "#e9fbff" : "rgba(255,245,216,0.6)",
+      font: '800 18px "Nunito", sans-serif',
+    });
+    ctx.restore();
+  }
+}
+
+function drawLeaderboardScreen(
+  ctx,
+  width,
+  height,
+  { leaderboards = { daily: [], weekly: [], alltime: [] }, selectedTab = "alltime", elapsed = 0 },
+) {
+  const entries = Array.isArray(leaderboards?.[selectedTab])
+    ? leaderboards[selectedTab]
+    : [];
+
   // Title
   const titleP = easeOutBack(animProgress(elapsed, 0.1, 0.5));
   if (titleP > 0) {
@@ -974,6 +1040,9 @@ function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed =
     ctx.restore();
   }
 
+  // Tab bar (between title and headers)
+  drawLeaderboardTabs(ctx, width, height, { selectedTab, elapsed });
+
   // Column headers
   const headerP = easeOutCubic(animProgress(elapsed, 0.15, 0.3));
   if (headerP > 0) {
@@ -983,10 +1052,10 @@ function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed =
     ctx.fillStyle = "rgba(255, 245, 216, 0.62)";
     ctx.font = '900 18px "Nunito", sans-serif';
     ctx.textAlign = "center";
-    ctx.fillText("#", width * 0.1, height * 0.19);
-    ctx.fillText("RANK", width * 0.22, height * 0.19);
-    ctx.fillText("NAME", width * 0.48, height * 0.19);
-    ctx.fillText("SCORE", width * 0.78, height * 0.19);
+    ctx.fillText("#", width * 0.1, height * 0.21);
+    ctx.fillText("RANK", width * 0.22, height * 0.21);
+    ctx.fillText("NAME", width * 0.48, height * 0.21);
+    ctx.fillText("SCORE", width * 0.78, height * 0.21);
     ctx.restore();
   }
 
@@ -994,9 +1063,9 @@ function drawLeaderboardScreen(ctx, width, height, { leaderboard = [], elapsed =
   for (let i = 0; i < 10; i++) {
     const rowP = easeOutBack(animProgress(elapsed, 0.2 + i * 0.06, 0.4));
     if (rowP <= 0) continue;
-    const entry = leaderboard[i];
-    const rowY = height * 0.225 + i * (height * 0.055);
-    const rowHeight = height * 0.048;
+    const entry = entries[i];
+    const rowY = height * 0.25 + i * (height * 0.05);
+    const rowHeight = height * 0.044;
 
     ctx.save();
     ctx.globalAlpha = clamp01(rowP * 2);
@@ -1249,7 +1318,8 @@ export function drawTvScreen(
     bootReady = false,
     highScore = 0,
     highScoresHovered = false,
-    leaderboard = [],
+    leaderboards = { daily: [], weekly: [], alltime: [] },
+    leaderboardTab = 'alltime',
     leaderboardElapsed = 0,
     initials = null,
     cursorPos = 0,
@@ -1290,7 +1360,8 @@ export function drawTvScreen(
     });
   } else if (screenMode === "leaderboard") {
     drawLeaderboardScreen(ctx, width, height, {
-      leaderboard,
+      leaderboards,
+      selectedTab: leaderboardTab,
       elapsed: leaderboardElapsed,
     });
   } else if (screenMode === "initials") {
@@ -1320,7 +1391,7 @@ export function drawTvScreen(
   } else if (screenMode === "leaderboard") {
     buttonAlpha = clamp01(leaderboardElapsed / 0.3);
     effectiveButtonLabel = "BACK";
-    effectiveInstructionLabel = "ESC TO RETURN";
+    effectiveInstructionLabel = "\u2190 \u2192 SWITCH  \u00B7  ESC BACK";
   } else if (screenMode === "initials") {
     buttonAlpha = clamp01((initialsElapsed - 0.8) / 0.4);
     effectiveButtonLabel = "OK";

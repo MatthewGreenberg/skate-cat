@@ -28,6 +28,13 @@ function createFallbackSummary(outcome) {
     totalScore: gameState.score,
     progressScore: gameState.progressScore,
     bestStreak: gameState.bestStreak.current || 0,
+    obstacleOpportunities: 0,
+    obstaclesCleared: 0,
+    clearPercent: 0,
+    timingPointsEarned: 0,
+    timingPointsPotential: 0,
+    timingPercent: 0,
+    performanceScore: 0,
     railCount: gameState.railCount.current || 0,
     groundSpinCount: gameState.groundSpinCount.current || 0,
     accuracyPercent: 0,
@@ -37,8 +44,8 @@ function createFallbackSummary(outcome) {
 }
 
 const statCardStyle = {
-  minWidth: '120px',
-  padding: '0.8rem 0.95rem',
+  minWidth: '96px',
+  padding: '0.7rem 0.75rem',
   borderRadius: '18px',
   background: 'rgba(255, 255, 255, 0.07)',
   border: '1px solid rgba(255, 255, 255, 0.14)',
@@ -49,18 +56,20 @@ const statLabelStyle = {
   fontSize: '0.66rem',
   fontFamily: 'Nunito, sans-serif',
   fontWeight: 900,
-  letterSpacing: '0.16em',
+  letterSpacing: '0.12em',
   textTransform: 'uppercase',
   color: 'rgba(255, 255, 255, 0.46)',
+  whiteSpace: 'nowrap',
 }
 
 const statValueStyle = {
   marginTop: '0.4rem',
-  fontSize: '1.35rem',
+  fontSize: 'clamp(0.95rem, 2.2vw, 1.35rem)',
   lineHeight: 1,
   color: '#fff',
   fontFamily: 'Knewave',
-  letterSpacing: '0.05em',
+  letterSpacing: '0.04em',
+  whiteSpace: 'nowrap',
 }
 
 export default function GameOverScreen({ visible, outcome = 'failed', onRestart }) {
@@ -118,8 +127,16 @@ export default function GameOverScreen({ visible, outcome = 'failed', onRestart 
     }
 
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [onRestart, showContent, visible])
+
+  const handlePointerDown = () => {
+    if (!showContent) return
+    if (gameState.paused) return
+    onRestart()
+  }
 
   if (!visible) return null
 
@@ -127,9 +144,13 @@ export default function GameOverScreen({ visible, outcome = 'failed', onRestart 
   const message = getOutcomeMessage(summary)
   const buttonLabel = outcome === 'complete' ? 'Skate Again' : 'Retry Run'
   const livesLeft = Math.max(0, summary.remainingLives || 0)
+  const clearsLabel = summary.obstacleOpportunities > 0
+    ? `${summary.obstaclesCleared}/${summary.obstacleOpportunities}`
+    : '0/0'
 
   return (
     <div
+      onPointerDown={handlePointerDown}
       style={{
         position: 'fixed',
         inset: 0,
@@ -278,8 +299,8 @@ export default function GameOverScreen({ visible, outcome = 'failed', onRestart 
               marginTop: '0.6rem',
               width: '100%',
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-              gap: '0.75rem',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+              gap: '0.6rem',
             }}
           >
             <div style={statCardStyle}>
@@ -287,16 +308,20 @@ export default function GameOverScreen({ visible, outcome = 'failed', onRestart 
               <div style={statValueStyle}>{summary.bestStreak}</div>
             </div>
             <div style={statCardStyle}>
-              <div style={statLabelStyle}>Rails</div>
-              <div style={statValueStyle}>{summary.railCount}</div>
+              <div style={statLabelStyle}>Clears</div>
+              <div style={statValueStyle}>{clearsLabel}</div>
             </div>
             <div style={statCardStyle}>
-              <div style={statLabelStyle}>360s</div>
-              <div style={statValueStyle}>{summary.groundSpinCount}</div>
+              <div style={statLabelStyle}>Core %</div>
+              <div style={statValueStyle}>{summary.timingPercent}%</div>
             </div>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>Accuracy</div>
               <div style={statValueStyle}>{summary.accuracyPercent}%</div>
+            </div>
+            <div style={statCardStyle}>
+              <div style={statLabelStyle}>360s</div>
+              <div style={statValueStyle}>{summary.groundSpinCount}</div>
             </div>
             <div style={statCardStyle}>
               <div style={statLabelStyle}>Lives Left</div>

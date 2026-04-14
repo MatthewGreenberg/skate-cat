@@ -6,6 +6,12 @@ body {
   color: #fff;
 }
 
+/* Shrink HUD/overlay rem units on narrow-tall landscape phones so things like
+   PERFECT / STREAK / score pill fit comfortably on small viewports. */
+@media (orientation: landscape) and (max-height: 500px) {
+  html { font-size: 11px; }
+}
+
 ::selection {
   background: rgba(255, 107, 53, 0.4);
   color: #fff;

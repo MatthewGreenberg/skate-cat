@@ -45,6 +45,15 @@ export function createAccuracyStats() {
   };
 }
 
+export function createPerformanceStats() {
+  return {
+    obstacleOpportunities: 0,
+    obstaclesCleared: 0,
+    timingPointsEarned: 0,
+    timingPointsPotential: 0,
+  };
+}
+
 export function createEmptyScoringEvent() {
   return {
     id: 0,
@@ -81,33 +90,48 @@ export function formatFailReason(reason) {
   }
 }
 
+function getPercent(value, total) {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round((value / total) * 100);
+}
+
+const PERFECT_TIMING_POINTS = 3;
+const PEAK_STREAK_TARGET = 12;
+
+export function getRunPerformanceScore(summary) {
+  if (!summary) return 0;
+
+  const timingRatio = (summary.timingPercent || 0) / 100;
+  const clearRatio = (summary.clearPercent || 0) / 100;
+  const lifeRatio = summary.maxLives > 0
+    ? Math.min(Math.max((summary.remainingLives || 0) / summary.maxLives, 0), 1)
+    : 0;
+  const streakRatio = Math.min((summary.bestStreak || 0) / PEAK_STREAK_TARGET, 1);
+
+  return Math.round((timingRatio * 0.6 + clearRatio * 0.25 + lifeRatio * 0.1 + streakRatio * 0.05) * 100);
+}
+
 export function getRunRank(summary) {
   if (!summary) return "F";
 
-  const accuracyRatio = (summary.accuracyPercent || 0) / 100;
+  const performanceScore = summary.performanceScore ?? getRunPerformanceScore(summary);
+  const timingPercent = summary.timingPercent || 0;
+  const clearPercent = summary.clearPercent || 0;
+  const obstacleOpportunities = summary.obstacleOpportunities || 0;
+
   if (summary.outcome === "complete") {
-    if (
-      summary.progressScore >= 48 &&
-      accuracyRatio >= 0.88 &&
-      summary.bestStreak >= 10 &&
-      summary.remainingLives >= 1
-    ) {
-      return "S";
-    }
-    if (summary.progressScore >= 34 && accuracyRatio >= 0.76 && summary.bestStreak >= 6) {
-      return "A";
-    }
-    if (summary.progressScore >= 24 && accuracyRatio >= 0.62) {
-      return "B";
-    }
-    if (summary.progressScore >= 14) {
-      return "C";
-    }
-    return "D";
+    if (performanceScore >= 94 && timingPercent >= 92 && clearPercent >= 98 && summary.remainingLives >= 1) return "S";
+    if (performanceScore >= 84 && timingPercent >= 78 && clearPercent >= 92) return "A";
+    if (performanceScore >= 72 && timingPercent >= 64 && clearPercent >= 84) return "B";
+    if (performanceScore >= 58 && clearPercent >= 70) return "C";
+    if (performanceScore >= 42 || clearPercent >= 55) return "D";
+    return "F";
   }
 
-  if (summary.progressScore >= 20 && accuracyRatio >= 0.65) return "C";
-  if (summary.progressScore >= 10 || summary.totalScore >= 12) return "D";
+  if (performanceScore >= 78 && timingPercent >= 74 && clearPercent >= 88 && obstacleOpportunities >= 20) return "B";
+  if (performanceScore >= 62 && clearPercent >= 65) return "C";
+  if (performanceScore >= 42 || timingPercent >= 35 || clearPercent >= 45) return "D";
   return "F";
 }
 
@@ -120,6 +144,7 @@ export const gameState = {
   speedLinesOn: false,
   jumping: false,
   gameOver: false,
+  paused: false,
   score: 0,
   progressScore: 0,
   onGameOver: null, // callback to trigger React re-render
@@ -152,6 +177,7 @@ export const gameState = {
   railCount: createRef(),
   bestStreak: createRef(),
   accuracyStats: createRef(),
+  performanceStats: createRef(),
   lastFailReason: createRef(),
   tutorialPrompt: createRef(),
   runPhase: createRef(),
@@ -187,6 +213,7 @@ gameState.groundSpinCount.current = 0;
 gameState.railCount.current = 0;
 gameState.bestStreak.current = 0;
 gameState.accuracyStats.current = createAccuracyStats();
+gameState.performanceStats.current = createPerformanceStats();
 gameState.lastFailReason.current = "";
 gameState.tutorialPrompt.current = "";
 gameState.runPhase.current = "early";
@@ -210,6 +237,7 @@ export function emitHudScoreChange() {
 
 export function buildRunSummary({ outcome = "failed" } = {}) {
   const accuracyStats = gameState.accuracyStats.current || createAccuracyStats();
+  const performanceStats = gameState.performanceStats.current || createPerformanceStats();
   const summary = {
     outcome,
     totalScore: gameState.score,
@@ -221,9 +249,17 @@ export function buildRunSummary({ outcome = "failed" } = {}) {
     maxLives: MAX_RUN_LIVES,
     accuracyStats,
     accuracyPercent: getAccuracyPercent(accuracyStats),
+    obstacleOpportunities: performanceStats.obstacleOpportunities || 0,
+    obstaclesCleared: performanceStats.obstaclesCleared || 0,
+    timingPointsEarned: performanceStats.timingPointsEarned || 0,
+    timingPointsPotential: performanceStats.timingPointsPotential || 0,
     failReason: formatFailReason(gameState.lastFailReason.current),
   };
 
+  summary.clearPercent = getPercent(summary.obstaclesCleared, summary.obstacleOpportunities);
+  summary.timingPercent = getPercent(summary.timingPointsEarned, summary.timingPointsPotential);
+  summary.potentialPoints = summary.obstacleOpportunities * PERFECT_TIMING_POINTS;
+  summary.performanceScore = getRunPerformanceScore(summary);
   summary.rank = getRunRank(summary);
   return summary;
 }

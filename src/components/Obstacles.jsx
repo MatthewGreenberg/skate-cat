@@ -5,6 +5,7 @@ import { folder } from 'leva'
 import * as THREE from 'three'
 import {
   buildRunSummary,
+  createPerformanceStats,
   createIdleGrindState,
   emitHudScoreChange,
   gameState,
@@ -726,6 +727,10 @@ export default function Obstacles({
     if (slot.showHoldSign) hasAssignedHoldTutorial.current = true
     slot.railLength = resolvedRailLength
     slot.railLift = 0
+    const performanceStats = gameState.performanceStats.current || createPerformanceStats()
+    performanceStats.obstacleOpportunities += 1
+    performanceStats.timingPointsPotential += TIMING_POINTS.Perfect
+    gameState.performanceStats.current = performanceStats
     upsertObstacleTarget({
       id: slot.id,
       clusterId: slot.clusterId,
@@ -940,6 +945,10 @@ export default function Obstacles({
           gameState.scoreMultiplier.current = multiplier
           gameState.progressScore += points
           gameState.score += points
+          const performanceStats = gameState.performanceStats.current || createPerformanceStats()
+          performanceStats.obstaclesCleared += 1
+          performanceStats.timingPointsEarned += TIMING_POINTS[timingGrade]
+          gameState.performanceStats.current = performanceStats
           if (ob.isVertical) {
             gameState.railCount.current = (gameState.railCount.current || 0) + 1
           }
