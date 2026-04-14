@@ -1,6 +1,6 @@
 import { roundNumber, MEASURE_LENGTH_BEATS, MEASURE_PHASE_OFFSET_BEATS } from './obstaclePatterns'
 
-export const TRACK_ANALYSIS_URL = '/skate-cat-2.analysis.json'
+export const TRACK_ANALYSIS_URL = '/audio/music/skate-cat-2.analysis.json'
 
 export function getGameplayMeasureStartBeat(beat) {
   return Math.floor((beat - MEASURE_PHASE_OFFSET_BEATS) / MEASURE_LENGTH_BEATS) * MEASURE_LENGTH_BEATS + MEASURE_PHASE_OFFSET_BEATS

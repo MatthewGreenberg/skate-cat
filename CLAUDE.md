@@ -7,10 +7,12 @@
 - @react-three/fiber + @react-three/drei for 3D
 - Leva for dev tuning controls
 - Custom toon shading pipeline (see `src/shaders/`)
+- Supabase-backed global leaderboard. The browser never talks to Supabase directly — it hits Vercel serverless functions in `/api/` which use the `SUPABASE_SERVICE_ROLE_KEY` server-side. Table schema in `supabase/leaderboard.sql`. Env vars (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) must also be set in the Vercel project dashboard for deployments.
 
 ## Commands
-- `npm run dev` — start dev server
-- `npx eslint src/` — lint (don't run server to validate changes)
+- `npm run dev` — Vite only (no `/api` routes). Use for frontend-only iteration.
+- `vercel dev` — Vite + `/api/*.js` serverless functions together. Use this when touching leaderboard code.
+- `npx eslint src/` — lint (don't run the server to validate changes)
 
 ## Architecture
 
@@ -33,12 +35,25 @@
 
 ### Directory Layout
 ```
+api/           — Vercel serverless functions (leaderboard.js, submit-score.js)
+supabase/      — SQL migrations for the leaderboard table
 src/
   shaders/     — GLSL shader strings (toon, outline, log toon)
   hooks/       — Custom React hooks (planned)
   lib/         — Pure logic modules (obstacle patterns, lane logic, track analysis, materials)
   components/  — React/R3F components
     intro/     — Intro scene (WIP refactoring)
+public/
+  models/      — GLB/GLTF models
+    cat/         — Player cat model + textures (dingus_* files)
+    obstacles/   — In-game obstacle models (large_tree_log)
+    intro/       — Intro scene props (crt_tv, office_chair, etc.)
+    skateboard.glb — Gameplay skateboard (intro has its own in intro/)
+  textures/    — Standalone textures (wood/, poster.webp)
+  audio/
+    music/       — Songs + analysis JSON sidecars
+    sfx/         — Jump/die sound effects
+  basis/       — KTX2 transcoder WASM (path hardcoded in ktx2Loader.js)
 ```
 
 ### Toon Shading Pipeline

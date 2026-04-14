@@ -5,29 +5,27 @@ import * as THREE from 'three'
 import { gameState, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
 
-const MAX_BLADES = 4000
+const MAX_BLADES = 8000
 const SEGMENT_LENGTH = 20
 const SEGMENT_WIDTH = 12
-const ROAD_HALF = 1.5 // slight encroachment onto road edges
+const ROAD_HALF = 1.5
+const ROAD_HALF_CAM_SIDE = 1.8 // push grass back on camera-facing side
+const CAM_SIDE_MAX = 3.5 // don't waste instances off-screen on camera side
 
 function createBladeGeometry() {
   const geo = new THREE.BufferGeometry()
-  // Wider blade shape — quad-like with tapered tip
+  // Simple triangle blade — 3 verts, 1 tri, double density for same perf budget
   const vertices = new Float32Array([
     -0.5, 0, 0,
     0.5, 0, 0,
-    0.3, 0.5, 0,
-    -0.3, 0.5, 0,
     0, 1, 0,
   ])
   const uvs = new Float32Array([
     0, 0,
     1, 0,
-    0.8, 0.5,
-    0.2, 0.5,
     0.5, 1,
   ])
-  const indices = [0, 1, 2, 0, 2, 3, 3, 2, 4]
+  const indices = [0, 1, 2]
   geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2))
   geo.setIndex(indices)
@@ -139,14 +137,15 @@ const grassFragmentShader = /* glsl */ `
 export default function Grass({ quality = 'auto' }) {
   const meshRef = useRef()
 
-  const { windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
+  const { windEnabled, windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
     Grass: folder({
-      bladeCount: { value: 4000, min: 100, max: MAX_BLADES, step: 100 },
-      thickness: { value: 0.08, min: 0.005, max: 0.2, step: 0.005 },
-      windSpeed: { value: 2.0, min: 0, max: 10, step: 0.1 },
-      windStrength: { value: 0.12, min: 0, max: 0.5, step: 0.01 },
+      bladeCount: { value: 8000, min: 100, max: MAX_BLADES, step: 100 },
+      thickness: { value: 0.10, min: 0.005, max: 0.2, step: 0.005 },
+      windEnabled: true,
+      windSpeed: { value: 3.8, min: 0, max: 10, step: 0.1 },
+      windStrength: { value: 0.29, min: 0, max: 0.5, step: 0.01 },
       bladeMinHeight: { value: 0.3, min: 0.01, max: 1.0, step: 0.01 },
-      bladeMaxHeight: { value: 0.8, min: 0.1, max: 2.0, step: 0.01 },
+      bladeMaxHeight: { value: 0.58, min: 0.1, max: 2.0, step: 0.01 },
     }, { collapsed: true }),
   }, [])
   const {
@@ -172,7 +171,7 @@ export default function Grass({ quality = 'auto' }) {
   }, [])
   const resolvedBladeCount = Math.min(
     bladeCount,
-    quality === 'high' ? 3000 : quality === 'quiet' ? 1400 : 2200
+    quality === 'high' ? 6000 : quality === 'quiet' ? 2800 : 4400
   )
   const {
     nightColorBase,
@@ -232,7 +231,7 @@ export default function Grass({ quality = 'auto' }) {
       if (Math.random() < 0.5) {
         x = -ROAD_HALF - Math.random() * (SEGMENT_WIDTH / 2 - ROAD_HALF)
       } else {
-        x = ROAD_HALF + Math.random() * (SEGMENT_WIDTH / 2 - ROAD_HALF)
+        x = ROAD_HALF_CAM_SIDE + Math.random() * (CAM_SIDE_MAX - ROAD_HALF_CAM_SIDE)
       }
       data.push({
         x,
@@ -277,9 +276,9 @@ export default function Grass({ quality = 'auto' }) {
     const sunriseFactor = getSunriseFactor(t)
     const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
 
-    u.uTime.value += delta
+    if (windEnabled) u.uTime.value += delta
     u.uWindSpeed.value = windSpeed
-    u.uWindStrength.value = windStrength
+    u.uWindStrength.value = windEnabled ? windStrength : 0
     u.uThickness.value = thickness
     u.uVisibleCount.value = resolvedBladeCount
     meshRef.current.count = resolvedBladeCount

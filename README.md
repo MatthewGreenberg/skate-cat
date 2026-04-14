@@ -20,5 +20,5 @@ If you are developing a production application, we recommend using TypeScript wi
 An offline `librosa` analyzer for the main song lives at [scripts/analyze_track.py](scripts/analyze_track.py).
 
 - Install Python deps: `python3 -m pip install -r scripts/requirements-librosa.txt`
-- Generate sidecar JSON: `python3 scripts/analyze_track.py public/skate-cat-2.mp3 public/skate-cat-2.analysis.json --audio-public-path /skate-cat-2.mp3 --bpm 170 --phase-offset-seconds -0.068`
+- Generate sidecar JSON: `python3 scripts/analyze_track.py public/audio/music/skate-cat-2.mp3 public/audio/music/skate-cat-2.analysis.json --audio-public-path /audio/music/skate-cat-2.mp3 --bpm 170 --phase-offset-seconds -0.068`
 - Schema and integration notes: [docs/audio-analysis-schema.md](docs/audio-analysis-schema.md)

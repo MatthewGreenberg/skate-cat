@@ -1,41 +1,32 @@
-const LEADERBOARD_KEY = 'skateCat_leaderboard'
 const MAX_ENTRIES = 10
 
-export function loadLeaderboard() {
+export async function fetchLeaderboard() {
   try {
-    const raw = localStorage.getItem(LEADERBOARD_KEY)
-    if (!raw) return []
-    const entries = JSON.parse(raw)
-    if (!Array.isArray(entries)) return []
-    return entries
-      .filter(e => e && typeof e.initials === 'string' && typeof e.score === 'number')
-      .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_ENTRIES)
-  } catch {
+    const res = await fetch('/api/leaderboard')
+    if (!res.ok) throw new Error(`status ${res.status}`)
+    const { entries } = await res.json()
+    return Array.isArray(entries) ? entries : []
+  } catch (err) {
+    console.error('[leaderboard] fetch failed', err)
     return []
   }
 }
 
-function saveLeaderboard(entries) {
-  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)))
-}
-
-export function isHighScore(score) {
-  const board = loadLeaderboard()
-  if (board.length < MAX_ENTRIES) return true
+export function isHighScore(score, board) {
+  if (!Array.isArray(board) || board.length < MAX_ENTRIES) return true
   return score > board[board.length - 1].score
 }
 
-export function insertScore(initials, score, rank) {
-  const board = loadLeaderboard()
-  board.push({ initials, score, rank })
-  board.sort((a, b) => b.score - a.score)
-  const trimmed = board.slice(0, MAX_ENTRIES)
-  saveLeaderboard(trimmed)
-  return trimmed
-}
-
-export function getHighScore() {
-  const board = loadLeaderboard()
-  return board.length > 0 ? board[0].score : 0
+export async function submitScore(initials, score, rank) {
+  try {
+    const res = await fetch('/api/submit-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initials, score, rank }),
+    })
+    if (!res.ok) throw new Error(`status ${res.status}`)
+  } catch (err) {
+    console.error('[leaderboard] submit failed', err)
+  }
+  return fetchLeaderboard()
 }

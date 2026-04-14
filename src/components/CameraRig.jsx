@@ -14,7 +14,7 @@ const FAILED_SUMMARY_DOLLY_DISTANCE = 0.7
 const LEADERBOARD_DOLLY_DISTANCE = 1.15
 const LEADERBOARD_LOOK_Y_OFFSET = 0.12
 const INTRO_MOUSE_YAW_MAX = THREE.MathUtils.degToRad(4.5)
-const INTRO_MOUSE_PITCH_SHIFT = 0.14
+const INTRO_MOUSE_PITCH_SHIFT = 0.32
 const INTRO_MOUSE_YAW_RESPONSE = 5
 const INTRO_MOUSE_LOOK_SHIFT = 0.18
 
@@ -39,6 +39,16 @@ const _vecN = new THREE.Vector3()
 const _vecO = new THREE.Vector3()
 const _vecP = new THREE.Vector3()
 const _worldUp = new THREE.Vector3(0, 1, 0)
+const _responsiveViewDir = new THREE.Vector3()
+const _responsiveIntroPos = new THREE.Vector3()
+const _responsiveIntroLook = new THREE.Vector3()
+const _responsiveResultsPos = new THREE.Vector3()
+const _responsiveResultsLook = new THREE.Vector3()
+const _responsiveFailedPos = new THREE.Vector3()
+const _responsiveFailedLook = new THREE.Vector3()
+const _responsiveLeaderboardPos = new THREE.Vector3()
+const _responsiveLeaderboardLook = new THREE.Vector3()
+
 function applyCameraPose(targetCamera, position, lookAt, fov) {
   if (!targetCamera) return
 
@@ -50,6 +60,73 @@ function applyCameraPose(targetCamera, position, lookAt, fov) {
   targetCamera.lookAt(lookAt)
 }
 
+function getResponsiveMix(size) {
+  const width = size?.width ?? 0
+  const height = size?.height ?? 0
+  const aspect = height > 0 ? width / height : 1
+  const shortSide = Math.min(width, height)
+  const aspectMix = THREE.MathUtils.clamp((1.45 - aspect) / (1.45 - 0.9), 0, 1)
+  const sizeMix = THREE.MathUtils.clamp((900 - shortSide) / (900 - 600), 0, 1)
+  return Math.max(aspectMix, sizeMix)
+}
+
+function getResponsiveIntroFraming(
+  basePos,
+  baseLook,
+  baseFov,
+  cameraMode,
+  responsiveMix,
+  positionTarget,
+  lookTarget
+) {
+  positionTarget.copy(basePos)
+  lookTarget.copy(baseLook)
+
+  if (cameraMode === 'death' || responsiveMix <= 0) {
+    return baseFov
+  }
+
+  let backOffset = 0
+  let posYOffset = 0
+  let posXOffset = 0
+  let lookYOffset = 0
+  let fovOffset = 0
+
+  if (cameraMode === 'intro') {
+    backOffset = 0.85
+    posYOffset = 0.12
+    posXOffset = -0.08
+    lookYOffset = 0.04
+    fovOffset = 4
+  } else if (cameraMode === 'results') {
+    backOffset = 0.35
+    posYOffset = 0.06
+    fovOffset = 2
+  } else if (cameraMode === 'failed') {
+    backOffset = 0.45
+    posYOffset = 0.06
+    fovOffset = 2
+  } else if (cameraMode === 'leaderboard') {
+    backOffset = 0.55
+    posYOffset = 0.08
+    fovOffset = 3
+  }
+
+  _responsiveViewDir.copy(basePos).sub(baseLook)
+  if (_responsiveViewDir.lengthSq() > 1e-6) {
+    _responsiveViewDir.normalize()
+  } else {
+    _responsiveViewDir.set(0, 0, 1)
+  }
+
+  positionTarget.addScaledVector(_responsiveViewDir, backOffset * responsiveMix)
+  positionTarget.y += posYOffset * responsiveMix
+  positionTarget.x += posXOffset * responsiveMix
+  lookTarget.y += lookYOffset * responsiveMix
+
+  return baseFov + fovOffset * responsiveMix
+}
+
 export default function CameraRig({
   runActive = false,
   showGameWorld = false,
@@ -58,7 +135,7 @@ export default function CameraRig({
   transitionDirection = 'forward',
   cameraMode = 'intro',
 }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
   const currentZoom = useRef(0)
   const jumpZoom = useRef(0)
   const shakeTime = useRef(0)
@@ -140,12 +217,22 @@ export default function CameraRig({
     // Clamp delta to prevent camera overshoot after tab-away (large accumulated delta)
     const delta = Math.min(rawDelta, 0.1)
     const gameDelta = getGameDelta(delta)
+    const responsiveMix = getResponsiveMix(size)
     const targetIntroPos = _vecA.set(introCamX, introCamY, introCamZ)
     const targetIntroLook = _vecB.set(introLookX, introLookY, introLookZ)
     const targetResultsPos = _vecC.set(resultsCamX, resultsCamY, resultsCamZ)
     const targetResultsLook = _vecD.set(resultsLookX, resultsLookY, resultsLookZ)
     const deathTargetPos = _vecE.set(deathCamX, deathCamY, deathCamZ)
     const deathTargetLook = _vecF.set(deathLookX, deathLookY, deathLookZ)
+    const responsiveIntroFov = getResponsiveIntroFraming(
+      targetIntroPos,
+      targetIntroLook,
+      INTRO_FOV,
+      'intro',
+      responsiveMix,
+      _responsiveIntroPos,
+      _responsiveIntroLook
+    )
     const failedTargetLook = _vecK.copy(targetIntroLook)
     const failedTargetPos = _vecJ
       .copy(targetIntroPos)
@@ -153,46 +240,73 @@ export default function CameraRig({
         _vecH.copy(failedTargetLook).sub(targetIntroPos).normalize(),
         FAILED_SUMMARY_DOLLY_DISTANCE
       )
-    const failedTargetFov = INTRO_FOV
+    const responsiveResultsFov = getResponsiveIntroFraming(
+      targetResultsPos,
+      targetResultsLook,
+      INTRO_FOV,
+      'results',
+      responsiveMix,
+      _responsiveResultsPos,
+      _responsiveResultsLook
+    )
+    const responsiveFailedFov = getResponsiveIntroFraming(
+      failedTargetPos,
+      failedTargetLook,
+      INTRO_FOV,
+      'failed',
+      responsiveMix,
+      _responsiveFailedPos,
+      _responsiveFailedLook
+    )
     const leaderboardTargetLook = _vecL.copy(targetIntroLook)
     leaderboardTargetLook.y += LEADERBOARD_LOOK_Y_OFFSET
     const leaderboardTargetPos = _vecM
       .copy(targetIntroPos)
       .addScaledVector(_vecI.copy(leaderboardTargetLook).sub(targetIntroPos).normalize(), LEADERBOARD_DOLLY_DISTANCE)
-    const leaderboardTargetFov = INTRO_FOV
+    const responsiveLeaderboardFov = getResponsiveIntroFraming(
+      leaderboardTargetPos,
+      leaderboardTargetLook,
+      INTRO_FOV,
+      'leaderboard',
+      responsiveMix,
+      _responsiveLeaderboardPos,
+      _responsiveLeaderboardLook
+    )
     const idleTargetPos = cameraMode === 'death'
       ? deathTargetPos
       : cameraMode === 'leaderboard'
-        ? leaderboardTargetPos
+        ? _responsiveLeaderboardPos
       : cameraMode === 'failed'
-        ? failedTargetPos
+        ? _responsiveFailedPos
         : cameraMode === 'results'
-        ? targetResultsPos
-        : targetIntroPos
+        ? _responsiveResultsPos
+        : _responsiveIntroPos
     const idleTargetLook = cameraMode === 'death'
       ? deathTargetLook
       : cameraMode === 'leaderboard'
-        ? leaderboardTargetLook
+        ? _responsiveLeaderboardLook
       : cameraMode === 'failed'
-        ? failedTargetLook
+        ? _responsiveFailedLook
         : cameraMode === 'results'
-        ? targetResultsLook
-        : targetIntroLook
+        ? _responsiveResultsLook
+        : _responsiveIntroLook
     const idleTargetFov = cameraMode === 'death'
       ? deathFov
       : cameraMode === 'leaderboard'
-        ? leaderboardTargetFov
+        ? responsiveLeaderboardFov
       : cameraMode === 'failed'
-        ? failedTargetFov
-        : INTRO_FOV
-    const reverseTargetPos = cameraMode === 'death' ? targetIntroPos : idleTargetPos
-    const reverseTargetLook = cameraMode === 'death' ? targetIntroLook : idleTargetLook
-    const reverseTargetFov = cameraMode === 'death' ? INTRO_FOV : idleTargetFov
+        ? responsiveFailedFov
+        : cameraMode === 'results'
+          ? responsiveResultsFov
+          : responsiveIntroFov
+    const reverseTargetPos = cameraMode === 'death' ? _responsiveIntroPos : idleTargetPos
+    const reverseTargetLook = cameraMode === 'death' ? _responsiveIntroLook : idleTargetLook
+    const reverseTargetFov = cameraMode === 'death' ? responsiveIntroFov : idleTargetFov
     const shouldUseReverseIntroStartShot = transitionDirection === 'reverse' && cameraMode === 'failed'
     const reverseIntroStartPos = _vecN
-      .copy(failedTargetPos)
+      .copy(_responsiveFailedPos)
       .addScaledVector(
-        _vecI.copy(failedTargetPos).sub(failedTargetLook).normalize(),
+        _vecI.copy(_responsiveFailedPos).sub(_responsiveFailedLook).normalize(),
         REVERSE_INTRO_DOLLY_DISTANCE
       )
 
@@ -200,8 +314,8 @@ export default function CameraRig({
       if (shouldUseReverseIntroStartShot) {
         // Failed reverse reveals should stay centered on the TV and dolly straight into the summary framing.
         posAtCapture.current.copy(reverseIntroStartPos)
-        lookAtCapture.current.copy(failedTargetLook)
-        fovAtCapture.current = failedTargetFov
+        lookAtCapture.current.copy(_responsiveFailedLook)
+        fovAtCapture.current = responsiveFailedFov
       } else {
         posAtCapture.current.copy(camera.position)
         lookAtCapture.current.copy(camLook.current)
@@ -216,14 +330,14 @@ export default function CameraRig({
       const isFailedReverseDolly = transitionDirection === 'reverse' && cameraMode === 'failed'
       const targetFov = transitionDirection === 'reverse' ? reverseTargetFov : GAME_FOV
       const nextFov = isFailedReverseDolly
-        ? failedTargetFov
+        ? responsiveFailedFov
         : THREE.MathUtils.lerp(fovAtCapture.current, targetFov, t)
       const gameTargetPos = _vecO.set(posX, posY, posZ)
       const gameTargetLook = _vecP.set(lookX, lookY, lookZ)
 
       camPos.current.lerpVectors(posAtCapture.current, transitionDirection === 'reverse' ? reverseTargetPos : gameTargetPos, t)
       if (isFailedReverseDolly) {
-        camLook.current.copy(failedTargetLook)
+        camLook.current.copy(_responsiveFailedLook)
       } else {
         camLook.current.lerpVectors(lookAtCapture.current, transitionDirection === 'reverse' ? reverseTargetLook : gameTargetLook, t)
       }
@@ -243,7 +357,10 @@ export default function CameraRig({
         camLook.current.set(lookX, lookY, lookZ)
         applyCameraPose(camera, camPos.current, camLook.current, GAME_FOV)
       } else {
-        const mouseScale = cameraMode === 'intro' ? 1 : cameraMode === 'failed' || cameraMode === 'leaderboard' ? 0 : 0.35
+        const baseMouseScale = cameraMode === 'intro' ? 1 : cameraMode === 'failed' || cameraMode === 'leaderboard' ? 0 : 0.35
+        const mouseScale = cameraMode === 'intro'
+          ? baseMouseScale * (1 - responsiveMix * 0.55)
+          : baseMouseScale
         const introYawTarget = state.pointer.x * INTRO_MOUSE_YAW_MAX * mouseScale
         const introPitchTarget = state.pointer.y * INTRO_MOUSE_PITCH_SHIFT * mouseScale
         introYaw.current = THREE.MathUtils.lerp(

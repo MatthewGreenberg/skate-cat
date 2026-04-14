@@ -120,7 +120,7 @@ export default function Obstacles({
   shadowMode = 'map',
 }) {
   const useShadowMap = shadowMode === 'map'
-  const log = useGLTF('/large_tree_log/scene.gltf')
+  const log = useGLTF('/models/obstacles/large_tree_log/scene.gltf')
   const refs = useRef([])
   const logRefs = useRef([])
   const railRefs = useRef([])
@@ -1342,4 +1342,4 @@ export default function Obstacles({
   )
 }
 
-useGLTF.preload('/large_tree_log/scene.gltf')
+useGLTF.preload('/models/obstacles/large_tree_log/scene.gltf')

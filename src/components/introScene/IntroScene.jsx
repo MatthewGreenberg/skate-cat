@@ -50,32 +50,32 @@ export default function IntroScene({
   const boardGlowRef = useRef()
   const shadowTargetRef = useRef()
   const { scene: tvScene } = useGLTF(
-    '/crt_tv_compressed.glb',
+    '/models/intro/crt_tv.glb',
     false,
     false,
     (loader) => configureKTX2Loader(loader, gl)
   )
-  const { scene: catScene } = useGLTF('/maxwell_the_cat_dingus/scene.gltf')
+  const { scene: catScene } = useGLTF('/models/cat/scene.gltf')
   const { scene: chairScene } = useGLTF(
-    '/office_chair_compressed.glb',
+    '/models/intro/office_chair.glb',
     false,
     false,
     (loader) => configureKTX2Loader(loader, gl)
   )
   const { scene: cartridgeScene } = useGLTF(
-    '/duck_hunt_cartridge_compressed.glb',
+    '/models/intro/duck_hunt_cartridge.glb',
     false,
     false,
     (loader) => configureKTX2Loader(loader, gl)
   )
   const { scene: skateboardScene } = useGLTF(
-    '/skateboard_compressed.glb',
+    '/models/intro/skateboard.glb',
     false,
     false,
     (loader) => configureKTX2Loader(loader, gl)
   )
-  const { scene: canScene } = useGLTF(
-    '/can_compressed.glb',
+  const { scene: octocatScene } = useGLTF(
+    '/models/github_octocat.glb',
     false,
     false,
     (loader) => configureKTX2Loader(loader, gl)
@@ -85,12 +85,12 @@ export default function IntroScene({
   const chair = useMemo(() => prepareAsset(chairScene), [chairScene])
   const cartridge = useMemo(() => prepareAsset(cartridgeScene), [cartridgeScene])
   const skateboard = useMemo(() => prepareAsset(skateboardScene), [skateboardScene])
-  const can = useMemo(() => prepareAsset(canScene), [canScene])
+  const octocat = useMemo(() => prepareAsset(octocatScene), [octocatScene])
   const { diffusion: woodDiffuse, normal: woodNormal } = useTexture({
-    diffusion: '/wood/diffusion.webp',
-    normal: '/wood/normal.webp',
+    diffusion: '/textures/wood/diffusion.webp',
+    normal: '/textures/wood/normal.webp',
   })
-  const posterTexture = useTexture('/poster.webp')
+  const posterTexture = useTexture('/textures/poster.webp')
   const floorTexture = useMemo(() => createFloorTexture(), [])
   const wallTexture = useMemo(() => createWallTexture(), [])
   const floorY = 0
@@ -149,9 +149,18 @@ export default function IntroScene({
   const skateboardPosition = [0.31, floorY + 1.99, -1.0]
   const skateboardRotation = [0.35, -4.5, 0]
   const skateboardScale = 0.24 * 0.01
-  const canPosition = [-0.1, floorY + 2.0, -1.2]
-  const canRotation = [0, 0.12, 0.01]
-  const canScale = 8.1 * 0.01
+
+  const octocatCtrl = useOptionalControls('Intro', {
+    Octocat: folder({
+      octocatPosX: { value: 0.9, min: -5, max: 5, step: 0.01 },
+      octocatPosY: { value: 1.99, min: -5, max: 5, step: 0.01 },
+      octocatPosZ: { value: -1.2, min: -5, max: 5, step: 0.01 },
+      octocatRotX: { value: -0.1, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
+      octocatRotY: { value: -0.4, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
+      octocatRotZ: { value: 0, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
+      octocatScale: { value: 0.03, min: 0.001, max: 2, step: 0.001 },
+    }),
+  }, [])
 
   const tvUiCtrl = useOptionalControls('Intro', {
     'TV UI': folder({
@@ -528,17 +537,30 @@ export default function IntroScene({
         />
       </group>
 
-      {/* Can on floor */}
-      <group
-        position={canPosition}
-        rotation={canRotation}
-        scale={canScale}
-      >
-        <primitive
-          object={can.root}
-          position={[-can.center.x, -can.min.y, -can.center.z]}
-        />
-      </group>
+      {/* GitHub Octocat — click to open github.com */}
+      {octocat.root && (
+        <group
+          position={[octocatCtrl.octocatPosX, octocatCtrl.octocatPosY, octocatCtrl.octocatPosZ]}
+          rotation={[octocatCtrl.octocatRotX, octocatCtrl.octocatRotY, octocatCtrl.octocatRotZ]}
+          scale={octocatCtrl.octocatScale}
+          onClick={(e) => {
+            e.stopPropagation()
+            window.open('https://github.com', '_blank', 'noopener,noreferrer')
+          }}
+          onPointerOver={(e) => {
+            e.stopPropagation()
+            document.body.style.cursor = 'pointer'
+          }}
+          onPointerOut={() => {
+            document.body.style.cursor = 'auto'
+          }}
+        >
+          <primitive
+            object={octocat.root}
+            position={[-octocat.center.x, -octocat.min.y, -octocat.center.z]}
+          />
+        </group>
+      )}
 
       {/* CRT model + curved UI screen (canvas → CRT shader) */}
       <group position={[tvPosition.x, tvPosition.y, tvPosition.z]} rotation={[0, tvCtrl.tvRotY, 0]} scale={tvCtrl.tvScale}>
@@ -607,5 +629,5 @@ export default function IntroScene({
   )
 }
 
-useGLTF.preload('/maxwell_the_cat_dingus/scene.gltf')
-useTexture.preload('/poster.webp')
+useGLTF.preload('/models/cat/scene.gltf')
+useTexture.preload('/textures/poster.webp')

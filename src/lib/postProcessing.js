@@ -8,12 +8,12 @@ export const POST_CONTROL_LIMITS = {
   contrast: { min: -0.5, max: 0.5, step: 0.01 },
   hue: { min: -Math.PI, max: Math.PI, step: 0.01 },
   saturation: { min: -1, max: 1, step: 0.01 },
-  distortionX: { min: -0.2, max: 0.2, step: 0.001 },
-  distortionY: { min: -0.2, max: 0.2, step: 0.001 },
+  distortionX: { min: -1.0, max: 1.0, step: 0.01 },
+  distortionY: { min: -1.0, max: 1.0, step: 0.01 },
 };
 
 export const DEFAULT_GAME_POST_SETTINGS = {
-  bloomIntensity: 2.3,
+  bloomIntensity: 1.5,
   bloomThreshold: 0.24,
   bloomSmoothing: 0.1,
   brightness: 0.0,

@@ -10,7 +10,6 @@ export function IntroLighting({
   tvGlowRef,
   accentLightRef,
   heroSpotlightRef,
-  sweepSpotlightRef,
   sweepSpotlightTargetRef,
   boardGlowRef,
   shadowTargetRef,
@@ -22,7 +21,6 @@ export function IntroLighting({
   catPosition,
   floorY,
   boardAnchor,
-  lampCtrl,
   motionFxCtrl,
   bootVisualMix = 1,
 }) {
@@ -90,17 +88,7 @@ export function IntroLighting({
       />
 
       {/* TV fill + wall wash + lamp (three point lights) + cool corner accent */}
-      <spotLight
-        ref={sweepSpotlightRef}
-        position={[screenWorld.x + tvForward.x * 0.2, screenWorld.y + 0.15, screenWorld.z + tvForward.z * 0.15]}
-        intensity={20 * roomPower}
-        angle={0.78}
-        penumbra={0.8}
-        distance={12}
-        decay={1}
-        color="#ffd6a0"
-        castShadow={false}
-      />
+
       <pointLight
         ref={tvGlowRef}
         position={[screenWorld.x, tvPanelCenterY + 0.7, backWallZ + 0.95]}
@@ -109,13 +97,7 @@ export function IntroLighting({
         decay={2}
         color="#ffcf96"
       />
-      <pointLight
-        position={[lampCtrl.lampPosX - 0.2 * lampCtrl.lampScale, lampCtrl.lampPosY + 2.2 * lampCtrl.lampScale, lampCtrl.lampPosZ + 0.1 * lampCtrl.lampScale]}
-        intensity={5.2 * roomPower}
-        distance={7.8}
-        decay={1.9}
-        color="#ffd4a8"
-      />
+
 
       <pointLight
         position={[-wallEdgeCoolLight.x, wallEdgeCoolLight.y, wallEdgeCoolLight.z]}
@@ -124,14 +106,6 @@ export function IntroLighting({
         decay={wallEdgeCoolLight.decay}
         color={'pink'}
       />
-
-      {/* <pointLight position={[lampCtrl.lampPosX, lampCtrl.lampPosY + 1.66 * lampCtrl.lampScale, lampCtrl.lampPosZ]} intensity={4.6} distance={6.4} decay={1.7} color="#ffd8ac" /> */}
-      {/* Fill / rim / key on the cat (static positions) */}
-      {/* <spotLight position={[0.7, 2.6, 3.2]} intensity={0.6} color="#ffd9b4" distance={6.4} decay={2} castShadow={false} />
-
-      <pointLight position={[0.2, 1.7, -3.1]} intensity={1.35} distance={4.8} decay={2} color="#7e5f79" />
-
-      <pointLight position={[1.85, 0.72, 0.72]} intensity={2.4} distance={4.1} decay={1.95} color="#ffc996" /> */}
     </>
   )
 }

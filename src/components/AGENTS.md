@@ -15,7 +15,6 @@
 - **DustTrail.jsx** — Continuous dust particles behind skateboard.
 - **SpeedLines.jsx** — Shader-based speed line overlay.
 - **AmbientParticles.jsx** — Floating firefly-like particles.
-- **MeshTrail.jsx** — Skateboard ribbon trail geometry.
 - **TransitionEffect.jsx** — Custom post-processing pass for circular reveal transition.
 
 ## Environment
@@ -24,7 +23,6 @@
 - **Sky.jsx** — Instanced cloud rendering with night opacity.
 - **Grass.jsx** — Instanced grass blades with wind animation.
 - **Wildflowers.jsx** — Random flower instances on ground segments.
-- **Trees.jsx** — Distant tree billboards.
 - **Pebbles.jsx** — Ground detail pebbles.
 
 ## UI Overlays

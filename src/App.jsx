@@ -9,6 +9,7 @@ import GameHud from './components/GameHud'
 import GameWorld, { GameWorldWarmup } from './components/GameWorld'
 import PostEffects, { TransitionAnimator } from './components/PostEffects'
 import SceneCapture from './components/SceneCapture'
+import CinematicLetterbox from './components/CinematicLetterbox'
 import {
   createIntroOverlayControls,
   createPostProcessingControls,
@@ -43,7 +44,7 @@ import {
   getPerceivedMusicTime,
   TRACK_BEAT_PHASE_OFFSET_SECONDS,
 } from './rhythm'
-import { loadLeaderboard, isHighScore, insertScore } from './lib/leaderboard'
+import { fetchLeaderboard, isHighScore, submitScore } from './lib/leaderboard'
 
 const COUNTDOWN_STEPS = ['1', '2', '3', 'GO!']
 const AUTO_DPR = [1, 1.25]
@@ -396,7 +397,14 @@ export default function App() {
   const [transitionDirection, setTransitionDirection] = useState('forward')
   const [transitionCaptureMode, setTransitionCaptureMode] = useState(null)
   const [returnScreenMode, setReturnScreenMode] = useState(RETURN_SCREEN_SUMMARY)
-  const [leaderboard, setLeaderboard] = useState(() => loadLeaderboard())
+  const [leaderboard, setLeaderboard] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    fetchLeaderboard().then(board => {
+      if (!cancelled) setLeaderboard(board)
+    })
+    return () => { cancelled = true }
+  }, [])
   const [initialsEntry, setInitialsEntry] = useState(null)
   const [tvScreenOverride, setTvScreenOverride] = useState(null)
   const [isEndingLocked, setIsEndingLocked] = useState(false)
@@ -601,7 +609,7 @@ export default function App() {
     const shouldShowHighScoreEntry = (
       screenMode === RETURN_SCREEN_SUMMARY &&
       summary &&
-      isHighScore(summary.totalScore)
+      isHighScore(summary.totalScore, leaderboard)
     )
 
     setReturnScreenMode(screenMode)
@@ -638,7 +646,7 @@ export default function App() {
     shouldCaptureSceneRef.current = true
     transitionCaptureModeRef.current = CAPTURE_MODE_RETURN
     setTransitionCaptureMode(CAPTURE_MODE_RETURN)
-  }, [clearPlaybackState, createHighScoreEntry, isEndingLocked, isGameOver, isTransitionBusy, phase])
+  }, [clearPlaybackState, createHighScoreEntry, isEndingLocked, isGameOver, isTransitionBusy, leaderboard, phase])
 
   const handleReturnToIntro = useCallback(() => {
     window.clearTimeout(endGlitchTimeoutRef.current)
@@ -739,7 +747,7 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    const music = createBufferedMusicTransport('/skate-cat-2.mp3')
+    const music = createBufferedMusicTransport('/audio/music/skate-cat-2.mp3')
     music.onEnded = () => handleSongCompleteRef.current()
     musicRef.current = music
     void music.preload()
@@ -1144,12 +1152,11 @@ export default function App() {
     }
     if (action === 'confirmInitials') {
       if (!initialsEntry) return
-      const updated = insertScore(
+      submitScore(
         initialsEntry.initials.join(''),
         initialsEntry.score,
         initialsEntry.rank,
-      )
-      setLeaderboard(updated)
+      ).then(setLeaderboard)
       setInitialsEntry(null)
       setTvScreenOverride(null)
       setReturnScreenMode(RETURN_SCREEN_SUMMARY)
@@ -1192,9 +1199,16 @@ export default function App() {
         statusLabel={bootStatusLabel}
         detailLabel={bootStatusDetail}
       />
-      <audio ref={jumpSfxRef} src="/jump.wav" preload="auto" />
-      <audio ref={jump2SfxRef} src="/jump2.wav" preload="auto" />
-      <audio ref={dieSfxRef} src="/die.wav" preload="auto" />
+      <audio ref={jumpSfxRef} src="/audio/sfx/jump.wav" preload="auto" />
+      <audio ref={jump2SfxRef} src="/audio/sfx/jump2.wav" preload="auto" />
+      <audio ref={dieSfxRef} src="/audio/sfx/die.wav" preload="auto" />
+      <CinematicLetterbox
+        active={
+          phase === PHASE_INTRO
+          && bootPhase === BOOT_PHASE_ATTRACT
+          && introScreenMode === RETURN_SCREEN_TITLE
+        }
+      />
       {isCountdownActive && (
         <>
           <div

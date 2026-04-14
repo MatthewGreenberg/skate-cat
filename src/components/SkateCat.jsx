@@ -87,10 +87,10 @@ export default function SkateCat({
   const contactShadowMaterialRef = useRef()
 
   // --- Model loading ---
-  const skateboard = useGLTF('/skateboard.glb')
-  const { scene: catScene } = useGLTF('/maxwell_the_cat_dingus/scene.gltf')
-  const paintedBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor_painted-2.jpg')
-  const originalBodyMapSource = useTexture('/maxwell_the_cat_dingus/textures/dingus_baseColor.jpeg')
+  const skateboard = useGLTF('/models/skateboard.glb')
+  const { scene: catScene } = useGLTF('/models/cat/scene.gltf')
+  const paintedBodyMapSource = useTexture('/models/cat/textures/dingus_baseColor_painted-2.jpg')
+  const originalBodyMapSource = useTexture('/models/cat/textures/dingus_baseColor.jpeg')
 
   const paintedBodyMap = useMemo(() => {
     const map = paintedBodyMapSource.clone()
@@ -291,5 +291,5 @@ export default function SkateCat({
   )
 }
 
-useGLTF.preload('/skateboard.glb')
-useGLTF.preload('/maxwell_the_cat_dingus/scene.gltf')
+useGLTF.preload('/models/skateboard.glb')
+useGLTF.preload('/models/cat/scene.gltf')
