@@ -31,8 +31,8 @@
 - `src/components/Obstacles.jsx` — Obstacle spawning, collision, grind rails
 - `src/store.js` — Mutable game state refs
 - `src/rhythm.js` — Beat timing, scoring windows
-- `src/audioTransport.js` — Web Audio API music playback
-- `src/sfxPlayer.js` — Web Audio API SFX playback (jump/die). Routed through Web Audio because mobile Safari ignores `<audio>` element `volume`; the context is unlocked inside `startMusicPlayback` on the same user gesture that starts music.
+- `src/audioTransport.js` — Web Audio API music playback. Exposes a synchronous `prepare()` that must be called inside a user gesture on iOS (it's called from `queueLaunchStart` alongside `sfxPlayer.prepare()`) so the music `AudioContext` is created and resumed within the tap — `play()` runs later after the launch transition, which iOS would otherwise reject.
+- `src/sfxPlayer.js` — Web Audio API SFX playback (jump/die). Routed through Web Audio because mobile Safari ignores `<audio>` element `volume`; the context is unlocked via `prepare()` called from `queueLaunchStart` on the same user gesture that starts music.
 
 ### Directory Layout
 ```

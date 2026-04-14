@@ -1072,6 +1072,7 @@ export default function App() {
     // directly in the tap handler; startMusicPlayback runs later after a
     // setTimeout + scene capture, past the gesture window.
     void sfxPlayerRef.current?.prepare()
+    musicRef.current?.prepare()
 
     window.clearTimeout(startArmingTimeoutRef.current)
     setStartPhase(START_PHASE_ARMING)

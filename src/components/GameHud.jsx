@@ -140,7 +140,7 @@ function isTimingGrade(grade) {
   return grade === 'Perfect' || grade === 'Good' || grade === 'Sloppy'
 }
 
-function getJudgementStyle(tone, shouldAnimate) {
+function getJudgementStyle(tone, shouldAnimate, isTouchDevice) {
   const style = judgementToneStyles[tone] || judgementToneStyles.Perfect
   return {
     position: 'fixed',
@@ -152,7 +152,7 @@ function getJudgementStyle(tone, shouldAnimate) {
     textShadow: style.shadow,
     fontFamily: 'Knewave',
     letterSpacing: '0.08em',
-    fontSize: 'clamp(2.2rem, 5vw, 3.2rem)',
+    fontSize: isTouchDevice ? 'clamp(1.3rem, 4vw, 2rem)' : 'clamp(2.2rem, 5vw, 3.2rem)',
     textTransform: 'uppercase',
     animation: shouldAnimate ? 'hudJudgementPop 500ms cubic-bezier(0.17, 0.9, 0.35, 1) both' : 'none',
     pointerEvents: 'none',
@@ -282,7 +282,7 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
         <div
           key={`judgement-${judgementKey}`}
           onAnimationEnd={() => setShowJudgement(false)}
-          style={getJudgementStyle(judgementTone, showJudgement)}
+          style={getJudgementStyle(judgementTone, showJudgement, isTouchDevice)}
         >
           {judgementText}
         </div>
@@ -323,7 +323,7 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
             left: '50%',
             transform: 'translateX(-50%)',
             fontFamily: 'Knewave',
-            fontSize: '1.8rem',
+            fontSize: isTouchDevice ? '1.1rem' : '1.8rem',
             letterSpacing: '0.06em',
             color: pointsStyle.color,
             textShadow: pointsStyle.shadow,
@@ -371,7 +371,9 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
             left: '50%',
             transform: 'translateX(-50%)',
             fontFamily: 'Knewave',
-            fontSize: `${Math.min(2 + streak * 0.3, 5)}rem`,
+            fontSize: isTouchDevice
+              ? `${Math.min(1.1 + streak * 0.16, 2.8)}rem`
+              : `${Math.min(2 + streak * 0.3, 5)}rem`,
             letterSpacing: '0.06em',
             color: streak >= 10 ? '#FFD166' : streak >= 5 ? '#FF8F5C' : '#fff',
             textShadow: `

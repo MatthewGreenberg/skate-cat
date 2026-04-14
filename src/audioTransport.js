@@ -67,7 +67,7 @@ export function createBufferedMusicTransport(url) {
     activeSource.disconnect()
   }
 
-  const createContext = async () => {
+  const createContext = () => {
     if (context) return context
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext
     if (!AudioContextCtor) {
@@ -99,7 +99,7 @@ export function createBufferedMusicTransport(url) {
   }
 
   const ensureReady = async () => {
-    const audioContext = await createContext()
+    const audioContext = createContext()
     if (audioContext.state === 'suspended') {
       await audioContext.resume()
     }
@@ -146,6 +146,16 @@ export function createBufferedMusicTransport(url) {
     async preload() {
       if (disposed) return null
       return fetchAudio()
+    },
+    // iOS unlocks Web Audio only during a user gesture. Call synchronously
+    // from a tap handler so the context is created + resumed before the
+    // gesture token expires.
+    prepare() {
+      if (disposed) return
+      createContext()
+      if (context.state === 'suspended') {
+        context.resume().catch(() => { })
+      }
     },
     async play() {
       if (disposed) return
