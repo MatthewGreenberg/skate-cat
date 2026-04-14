@@ -56,7 +56,7 @@ export function createRenderProfile({
     canvasDpr = MOBILE_DPR
   }
 
-  const useShadowMaps = !isConstrainedMobile && !isSafari
+  const useShadowMaps = isConstrainedMobile || !isSafari
   const shadowMode = useShadowMaps ? 'map' : 'contact'
 
   return {
@@ -68,7 +68,7 @@ export function createRenderProfile({
     antialias: true,
     useShadowMaps,
     shadowMode,
-    shadowType: tier <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap,
+    shadowType: (tier <= 1 || isConstrainedMobile) ? THREE.BasicShadowMap : THREE.PCFShadowMap,
     foliageSegmentCount: isConstrainedMobile ? 1 : effectiveQuality === 'quiet' ? 1 : 2,
     simpleTransition: false,
     skipSceneCapture: false,

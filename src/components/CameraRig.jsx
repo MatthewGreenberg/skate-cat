@@ -307,11 +307,11 @@ export default function CameraRig({
   } = useOptionalControls('Game', {
     'Mobile Landscape': folder({
       mobileFovExtra: { value: 6, min: 0, max: 20, step: 0.5 },
-      mobilePullbackZ: { value: 1.2, min: -2, max: 6, step: 0.1 },
-      mobilePullbackY: { value: -0.1, min: -2, max: 3, step: 0.05 },
+      mobilePullbackZ: { value: 0.5, min: -2, max: 6, step: 0.1 },
+      mobilePullbackY: { value: -0.4, min: -2, max: 3, step: 0.05 },
       mobileLookOffsetX: { value: -1.3, min: -5, max: 5, step: 0.05 },
-      mobileLookOffsetY: { value: -1.2, min: -5, max: 5, step: 0.05 },
-      mobileLookOffsetZ: { value: 0.75, min: -5, max: 5, step: 0.05 },
+      mobileLookOffsetY: { value: 1.8, min: -5, max: 5, step: 0.05 },
+      mobileLookOffsetZ: { value: 1.2, min: -5, max: 5, step: 0.05 },
     }, { collapsed: true }),
   }, [])
 
