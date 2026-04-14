@@ -1,20 +1,13 @@
-export function createSfxPlayer(sources) {
-  let context = null
-  let masterGain = null
+export function createSfxPlayer(sources, { session } = {}) {
   let disposed = false
   const rawBuffers = new Map()
   const decodedBuffers = new Map()
 
-  const ensureContext = () => {
-    if (context) return context
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext
-    if (!AudioContextCtor) {
-      throw new Error('Web Audio is not supported in this browser.')
+  const getContext = () => {
+    const context = session?.context
+    if (!context) {
+      throw new Error('Audio session is unavailable.')
     }
-    context = new AudioContextCtor({ latencyHint: 'interactive' })
-    masterGain = context.createGain()
-    masterGain.gain.value = 1
-    masterGain.connect(context.destination)
     return context
   }
 
@@ -31,7 +24,7 @@ export function createSfxPlayer(sources) {
 
   const decode = async (name) => {
     if (decodedBuffers.has(name)) return decodedBuffers.get(name)
-    const ctx = ensureContext()
+    const ctx = getContext()
     const raw = await fetchRaw(name)
     const decoded = await ctx.decodeAudioData(raw.slice(0))
     decodedBuffers.set(name, decoded)
@@ -45,11 +38,7 @@ export function createSfxPlayer(sources) {
     },
     async prepare() {
       if (disposed) return
-      ensureContext()
-      if (context.state === 'suspended') {
-        try { await context.resume() } catch { /* ignore */ }
-      }
-      await Promise.all(Object.keys(sources).map((name) => decode(name).catch(() => null)))
+      try { await session?.resumeFromLifecycle() } catch { /* ignore */ }
     },
     play(name, gain = 1) {
       if (disposed) return
@@ -58,7 +47,8 @@ export function createSfxPlayer(sources) {
         void decode(name).catch(() => { })
         return
       }
-      if (!context) return
+      const context = session?.context
+      if (!context || !session?.masterGain) return
       if (context.state === 'suspended') {
         void context.resume().catch(() => { })
       }
@@ -67,7 +57,7 @@ export function createSfxPlayer(sources) {
       const localGain = context.createGain()
       localGain.gain.value = Math.max(0, Math.min(1, gain))
       source.connect(localGain)
-      localGain.connect(masterGain)
+      localGain.connect(session.masterGain)
       source.start()
       source.onended = () => {
         try { source.disconnect() } catch { /* ignore */ }
@@ -78,15 +68,6 @@ export function createSfxPlayer(sources) {
       disposed = true
       rawBuffers.clear()
       decodedBuffers.clear()
-      if (masterGain) {
-        masterGain.disconnect()
-        masterGain = null
-      }
-      if (context) {
-        const activeContext = context
-        context = null
-        activeContext.close().catch(() => { })
-      }
     },
   }
 }

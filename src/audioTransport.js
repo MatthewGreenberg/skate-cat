@@ -5,8 +5,7 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max)
 }
 
-export function createBufferedMusicTransport(url) {
-  let context = null
+export function createBufferedMusicTransport(url, { session } = {}) {
   let gainNode = null
   let buffer = null
   let rawArrayBuffer = null
@@ -24,7 +23,25 @@ export function createBufferedMusicTransport(url) {
 
   const clampMediaTime = (value) => clamp(value, 0, getDuration())
 
+  const getContext = () => {
+    const context = session?.context
+    if (!context) {
+      throw new Error('Audio session is unavailable.')
+    }
+    return context
+  }
+
+  const ensureGainNode = () => {
+    if (gainNode) return gainNode
+    const context = getContext()
+    gainNode = context.createGain()
+    gainNode.gain.value = volume
+    gainNode.connect(session.masterGain)
+    return gainNode
+  }
+
   const getLatencyEstimate = () => {
+    const context = session?.context
     if (!context) return 0
 
     if (typeof context.getOutputTimestamp === 'function') {
@@ -67,19 +84,6 @@ export function createBufferedMusicTransport(url) {
     activeSource.disconnect()
   }
 
-  const createContext = () => {
-    if (context) return context
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext
-    if (!AudioContextCtor) {
-      throw new Error('Web Audio is not supported in this browser.')
-    }
-    context = new AudioContextCtor({ latencyHint: 'interactive' })
-    gainNode = context.createGain()
-    gainNode.gain.value = volume
-    gainNode.connect(context.destination)
-    return context
-  }
-
   const fetchAudio = () => {
     if (rawArrayBuffer) return Promise.resolve(rawArrayBuffer)
     if (!fetchPromise) {
@@ -99,7 +103,7 @@ export function createBufferedMusicTransport(url) {
   }
 
   const ensureReady = async () => {
-    const audioContext = createContext()
+    const audioContext = getContext()
     if (audioContext.state === 'suspended') {
       await audioContext.resume()
     }
@@ -112,12 +116,14 @@ export function createBufferedMusicTransport(url) {
 
   const startSourceAt = async (startMediaTime) => {
     const decodedBuffer = await ensureReady()
+    const context = getContext()
+    const outputGain = ensureGainNode()
     stopSource()
 
     const nextSource = context.createBufferSource()
     nextSource.buffer = decodedBuffer
     nextSource.playbackRate.value = playbackRate
-    nextSource.connect(gainNode)
+    nextSource.connect(outputGain)
 
     const scheduledStartTime = context.currentTime + START_SCHEDULE_LEAD_SECONDS
     const clampedStartMediaTime = clampMediaTime(startMediaTime)
@@ -147,15 +153,9 @@ export function createBufferedMusicTransport(url) {
       if (disposed) return null
       return fetchAudio()
     },
-    // iOS unlocks Web Audio only during a user gesture. Call synchronously
-    // from a tap handler so the context is created + resumed before the
-    // gesture token expires.
     prepare() {
       if (disposed) return
-      createContext()
-      if (context.state === 'suspended') {
-        context.resume().catch(() => { })
-      }
+      void session?.resumeFromLifecycle().catch(() => { })
     },
     async play() {
       if (disposed) return
@@ -173,16 +173,11 @@ export function createBufferedMusicTransport(url) {
       disposed = true
       paused = true
       stopSource()
-      loadPromise = null
+      fetchPromise = null
       buffer = null
       if (gainNode) {
         gainNode.disconnect()
         gainNode = null
-      }
-      if (context) {
-        const activeContext = context
-        context = null
-        activeContext.close().catch(() => { })
       }
     },
   }

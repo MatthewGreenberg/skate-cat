@@ -4,7 +4,7 @@ const AUTO_DPR = [1, 1.25]
 const AUTO_HIGH_DPR = [1, 1.5]
 const FORCED_HIGH_DPR = [1, 2]
 const QUIET_DPR = [1, 1]
-const MOBILE_DPR = [0.75, 1]
+const MOBILE_DPR = [1, 1.5]
 
 function getViewportSize() {
   if (typeof window === 'undefined') {
@@ -65,7 +65,7 @@ export function createRenderProfile({
     isMobileDevice,
     isConstrainedMobile,
     canvasDpr,
-    antialias: !isConstrainedMobile,
+    antialias: true,
     useShadowMaps,
     shadowMode,
     shadowType: tier <= 1 ? THREE.BasicShadowMap : THREE.PCFShadowMap,

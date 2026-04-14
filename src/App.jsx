@@ -22,6 +22,7 @@ import {
 import { createRenderProfile } from './lib/renderProfile'
 import TimingDebugHud from './components/TimingDebugHud'
 import ObstacleSpacingDebugHud from './components/ObstacleSpacingDebugHud'
+import { createSharedAudioSession } from './audioSession'
 import { createBufferedMusicTransport } from './audioTransport'
 import { createSfxPlayer } from './sfxPlayer'
 import {
@@ -387,9 +388,12 @@ const SceneCanvas = memo(function SceneCanvas({
 
 export default function App() {
   const trailTarget = useRef()
+  const audioSessionRef = useRef(null)
   const musicRef = useRef(null)
   const sfxPlayerRef = useRef(null)
   const hasStartedMusicRef = useRef(false)
+  const pendingLaunchActivationRef = useRef(false)
+  const lifecyclePauseRef = useRef(false)
   const handleSongCompleteRef = useRef(() => { })
   const endGlitchTimeoutRef = useRef(0)
   const startArmingTimeoutRef = useRef(0)
@@ -422,6 +426,7 @@ export default function App() {
   const [isEndingLocked, setIsEndingLocked] = useState(false)
   const [isGameWorldPrimed, setIsGameWorldPrimed] = useState(false)
   const [showDeathFullscreen, setShowDeathFullscreen] = useState(false)
+  const [audioStartFailure, setAudioStartFailure] = useState(false)
   const [hasConfirmedMusicStart, setHasConfirmedMusicStart] = useState(false)
   const [isCountdownActive, setIsCountdownActive] = useState(false)
   const [countdownText, setCountdownText] = useState('')
@@ -487,9 +492,12 @@ export default function App() {
     !tvScreenOverride
   )
   const introScreenMode = tvScreenOverride ?? (isReturnScreenActive ? returnScreenMode : RETURN_SCREEN_TITLE)
+  const showAudioRetryPrompt = audioStartFailure && introScreenMode === RETURN_SCREEN_TITLE && !isReturnScreenActive
   const highScore = leaderboards.alltime.length > 0 ? leaderboards.alltime[0].score : 0
   const introButtonLabel = startPhase !== START_PHASE_IDLE
     ? 'STARTING RUN'
+    : showAudioRetryPrompt
+      ? 'TAP AGAIN'
     : introScreenMode === 'leaderboard' ? 'BACK'
       : introScreenMode === 'initials' ? 'OK'
         : introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
@@ -521,6 +529,8 @@ export default function App() {
       ? 'SYNCING STAGE'
       : bootPhase === BOOT_PHASE_REVEALING
         ? 'POWERING CRT ROOM'
+        : showAudioRetryPrompt && isMusicReady
+          ? 'TAP AGAIN'
         : isMusicReady
           ? 'PRESS START'
           : 'AUDIO DECK OFFLINE'
@@ -534,6 +544,8 @@ export default function App() {
         : 'Warming gameplay systems and locking the music transport.'
       : bootPhase === BOOT_PHASE_REVEALING
         ? 'Handing off from platform boot to the in-world cabinet.'
+        : showAudioRetryPrompt && isMusicReady
+          ? 'Audio needs one more tap before Web Audio unlocks on this device.'
         : isMusicReady
           ? 'Cabinet is live. Space or Enter drops you in.'
           : 'Title is up, but start remains locked until audio is available.'
@@ -541,6 +553,8 @@ export default function App() {
     ? 'SPINNING UP STAGE'
     : startPhase === START_PHASE_LAUNCHING
       ? 'DROPPING IN'
+      : showAudioRetryPrompt
+        ? 'TAP AGAIN TO ENABLE AUDIO'
       : introScreenMode === RETURN_SCREEN_SUMMARY
         ? (isTouchDevice ? '' : 'SPACE / ENTER TO PLAY AGAIN')
         : isMusicReady
@@ -752,7 +766,9 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false
-    const music = createBufferedMusicTransport('/audio/music/skate-cat-2.mp3')
+    const session = createSharedAudioSession()
+    audioSessionRef.current = session
+    const music = createBufferedMusicTransport('/audio/music/skate-cat-2.mp3', { session })
     music.onEnded = () => handleSongCompleteRef.current()
     musicRef.current = music
     void music.preload()
@@ -771,13 +787,18 @@ export default function App() {
       jump: '/audio/sfx/jump.wav',
       jump2: '/audio/sfx/jump2.wav',
       die: '/audio/sfx/die.wav',
-    })
+    }, { session })
     sfxPlayerRef.current = sfx
     void sfx.preload()
 
     return () => {
       cancelled = true
       hasStartedMusicRef.current = false
+      pendingLaunchActivationRef.current = false
+      lifecyclePauseRef.current = false
+      if (audioSessionRef.current === session) {
+        audioSessionRef.current = null
+      }
       if (musicRef.current === music) {
         musicRef.current = null
       }
@@ -786,6 +807,7 @@ export default function App() {
         sfxPlayerRef.current = null
       }
       sfx.dispose()
+      session.dispose()
     }
   }, [])
 
@@ -949,7 +971,10 @@ export default function App() {
     }
 
     if (hasStartedMusicRef.current) {
-      musicRef.current.play().catch(() => { })
+      musicRef.current.play().catch(() => {
+        hasStartedMusicRef.current = false
+        setAudioStartFailure(true)
+      })
     }
   }, [isGameOver, phase])
 
@@ -975,10 +1000,67 @@ export default function App() {
         && !isGameOver
         && (phase === PHASE_RUNNING || phase === PHASE_LAUNCHING)
       ) {
-        musicRef.current.play().catch(() => { })
+        musicRef.current.play().catch(() => {
+          hasStartedMusicRef.current = false
+          setAudioStartFailure(true)
+        })
       }
     }
   }, [orientationBlocked, phase, isGameOver])
+
+  useEffect(() => {
+    const session = audioSessionRef.current
+    if (!session) return undefined
+
+    const resumeAudioFromLifecycle = () => {
+      void session.resumeFromLifecycle()
+        .then(() => {
+          if (
+            lifecyclePauseRef.current &&
+            musicRef.current &&
+            hasStartedMusicRef.current &&
+            !orientationBlocked &&
+            !isGameOver &&
+            (phase === PHASE_RUNNING || phase === PHASE_LAUNCHING)
+          ) {
+            lifecyclePauseRef.current = false
+            return musicRef.current.play().catch(() => {
+              hasStartedMusicRef.current = false
+              setAudioStartFailure(true)
+            })
+          }
+
+          lifecyclePauseRef.current = false
+          return null
+        })
+        .catch(() => {
+          setAudioStartFailure(true)
+        })
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (musicRef.current && hasStartedMusicRef.current && !musicRef.current.paused) {
+          musicRef.current.pause()
+          lifecyclePauseRef.current = true
+        }
+        return
+      }
+
+      resumeAudioFromLifecycle()
+    }
+
+    const handlePageShow = () => {
+      resumeAudioFromLifecycle()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pageshow', handlePageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pageshow', handlePageShow)
+    }
+  }, [isGameOver, orientationBlocked, phase])
 
   useEffect(() => {
     if ((!runActive && !isTransitioning) || isGameOver || !hasConfirmedMusicStart) {
@@ -1011,40 +1093,55 @@ export default function App() {
     return () => window.cancelAnimationFrame(animationFrameId)
   }, [hasConfirmedMusicStart, isGameOver, isTransitioning, runActive])
 
+  const activateRun = useCallback(() => {
+    pendingLaunchActivationRef.current = false
+    gameState.speed.current = getTargetRunSpeed()
+    gameState.speedBoostActive = false
+    gameState.speedLinesOn = true
+    setAudioStartFailure(false)
+    setIsEndingLocked(false)
+    setStartPhase(START_PHASE_IDLE)
+    setPhase(PHASE_RUNNING)
+  }, [])
+
   const startMusicPlayback = useCallback(async () => {
     const music = musicRef.current
-    if (!music) return
+    const session = audioSessionRef.current
+    if (!music) return false
 
     hasStartedMusicRef.current = false
     setHasConfirmedMusicStart(false)
     setIsCountdownActive(false)
     setCountdownText('')
+    setAudioStartFailure(false)
 
     music.pause()
     music.currentTime = 0
     try {
+      await session?.resumeFromLifecycle()
       await music.play()
       void sfxPlayerRef.current?.prepare()
       hasStartedMusicRef.current = true
       setHasConfirmedMusicStart(true)
       setIsCountdownActive(true)
       setCountdownText(COUNTDOWN_STEPS[0])
+      if (pendingLaunchActivationRef.current) {
+        activateRun()
+      }
+      return true
     } catch {
       hasStartedMusicRef.current = false
+      pendingLaunchActivationRef.current = false
+      setStartPhase(START_PHASE_IDLE)
+      setAudioStartFailure(true)
+      return false
     }
-  }, [])
-
-  const activateRun = useCallback(() => {
-    gameState.speed.current = getTargetRunSpeed()
-    gameState.speedBoostActive = false
-    gameState.speedLinesOn = true
-    setIsEndingLocked(false)
-    setStartPhase(START_PHASE_IDLE)
-    setPhase(PHASE_RUNNING)
-  }, [])
+  }, [activateRun])
 
   const prepareRunForLaunch = useCallback(() => {
+    pendingLaunchActivationRef.current = false
     resetRunState({ speed: getTargetRunSpeed(), speedLinesOn: true })
+    setAudioStartFailure(false)
     setIsEndingLocked(false)
     setShowDeathFullscreen(false)
     gameState.lastRunSummary.current = null
@@ -1071,6 +1168,11 @@ export default function App() {
     // iOS unlocks Web Audio only during a user gesture. queueLaunchStart runs
     // directly in the tap handler; startMusicPlayback runs later after a
     // setTimeout + scene capture, past the gesture window.
+    pendingLaunchActivationRef.current = false
+    setAudioStartFailure(false)
+    void audioSessionRef.current?.unlockFromGesture().catch(() => {
+      setAudioStartFailure(true)
+    })
     void sfxPlayerRef.current?.prepare()
     musicRef.current?.prepare()
 
@@ -1096,7 +1198,12 @@ export default function App() {
     if (captureMode === CAPTURE_MODE_LAUNCH) {
       prepareRunForLaunch()
       setPhase(PHASE_LAUNCHING)
-      startMusicPlayback()
+      void startMusicPlayback().then((didStart) => {
+        if (didStart) return
+        transitionProgressRef.current = 0
+        setCapturedTransitionTexture(null)
+        setPhase(PHASE_INTRO)
+      })
       return
     }
 
@@ -1115,6 +1222,11 @@ export default function App() {
       setStartPhase(START_PHASE_IDLE)
       setPhase(PHASE_RESULTS)
       setIsEndingLocked(false)
+      return
+    }
+
+    if (!hasStartedMusicRef.current) {
+      pendingLaunchActivationRef.current = true
       return
     }
 
@@ -1248,7 +1360,8 @@ export default function App() {
       />
       <CinematicLetterbox
         active={
-          bootPhase === BOOT_PHASE_ATTRACT
+          !isTouchDevice
+          && bootPhase === BOOT_PHASE_ATTRACT
           && cameraMode === 'intro'
           && (phase === PHASE_INTRO || phase === PHASE_RESULTS)
         }
