@@ -35,9 +35,9 @@ Everything runs in the browser — WebGL, Web Audio, no plugins, no installs.
 
 - **Custom toon-shader pipeline** — stepped NdotL lighting, rim highlights, and eye-blink UV masking (`src/shaders/`)
 - **60fps game loop with mutable refs** — bypasses React state for frame-critical updates (`src/store.js`)
-- **Beat-perfect scoring** — offline `librosa` pass produces a per-song analysis sidecar consumed at runtime (`scripts/analyze_track.py`)
+- **Beat-synced scoring** — per-song beat / bar / phrase sidecars drive obstacle spawns and timing windows (`src/rhythm.js`, `public/audio/music/*.analysis.json`)
 - **Mobile-friendly Web Audio** — unlocks the iOS `AudioContext` on the first tap so music + SFX actually play (`src/audioTransport.js`, `src/sfxPlayer.js`)
-- **Global leaderboard via Vercel Serverless Functions** — browser never touches Supabase directly; a service-role key stays server-side (`api/`, `supabase/`)
+- **Global leaderboard via Vercel Serverless Functions** — browser never touches Supabase directly; a service-role key stays server-side (`api/`)
 - **Post-processing transitions** — a circular reveal blends the intro scene into gameplay (`src/components/TransitionEffect.jsx`, `PostEffects.jsx`)
 
 ## Quickstart
@@ -53,8 +53,8 @@ Open http://localhost:5173. That's it — the game plays fully offline.
 
 ### Want the leaderboard working locally?
 
-1. Create a Supabase project and run [`supabase/leaderboard.sql`](supabase/leaderboard.sql)
-2. Copy [`.env.example`](.env.example) to `.env` and fill in your credentials
+1. Spin up a Supabase project with a `leaderboard` table (schema implied by `api/leaderboard.js` + `api/submit-score.js`: `initials` text, `score` int, `rank` text, `created_at` timestamptz)
+2. Copy [`.env.example`](.env.example) to `.env` and fill in your `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
 3. Use `vercel dev` instead of `npm run dev` so the `/api/*` serverless routes are served alongside Vite
 
 ## Tech stack
@@ -63,7 +63,7 @@ Open http://localhost:5173. That's it — the game plays fully offline.
 |---|---|
 | Rendering | Three.js, [@react-three/fiber](https://r3f.docs.pmnd.rs), [@react-three/drei](https://github.com/pmndrs/drei), [@react-three/postprocessing](https://github.com/pmndrs/postprocessing) |
 | App | React 19, Vite 7, SWC |
-| Audio | Web Audio API + offline `librosa` beat analysis |
+| Audio | Web Audio API with pre-computed beat / bar / phrase sidecars |
 | Backend | Vercel Serverless Functions + Supabase (Postgres) |
 | Dev tooling | Leva (live param tuning), ESLint flat config |
 
@@ -71,8 +71,6 @@ Open http://localhost:5173. That's it — the game plays fully offline.
 
 ```
 api/            Vercel serverless functions (leaderboard read/write)
-supabase/       SQL schema for the leaderboard table
-scripts/        Offline librosa beat analyzer
 src/
   shaders/      GLSL toon/outline/log shaders
   lib/          Pure logic modules (obstacle patterns, materials, track analysis)
@@ -82,24 +80,9 @@ src/
 public/
   models/       GLB/GLTF assets (cat, obstacles, intro props)
   textures/     Wood, posters, etc.
-  audio/        Songs + generated beat-analysis JSON
+  audio/        Songs + beat-analysis JSON sidecars
   basis/        KTX2 transcoder WASM
 ```
-
-## Beat analysis
-
-Pre-compute per-song beat / bar / phrase metadata with [`scripts/analyze_track.py`](scripts/analyze_track.py):
-
-```bash
-python3 -m pip install -r scripts/requirements-librosa.txt
-python3 scripts/analyze_track.py \
-  public/audio/music/skate-cat-2.mp3 \
-  public/audio/music/skate-cat-2.analysis.json \
-  --audio-public-path /audio/music/skate-cat-2.mp3 \
-  --bpm 170 --phase-offset-seconds -0.068
-```
-
-Schema and runtime integration: [`docs/audio-analysis-schema.md`](docs/audio-analysis-schema.md).
 
 ## Credits
 
