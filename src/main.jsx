@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { Leva } from 'leva'
+import { Analytics } from '@vercel/analytics/react'
 import './index.css'
 import App from './App.jsx'
 
@@ -25,6 +26,7 @@ void waitForBootFonts().finally(() => {
   root.render(
     <>
       <App />
+      <Analytics />
       {isDebugMode ? <Leva oneLineLabels collapsed={false} /> : null}
     </>,
   )
