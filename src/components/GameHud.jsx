@@ -276,6 +276,11 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
   if (!visible) return null
 
   const pointsStyle = popToneStyles[pointsTone] || popToneStyles.Perfect
+  const isNewCatBanner = phaseBanner === 'NEW CAT'
+  const handlePhaseBannerAnimationEnd = () => {
+    if (isNewCatBanner) return
+    setPhaseBanner('')
+  }
   return (
     <>
       {showJudgement && judgementText && (
@@ -338,25 +343,35 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
       {phaseBanner && (
         <div
           key={`phase-${phaseKey}`}
-          onAnimationEnd={() => setPhaseBanner('')}
+          onAnimationEnd={handlePhaseBannerAnimationEnd}
           style={{
             position: 'fixed',
-            top: '7rem',
+            top: isNewCatBanner ? '6.6rem' : '7rem',
             left: '50%',
             transform: 'translateX(-50%)',
-            padding: '0.45rem 0.9rem',
+            padding: isNewCatBanner ? '0.6rem 1.2rem' : '0.45rem 0.9rem',
             borderRadius: '999px',
-            background: 'rgba(255, 209, 102, 0.12)',
-            border: '1px solid rgba(255, 209, 102, 0.22)',
-            color: '#FFD166',
-            fontFamily: 'Nunito, sans-serif',
+            background: isNewCatBanner
+              ? 'linear-gradient(135deg, rgba(255, 107, 53, 0.84), rgba(255, 188, 92, 0.84))'
+              : 'rgba(255, 209, 102, 0.12)',
+            border: isNewCatBanner
+              ? '2px solid rgba(255, 255, 255, 0.35)'
+              : '1px solid rgba(255, 209, 102, 0.22)',
+            boxShadow: isNewCatBanner
+              ? '0 8px 28px rgba(255, 107, 53, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.18)'
+              : 'none',
+            color: isNewCatBanner ? '#fff7df' : '#FFD166',
+            fontFamily: isNewCatBanner ? 'Knewave' : 'Nunito, sans-serif',
             fontWeight: 900,
-            fontSize: '0.8rem',
-            letterSpacing: '0.16em',
+            fontSize: isNewCatBanner ? '1.1rem' : '0.8rem',
+            letterSpacing: isNewCatBanner ? '0.12em' : '0.16em',
             textTransform: 'uppercase',
+            textShadow: isNewCatBanner ? '0 2px 8px rgba(0, 0, 0, 0.24)' : 'none',
             pointerEvents: 'none',
             zIndex: 62,
-            animation: 'hudJudgementPop 820ms cubic-bezier(0.17, 0.9, 0.35, 1) both',
+            animation: isNewCatBanner
+              ? 'hudJudgementPop 420ms cubic-bezier(0.17, 0.9, 0.35, 1) both, newCatBannerPulse 900ms ease-in-out 420ms infinite alternate'
+              : 'hudJudgementPop 820ms cubic-bezier(0.17, 0.9, 0.35, 1) both',
           }}
         >
           {phaseBanner}

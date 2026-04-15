@@ -5,6 +5,8 @@ import * as THREE from 'three'
 import {
   gameState,
   DAY_NIGHT_CYCLE_SPEED,
+  MAX_EXTRA_CAT_COUNT,
+  emitHudScoreChange,
   getNightFactor,
   getNightContrastOffset,
   getSunsetFactor,
@@ -13,13 +15,33 @@ import {
 } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
 
+const EXTRA_CAT_SPEED_BONUS = 0.45
+const NEW_CAT_WARNING_TIME_OF_DAY = 0.82
+const DAY_RETURN_TIME_OF_DAY = 0.9
+
+function didCrossTimeOfDayThreshold(previousTimeOfDay, nextTimeOfDay, threshold) {
+  if (previousTimeOfDay <= nextTimeOfDay) {
+    return previousTimeOfDay < threshold && nextTimeOfDay >= threshold
+  }
+
+  return previousTimeOfDay < threshold || nextTimeOfDay >= threshold
+}
+
 export default function DayNightController({ isRunning, quality = 'auto', shadowMode = 'map' }) {
   const dirLightRef = useRef()
   const ambientRef = useRef()
   const hemiRef = useRef()
+  const previousTimeOfDayRef = useRef(gameState.timeOfDay.current || 0)
   const { scene } = useThree()
-  const shadowMapSize = quality === 'high' ? 1024 : quality === 'quiet' ? 256 : 512
-  const useShadowMap = shadowMode === 'map'
+  const shadowMapSize = shadowMode === 'hybrid'
+    ? 512
+    : quality === 'high'
+      ? 1024
+      : quality === 'quiet'
+        ? 256
+        : 512
+  const shadowRadius = shadowMode === 'hybrid' ? 1.5 : 1
+  const useShadowMap = shadowMode === 'map' || shadowMode === 'hybrid'
   const { timeOfDay, paused } = useOptionalControls('Game', {
     'Day/Night': folder({
       timeOfDay: { value: 0, min: 0, max: 1, step: 0.01 },
@@ -28,16 +50,50 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
   }, [])
 
   useFrame((_, delta) => {
+    const previousTimeOfDay = previousTimeOfDayRef.current
+    let nextTimeOfDay = gameState.timeOfDay.current
+
     // Cycle timeOfDay only while the run is active (or use leva override when paused)
     if (paused) {
-      gameState.timeOfDay.current = timeOfDay
+      nextTimeOfDay = timeOfDay
     } else if (isRunning) {
-      gameState.timeOfDay.current = (gameState.timeOfDay.current + delta * DAY_NIGHT_CYCLE_SPEED) % 1
-    }
+      nextTimeOfDay = (previousTimeOfDay + delta * DAY_NIGHT_CYCLE_SPEED) % 1
 
-    const nightFactor = getNightFactor(gameState.timeOfDay.current)
-    const sunriseFactor = getSunriseFactor(gameState.timeOfDay.current)
-    const sunsetFactor = getSunsetFactor(gameState.timeOfDay.current)
+      const currentExtraCatCount = gameState.extraCatCount.current || 0
+      const canSpawnExtraCat = currentExtraCatCount < MAX_EXTRA_CAT_COUNT
+      const shouldWarnForNewCat = (
+        canSpawnExtraCat &&
+        !gameState.pendingCatDrop.current &&
+        didCrossTimeOfDayThreshold(previousTimeOfDay, nextTimeOfDay, NEW_CAT_WARNING_TIME_OF_DAY)
+      )
+      const shouldDropNewCat = (
+        canSpawnExtraCat &&
+        gameState.pendingCatDrop.current &&
+        didCrossTimeOfDayThreshold(previousTimeOfDay, nextTimeOfDay, DAY_RETURN_TIME_OF_DAY)
+      )
+
+      if (shouldWarnForNewCat) {
+        gameState.pendingCatDrop.current = true
+        gameState.phaseAnnouncement.current = 'NEW CAT'
+        emitHudScoreChange()
+      }
+
+      if (shouldDropNewCat) {
+        const nextExtraCatCount = Math.min(currentExtraCatCount + 1, MAX_EXTRA_CAT_COUNT)
+        gameState.pendingCatDrop.current = false
+        gameState.extraCatCount.current = nextExtraCatCount
+        gameState.loadLevel.current = nextExtraCatCount
+        gameState.stackSpeedBonus.current = EXTRA_CAT_SPEED_BONUS * nextExtraCatCount
+        gameState.phaseAnnouncement.current = 'EXTRA CAT'
+        emitHudScoreChange()
+      }
+    }
+    gameState.timeOfDay.current = nextTimeOfDay
+    previousTimeOfDayRef.current = nextTimeOfDay
+
+    const nightFactor = getNightFactor(nextTimeOfDay)
+    const sunriseFactor = getSunriseFactor(nextTimeOfDay)
+    const sunsetFactor = getSunsetFactor(nextTimeOfDay)
     const warmFactor = sunriseFactor > 0 ? sunriseFactor : sunsetFactor
 
     // Directional light — warm tint during sunrise/sunset
@@ -64,7 +120,7 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
     }
 
     // Night contrast offset
-    gameState.nightContrast.current = getNightContrastOffset(gameState.timeOfDay.current)
+    gameState.nightContrast.current = getNightContrastOffset(nextTimeOfDay)
   })
 
   return (
@@ -86,6 +142,7 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
         shadow-camera-far={50}
         shadow-bias={-0.002}
         shadow-normalBias={0.02}
+        shadow-radius={shadowRadius}
       />
       <hemisphereLight ref={hemiRef} args={['#b7dbff', '#78a24f', 0.55]} />
     </>

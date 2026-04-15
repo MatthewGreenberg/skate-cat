@@ -3,6 +3,7 @@ import * as THREE from "three";
 
 const DEFAULT_TIMING_OFFSET_SECONDS = null;
 export const MAX_RUN_LIVES = 2;
+export const MAX_EXTRA_CAT_COUNT = 3;
 const debugParams = new URLSearchParams(window.location.search);
 const qualityParam = debugParams.get("quality") || "auto";
 const validQualityModes = new Set(["high", "auto", "quiet"]);
@@ -168,6 +169,10 @@ export const gameState = {
   comboEnergy: createRef(),
   timeOfDay: createRef(), // 0→1 cycling float
   nightContrast: createRef(), // contrast offset driven by day/night cycle
+  extraCatCount: createRef(),
+  loadLevel: createRef(),
+  pendingCatDrop: createRef(),
+  stackSpeedBonus: createRef(),
   timingOffsetSeconds: createRef(),
   obstacleHitDelaySeconds: createRef(),
   runDifficultyProgress: createRef(),
@@ -203,6 +208,10 @@ gameState.lastScoringEvent.current = createEmptyScoringEvent();
 gameState.comboEnergy.current = 1;
 gameState.timeOfDay.current = 0;
 gameState.nightContrast.current = 0;
+gameState.extraCatCount.current = 0;
+gameState.loadLevel.current = 0;
+gameState.pendingCatDrop.current = false;
+gameState.stackSpeedBonus.current = 0;
 gameState.timingOffsetSeconds.current = DEFAULT_TIMING_OFFSET_SECONDS;
 gameState.obstacleHitDelaySeconds.current = 0;
 gameState.runDifficultyProgress.current = 0;
@@ -297,9 +306,16 @@ export function getScoreMultiplier(streak) {
   return 1;
 }
 
+export function resetExtraCatLoadState() {
+  gameState.extraCatCount.current = 0;
+  gameState.loadLevel.current = 0;
+  gameState.pendingCatDrop.current = false;
+  gameState.stackSpeedBonus.current = 0;
+}
+
 export function getTargetRunSpeed() {
   // Obstacle density can ramp independently, but world scroll speed should stay fixed.
-  return gameState.baseSpeed;
+  return gameState.baseSpeed + (gameState.stackSpeedBonus.current || 0);
 }
 
 export function getGameDelta(delta) {

@@ -34,6 +34,14 @@ const CAT_LATERAL_TRACKING = 0.32
 const CAT_LATERAL_LIMIT = 0.14
 const CAT_GROUNDED_LERP = 4.5
 const RAIL_JUMP_HEIGHT = 1.65
+const GROUND_EXTRA_LOAD_DURATION_STEP = 0.08
+const GROUND_EXTRA_LOAD_HEIGHT_STEP = 0.08
+const RAIL_EXTRA_LOAD_DURATION_STEP = 0.05
+const RAIL_EXTRA_LOAD_HEIGHT_STEP = 0.04
+const MIN_GROUND_JUMP_DURATION_MULTIPLIER = 0.72
+const MIN_GROUND_JUMP_HEIGHT_MULTIPLIER = 0.75
+const MIN_RAIL_JUMP_DURATION_MULTIPLIER = 0.8
+const MIN_RAIL_JUMP_HEIGHT_MULTIPLIER = 0.85
 const GRIND_GROUP_HEIGHT = 0.44
 const GRIND_ALIGN_LERP = 10
 const GRIND_BOB_HEIGHT = 0.012
@@ -96,6 +104,7 @@ export default function useCatAnimation({
   catRotX,
   catRotY,
   catRotZ,
+  catStackControls,
   isTransitioning,
   freezeMotion,
 }) {
@@ -103,6 +112,7 @@ export default function useCatAnimation({
   const jumpState = useRef({
     active: false, time: 0, direction: 1,
     startX: 0, targetX: 0, startY: 0.05, endY: 0.05,
+    duration: JUMP_DURATION,
     arcHeight: JUMP_HEIGHT, doesFlip: true,
     canSpinTrick: false, didSpinTrick: false,
   })
@@ -128,6 +138,59 @@ export default function useCatAnimation({
   // --- Helper functions ---
   const getDesiredRoadOffset = (targetX = 0) =>
     THREE.MathUtils.clamp(targetX * CAT_LATERAL_TRACKING, -CAT_LATERAL_LIMIT, CAT_LATERAL_LIMIT)
+
+  const getEffectiveLoadLevel = useCallback(
+    () => Math.max(
+      gameState.loadLevel.current || 0,
+      THREE.MathUtils.clamp(catStackControls.forceLoad || 0, 0, Number.POSITIVE_INFINITY)
+    ),
+    [catStackControls.forceLoad]
+  )
+
+  const getJumpSettings = useCallback(({ isRailJump = false } = {}) => {
+    const effectiveLoadLevel = getEffectiveLoadLevel()
+    if (effectiveLoadLevel <= 0) {
+      return {
+        duration: JUMP_DURATION,
+        arcHeight: isRailJump ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT,
+      }
+    }
+
+    const extraLoadLevel = Math.max(effectiveLoadLevel - 1, 0)
+    const baseDurationMultiplier = isRailJump
+      ? catStackControls.railJumpDurationMultiplier
+      : catStackControls.groundJumpDurationMultiplier
+    const baseHeightMultiplier = isRailJump
+      ? catStackControls.railJumpHeightMultiplier
+      : catStackControls.groundJumpHeightMultiplier
+    const durationStep = isRailJump ? RAIL_EXTRA_LOAD_DURATION_STEP : GROUND_EXTRA_LOAD_DURATION_STEP
+    const heightStep = isRailJump ? RAIL_EXTRA_LOAD_HEIGHT_STEP : GROUND_EXTRA_LOAD_HEIGHT_STEP
+    const minDurationMultiplier = isRailJump
+      ? MIN_RAIL_JUMP_DURATION_MULTIPLIER
+      : MIN_GROUND_JUMP_DURATION_MULTIPLIER
+    const minHeightMultiplier = isRailJump
+      ? MIN_RAIL_JUMP_HEIGHT_MULTIPLIER
+      : MIN_GROUND_JUMP_HEIGHT_MULTIPLIER
+    const durationMultiplier = Math.max(
+      minDurationMultiplier,
+      baseDurationMultiplier - extraLoadLevel * durationStep
+    )
+    const heightMultiplier = Math.max(
+      minHeightMultiplier,
+      baseHeightMultiplier - extraLoadLevel * heightStep
+    )
+
+    return {
+      duration: JUMP_DURATION * durationMultiplier,
+      arcHeight: (isRailJump ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT) * heightMultiplier,
+    }
+  }, [
+    catStackControls.groundJumpDurationMultiplier,
+    catStackControls.groundJumpHeightMultiplier,
+    catStackControls.railJumpDurationMultiplier,
+    catStackControls.railJumpHeightMultiplier,
+    getEffectiveLoadLevel,
+  ])
 
   const resetContactEffects = () => {
     grindContactState.current.flash = 0
@@ -225,14 +288,15 @@ export default function useCatAnimation({
   const triggerBoardLandingRecoil = useCallback(({ fromGrind = false, direction = 1 } = {}) => {
     const currentBoardRoll = boardRef.current?.rotation.z || 0
     const grindExitRoll = fromGrind ? direction * 0.035 : 0
+    const loadPresentationMultiplier = getEffectiveLoadLevel() > 0 ? 1.08 : 1
     boardLandingState.current.active = true
     boardLandingState.current.time = 0
     boardLandingState.current.roll = THREE.MathUtils.clamp(
       Math.abs(currentBoardRoll) > Math.abs(grindExitRoll) ? currentBoardRoll * 0.45 : grindExitRoll,
       -0.05, 0.05
     )
-    boardLandingState.current.strength = fromGrind ? 1.15 : 1
-  }, [boardRef])
+    boardLandingState.current.strength = (fromGrind ? 1.15 : 1) * loadPresentationMultiplier
+  }, [boardRef, getEffectiveLoadLevel])
 
   const triggerCatLandingJiggle = useCallback(() => {
     squashState.current.active = true
@@ -266,7 +330,7 @@ export default function useCatAnimation({
     if (!groupRef.current) return
     const jump = jumpState.current
     jump.time = JUMP_TAKEOFF_HEADSTART
-    const t = jump.time / JUMP_DURATION
+    const t = jump.time / jump.duration
     const height = 4 * jump.arcHeight * t * (1 - t)
     const travelT = THREE.MathUtils.smootherstep(t, 0, 1)
     groupRef.current.position.y = THREE.MathUtils.lerp(jump.startY, jump.endY, travelT) + height
@@ -340,7 +404,9 @@ export default function useCatAnimation({
     jumpState.current.targetX = jumpState.current.startX
     jumpState.current.startY = groupRef.current?.position.y || 0.05
     jumpState.current.endY = 0.05
-    jumpState.current.arcHeight = fromGrind ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
+    const defaultJumpSettings = getJumpSettings({ isRailJump: fromGrind })
+    jumpState.current.duration = defaultJumpSettings.duration
+    jumpState.current.arcHeight = defaultJumpSettings.arcHeight
     jumpState.current.doesFlip = false
     jumpState.current.canSpinTrick = true
     jumpState.current.didSpinTrick = false
@@ -350,8 +416,10 @@ export default function useCatAnimation({
     const musicTime = musicRef?.current?.currentTime
     if (typeof musicTime === 'number' && Number.isFinite(musicTime)) {
       const jumpPlan = getJumpPlan(musicTime, { fromGrind, blockedObstacleId: releasedGrindId })
+      const jumpSettings = getJumpSettings({ isRailJump: jumpPlan.isRailJump })
       jumpState.current.targetX = jumpPlan.targetX
-      jumpState.current.arcHeight = jumpPlan.isRailJump ? RAIL_JUMP_HEIGHT : JUMP_HEIGHT
+      jumpState.current.duration = jumpSettings.duration
+      jumpState.current.arcHeight = jumpSettings.arcHeight
       jumpState.current.doesFlip = jumpPlan.shouldKickflip
       jumpState.current.canSpinTrick = true
       gameState.pendingJumpTiming.current = {
@@ -374,7 +442,17 @@ export default function useCatAnimation({
       triggerKickflipEffect()
     }
     primeJumpTakeoffPose()
-  }, [getJumpPlan, groupRef, musicRef, onJumpSfx, primeJumpTakeoffPose, triggerBoardLandingRecoil, triggerCatLandingJiggle, triggerKickflipEffect])
+  }, [
+    getJumpPlan,
+    getJumpSettings,
+    groupRef,
+    musicRef,
+    onJumpSfx,
+    primeJumpTakeoffPose,
+    triggerBoardLandingRecoil,
+    triggerCatLandingJiggle,
+    triggerKickflipEffect,
+  ])
 
   const resetPoseToBoard = () => {
     resetContactEffects()
@@ -382,6 +460,7 @@ export default function useCatAnimation({
     deathState.current.time = 0
     jumpState.current.active = false
     jumpState.current.time = 0
+    jumpState.current.duration = JUMP_DURATION
     spinState.current.active = false
     spinState.current.time = 0
     powerslideState.current.amount = 0
@@ -425,6 +504,7 @@ export default function useCatAnimation({
     resetContactEffects()
     jumpState.current.active = false
     jumpState.current.time = 0
+    jumpState.current.duration = JUMP_DURATION
     spinState.current.active = false
     spinState.current.time = 0
     powerslideState.current.amount = 0
@@ -805,7 +885,7 @@ export default function useCatAnimation({
     if (jump.active) {
       setGrindSparkInactive()
       jump.time += gameDelta
-      const t = jump.time / JUMP_DURATION
+      const t = jump.time / jump.duration
       if (t >= 1) {
         jump.active = false; jump.time = 0
         groupRef.current.position.y = jump.endY

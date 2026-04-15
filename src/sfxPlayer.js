@@ -42,27 +42,31 @@ export function createSfxPlayer(sources, { session } = {}) {
     },
     play(name, gain = 1) {
       if (disposed) return
+      const playBuffer = (buffer) => {
+        if (disposed || !buffer) return
+        const context = session?.context
+        if (!context || !session?.masterGain) return
+        if (context.state === 'suspended') {
+          void context.resume().catch(() => { })
+        }
+        const source = context.createBufferSource()
+        source.buffer = buffer
+        const localGain = context.createGain()
+        localGain.gain.value = Math.max(0, Math.min(1, gain))
+        source.connect(localGain)
+        localGain.connect(session.masterGain)
+        source.start()
+        source.onended = () => {
+          try { source.disconnect() } catch { /* ignore */ }
+          try { localGain.disconnect() } catch { /* ignore */ }
+        }
+      }
       const buffer = decodedBuffers.get(name)
-      if (!buffer) {
-        void decode(name).catch(() => { })
+      if (buffer) {
+        playBuffer(buffer)
         return
       }
-      const context = session?.context
-      if (!context || !session?.masterGain) return
-      if (context.state === 'suspended') {
-        void context.resume().catch(() => { })
-      }
-      const source = context.createBufferSource()
-      source.buffer = buffer
-      const localGain = context.createGain()
-      localGain.gain.value = Math.max(0, Math.min(1, gain))
-      source.connect(localGain)
-      localGain.connect(session.masterGain)
-      source.start()
-      source.onended = () => {
-        try { source.disconnect() } catch { /* ignore */ }
-        try { localGain.disconnect() } catch { /* ignore */ }
-      }
+      void decode(name).then(playBuffer).catch(() => { })
     },
     dispose() {
       disposed = true

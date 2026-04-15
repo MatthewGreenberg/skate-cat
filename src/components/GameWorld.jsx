@@ -45,6 +45,7 @@ export default function GameWorld({
   musicRef,
   onJumpSfx,
   onLogHit,
+  onPlopSfx,
 }) {
   const showSpeedLines = !renderProfile.disableSpeedLines
   const showDustTrail = !renderProfile.disableDustTrail
@@ -68,12 +69,14 @@ export default function GameWorld({
         <group visible={visible}>
           <SkateCat
             trailTargetRef={trailTargetRef}
+            isRunActive={runActive && !isGameOver}
             controlsEnabled={runActive && !isGameOver && !isCountdownActive}
             isTransitioning={isTransitioning}
             useOriginalMaterials={useOriginalMaterials}
             freezeMotion={freezeMotion}
             musicRef={musicRef}
             onJumpSfx={onJumpSfx}
+            onPlopSfx={onPlopSfx}
             shadowMode={shadowMode}
             renderProfile={renderProfile}
           />

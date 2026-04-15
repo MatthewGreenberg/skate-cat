@@ -40,6 +40,7 @@ import {
   MAX_RUN_LIVES,
   qualityMode,
   isSafari,
+  resetExtraCatLoadState,
   resetObstacleTargets,
   debugControlsEnabled,
 } from './store'
@@ -77,6 +78,7 @@ const BOOT_REVEAL_DURATION_MS = 1100
 const BOOT_ATTRACT_SETTLE_MS = 480
 const START_CONFIRM_MS = 220
 const FAILED_RETURN_DURATION_SECONDS = 0.9
+const MAIN_MUSIC_VOLUME = 0.5
 
 function clamp01(value) {
   return Math.min(Math.max(value, 0), 1)
@@ -231,6 +233,7 @@ const SceneCanvas = memo(function SceneCanvas({
   musicRef,
   onJumpSfx,
   onLogHit,
+  onPlopSfx,
   isWarmingGameWorld,
   onGameWorldPrimed,
   transitionSettings,
@@ -347,6 +350,7 @@ const SceneCanvas = memo(function SceneCanvas({
             musicRef={musicRef}
             onJumpSfx={onJumpSfx}
             onLogHit={onLogHit}
+            onPlopSfx={onPlopSfx}
             foliageSegmentCount={foliageSegmentCount}
             shadowMode={gameplayShadowMode}
             renderProfile={renderProfile}
@@ -498,9 +502,9 @@ export default function App() {
     ? 'STARTING RUN'
     : showAudioRetryPrompt
       ? 'TAP AGAIN'
-    : introScreenMode === 'leaderboard' ? 'BACK'
-      : introScreenMode === 'initials' ? 'OK'
-        : introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
+      : introScreenMode === 'leaderboard' ? 'BACK'
+        : introScreenMode === 'initials' ? 'OK'
+          : introScreenMode === RETURN_SCREEN_SUMMARY ? 'PLAY AGAIN' : 'PRESS START'
   const introSummary = introScreenMode === RETURN_SCREEN_SUMMARY ? currentRunSummary : null
   const chromaticSpike = isPreReturnGlitching ? 1 : 0
   const shouldUseDeathCamera = (
@@ -513,11 +517,11 @@ export default function App() {
     ? 'death'
     : introScreenMode === 'leaderboard' || introScreenMode === 'initials'
       ? 'leaderboard'
-    : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome === 'failed'
-      ? 'failed'
-    : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome !== 'failed'
-      ? 'results'
-      : 'intro'
+      : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome === 'failed'
+        ? 'failed'
+        : isReturnScreenActive && introScreenMode === RETURN_SCREEN_SUMMARY && currentOutcome !== 'failed'
+          ? 'results'
+          : 'intro'
   const canDismissResultsSummary = (
     phase === PHASE_RESULTS &&
     introScreenMode === RETURN_SCREEN_SUMMARY
@@ -531,9 +535,9 @@ export default function App() {
         ? 'POWERING CRT ROOM'
         : showAudioRetryPrompt && isMusicReady
           ? 'TAP AGAIN'
-        : isMusicReady
-          ? 'PRESS START'
-          : 'AUDIO DECK OFFLINE'
+          : isMusicReady
+            ? 'PRESS START'
+            : 'AUDIO DECK OFFLINE'
   const bootStatusDetail = bootPhase === BOOT_PHASE_LOADING
     ? 'Streaming room assets and preparing the attract scene.'
     : bootPhase === BOOT_PHASE_PRIMING
@@ -546,20 +550,20 @@ export default function App() {
         ? 'Handing off from platform boot to the in-world cabinet.'
         : showAudioRetryPrompt && isMusicReady
           ? 'Audio needs one more tap before Web Audio unlocks on this device.'
-        : isMusicReady
-          ? 'Cabinet is live. Space or Enter drops you in.'
-          : 'Title is up, but start remains locked until audio is available.'
+          : isMusicReady
+            ? 'Cabinet is live. Space or Enter drops you in.'
+            : 'Title is up, but start remains locked until audio is available.'
   const introInstructionLabel = startPhase === START_PHASE_ARMING
     ? 'SPINNING UP STAGE'
     : startPhase === START_PHASE_LAUNCHING
       ? 'DROPPING IN'
       : showAudioRetryPrompt
         ? 'TAP AGAIN TO ENABLE AUDIO'
-      : introScreenMode === RETURN_SCREEN_SUMMARY
-        ? (isTouchDevice ? '' : 'SPACE / ENTER TO PLAY AGAIN')
-        : isMusicReady
-          ? (isTouchDevice ? '' : 'SPACE / ENTER TO SHRED')
-          : 'AUDIO DECK OFFLINE'
+        : introScreenMode === RETURN_SCREEN_SUMMARY
+          ? (isTouchDevice ? '' : 'SPACE / ENTER TO PLAY AGAIN')
+          : isMusicReady
+            ? (isTouchDevice ? '' : 'SPACE / ENTER TO SHRED')
+            : 'AUDIO DECK OFFLINE'
   const introDisabled = tvScreenOverride
     ? false
     : isReturnScreenActive
@@ -595,6 +599,7 @@ export default function App() {
     gameState.screenShake.current = 0
     gameState.comboEnergy.current = 1
     gameState.timeOfDay.current = 0
+    resetExtraCatLoadState()
     gameState.runDifficultyProgress.current = 0
     gameState.phaseSpeedBonus.current = 0
     gameState.lastFailReason.current = ''
@@ -639,6 +644,7 @@ export default function App() {
     setTransitionDirection('reverse')
     setIsEndingLocked(true)
     setShowDeathFullscreen(screenMode === RETURN_SCREEN_SUMMARY && summary?.outcome === 'failed')
+    resetExtraCatLoadState()
     clearPlaybackState()
 
     window.clearTimeout(endGlitchTimeoutRef.current)
@@ -769,6 +775,7 @@ export default function App() {
     const session = createSharedAudioSession()
     audioSessionRef.current = session
     const music = createBufferedMusicTransport('/audio/music/skate-cat-2.mp3', { session })
+    music.volume = MAIN_MUSIC_VOLUME
     music.onEnded = () => handleSongCompleteRef.current()
     musicRef.current = music
     void music.preload()
@@ -787,6 +794,9 @@ export default function App() {
       jump: '/audio/sfx/jump.wav',
       jump2: '/audio/sfx/jump2.wav',
       die: '/audio/sfx/die.wav',
+      click: '/audio/sfx/click.wav',
+      plop: '/audio/sfx/plop.wav',
+      changeChannel: '/audio/sfx/change-channel.wav',
     }, { session })
     sfxPlayerRef.current = sfx
     void sfx.preload()
@@ -1255,6 +1265,7 @@ export default function App() {
 
   // Leaderboard: set screen mode directly (TvScreen handles the smooth CRT transition)
   const flipToScreen = useCallback((targetMode) => {
+    sfxPlayerRef.current?.play('changeChannel', 0.5)
     setTvScreenOverride(targetMode)
   }, [])
 
@@ -1346,6 +1357,20 @@ export default function App() {
 
   const playDieSfx = useCallback(() => {
     sfxPlayerRef.current?.play('die', 0.24)
+  }, [])
+
+  const playPlopSfx = useCallback(() => {
+    sfxPlayerRef.current?.play('plop', 0.5)
+  }, [])
+
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      sfxPlayerRef.current?.play('click', 0.25)
+    }
+    window.addEventListener('pointerdown', handleGlobalClick)
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalClick)
+    }
   }, [])
 
   return (
@@ -1472,6 +1497,7 @@ export default function App() {
           musicRef={musicRef}
           onJumpSfx={playJumpSfx}
           onLogHit={playDieSfx}
+          onPlopSfx={playPlopSfx}
           isWarmingGameWorld={isWarmingGameWorld}
           onGameWorldPrimed={handleGameWorldPrimed}
           transitionSettings={transitionSettings}

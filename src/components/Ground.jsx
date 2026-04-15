@@ -120,7 +120,7 @@ export default function Ground({
       vignetteStrength: { value: 0.27, min: 0, max: 0.3, step: 0.01 },
     }, { collapsed: true }),
   }, [])
-  const useShadowMap = shadowMode === 'map'
+  const useShadowMap = shadowMode === 'map' || shadowMode === 'hybrid'
 
   const roadMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({

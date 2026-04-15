@@ -25,7 +25,7 @@ void waitForBootFonts().finally(() => {
   root.render(
     <>
       <App />
-      {isDebugMode ? <Leva collapsed={false} /> : null}
+      {isDebugMode ? <Leva oneLineLabels collapsed={false} /> : null}
     </>,
   )
 })

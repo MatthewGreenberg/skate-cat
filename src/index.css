@@ -62,6 +62,11 @@ body {
   100% { transform: translateX(-50%) translateY(-12px) rotate(0deg) scale(0.94); opacity: 0; }
 }
 
+@keyframes newCatBannerPulse {
+  0% { transform: translateX(-50%) translateY(-2px) scale(1); opacity: 0.88; }
+  100% { transform: translateX(-50%) translateY(-6px) scale(1.04); opacity: 1; }
+}
+
 @keyframes trickPop {
   0% { transform: translateX(-50%) translateY(18px) rotate(-8deg) scale(0.45); opacity: 0; }
   22% { transform: translateX(-50%) translateY(0px) rotate(-4deg) scale(1.22); opacity: 1; }

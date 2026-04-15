@@ -17,6 +17,7 @@ import {
   isObstacleSpacingDebug,
   isTimingDebug,
   removeObstacleTarget,
+  resetExtraCatLoadState,
   resetObstacleTargets,
   upsertObstacleTarget,
 } from '../store'
@@ -121,7 +122,7 @@ export default function Obstacles({
   shadowMode = 'map',
   renderProfile = {},
 }) {
-  const useShadowMap = shadowMode === 'map'
+  const useShadowMap = shadowMode === 'map' || shadowMode === 'hybrid'
   const log = useGLTF('/models/obstacles/large_tree_log/scene.gltf')
   const refs = useRef([])
   const logRefs = useRef([])
@@ -773,6 +774,7 @@ export default function Obstacles({
       gameState.obstacleDebug.current = []
       gameState.upArrowHeld.current = false
       gameState.grindCooldownObstacleId.current = 0
+      resetExtraCatLoadState()
       gameState.runDifficultyProgress.current = 0
       gameState.phaseSpeedBonus.current = 0
       worldScrollDistance.current = 0
@@ -791,6 +793,7 @@ export default function Obstacles({
       gameState.obstacleDebug.current = []
       recentDebugObstacles.current.clear()
       gameState.grindCooldownObstacleId.current = 0
+      resetExtraCatLoadState()
       gameState.runDifficultyProgress.current = 0
       gameState.phaseSpeedBonus.current = 0
       worldScrollDistance.current = 0
@@ -826,7 +829,9 @@ export default function Obstacles({
       if (lastRunPhase.current !== currentPhase) {
         lastRunPhase.current = currentPhase
         gameState.runPhase.current = currentPhase
-        gameState.phaseAnnouncement.current = PHASE_ANNOUNCEMENTS[currentPhase] || ''
+        if (!gameState.pendingCatDrop.current) {
+          gameState.phaseAnnouncement.current = PHASE_ANNOUNCEMENTS[currentPhase] || ''
+        }
         emitHudScoreChange()
       }
       gameState.phaseSpeedBonus.current = PHASE_SPEED_BONUS[currentPhase] || 0
