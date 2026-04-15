@@ -1,7 +1,29 @@
 {
   "name": "skate-cat",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "A 3D skateboarding cat rhythm game built with React Three Fiber — jump logs, grind rails, and land tricks in time with the music.",
+  "keywords": [
+    "three.js",
+    "react-three-fiber",
+    "webgl",
+    "game",
+    "rhythm-game",
+    "skateboarding",
+    "toon-shader",
+    "vite",
+    "react"
+  ],
+  "author": "Matt Greenberg",
+  "license": "MIT",
+  "homepage": "https://skate-cat-meow.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MatthewGreenberg/skate-cat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MatthewGreenberg/skate-cat/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
