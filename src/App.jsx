@@ -417,7 +417,7 @@ export default function App() {
   const [transitionCaptureMode, setTransitionCaptureMode] = useState(null)
   const [returnScreenMode, setReturnScreenMode] = useState(RETURN_SCREEN_SUMMARY)
   const [leaderboards, setLeaderboards] = useState({ daily: [], weekly: [], alltime: [] })
-  const [leaderboardTab, setLeaderboardTab] = useState('alltime')
+  const [leaderboardTab, setLeaderboardTab] = useState('daily')
   useEffect(() => {
     let cancelled = false
     fetchLeaderboards().then(boards => {
