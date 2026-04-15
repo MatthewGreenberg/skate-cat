@@ -277,6 +277,7 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
 
   const pointsStyle = popToneStyles[pointsTone] || popToneStyles.Perfect
   const isNewCatBanner = phaseBanner === 'NEW CAT'
+  const isMobileNewCatBanner = isTouchDevice && isNewCatBanner
   const handlePhaseBannerAnimationEnd = () => {
     if (isNewCatBanner) return
     setPhaseBanner('')
@@ -346,7 +347,8 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
           onAnimationEnd={handlePhaseBannerAnimationEnd}
           style={{
             position: 'fixed',
-            top: isNewCatBanner ? '6.6rem' : '7rem',
+            top: isMobileNewCatBanner ? 'auto' : isNewCatBanner ? '6.6rem' : '7rem',
+            bottom: isMobileNewCatBanner ? 'calc(1.75rem + 6.875rem + 1rem)' : 'auto',
             left: '50%',
             transform: 'translateX(-50%)',
             padding: isNewCatBanner ? '0.6rem 1.2rem' : '0.45rem 0.9rem',
@@ -368,7 +370,7 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
             textTransform: 'uppercase',
             textShadow: isNewCatBanner ? '0 2px 8px rgba(0, 0, 0, 0.24)' : 'none',
             pointerEvents: 'none',
-            zIndex: 62,
+            zIndex: isMobileNewCatBanner ? 64 : 62,
             animation: isNewCatBanner
               ? 'hudJudgementPop 420ms cubic-bezier(0.17, 0.9, 0.35, 1) both, newCatBannerPulse 900ms ease-in-out 420ms infinite alternate'
               : 'hudJudgementPop 820ms cubic-bezier(0.17, 0.9, 0.35, 1) both',

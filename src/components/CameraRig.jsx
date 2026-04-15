@@ -306,12 +306,12 @@ export default function CameraRig({
     mobileLookOffsetZ,
   } = useOptionalControls('Game', {
     'Mobile Landscape': folder({
-      mobileFovExtra: { value: 6, min: 0, max: 20, step: 0.5 },
-      mobilePullbackZ: { value: 0.5, min: -2, max: 6, step: 0.1 },
-      mobilePullbackY: { value: -0.4, min: -2, max: 3, step: 0.05 },
-      mobileLookOffsetX: { value: -1.3, min: -5, max: 5, step: 0.05 },
-      mobileLookOffsetY: { value: -3.3, min: -5, max: 5, step: 0.05 },
-      mobileLookOffsetZ: { value: 1.2, min: -5, max: 5, step: 0.05 },
+      mobileFovExtra: { value: 0.0, min: 0, max: 20, step: 0.5 },
+      mobilePullbackZ: { value: 0.7, min: -2, max: 6, step: 0.1 },
+      mobilePullbackY: { value: -0.7, min: -2, max: 3, step: 0.05 },
+      mobileLookOffsetX: { value: -1.8, min: -5, max: 5, step: 0.05 },
+      mobileLookOffsetY: { value: -0.9, min: -5, max: 5, step: 0.05 },
+      mobileLookOffsetZ: { value: 0.55, min: -5, max: 5, step: 0.05 },
     }, { collapsed: true }),
   }, [])
 
@@ -410,29 +410,29 @@ export default function CameraRig({
       ? deathTargetPos
       : cameraMode === 'leaderboard'
         ? _responsiveLeaderboardPos
-      : cameraMode === 'failed'
-        ? _responsiveFailedPos
-        : cameraMode === 'results'
-        ? _responsiveResultsPos
-        : _responsiveIntroPos
+        : cameraMode === 'failed'
+          ? _responsiveFailedPos
+          : cameraMode === 'results'
+            ? _responsiveResultsPos
+            : _responsiveIntroPos
     const idleTargetLook = cameraMode === 'death'
       ? deathTargetLook
       : cameraMode === 'leaderboard'
         ? _responsiveLeaderboardLook
-      : cameraMode === 'failed'
-        ? _responsiveFailedLook
-        : cameraMode === 'results'
-        ? _responsiveResultsLook
-        : _responsiveIntroLook
+        : cameraMode === 'failed'
+          ? _responsiveFailedLook
+          : cameraMode === 'results'
+            ? _responsiveResultsLook
+            : _responsiveIntroLook
     const idleTargetFov = cameraMode === 'death'
       ? deathFov
       : cameraMode === 'leaderboard'
         ? responsiveLeaderboardFov
-      : cameraMode === 'failed'
-        ? responsiveFailedFov
-        : cameraMode === 'results'
-          ? responsiveResultsFov
-          : responsiveIntroFov
+        : cameraMode === 'failed'
+          ? responsiveFailedFov
+          : cameraMode === 'results'
+            ? responsiveResultsFov
+            : responsiveIntroFov
     const reverseTargetPos = cameraMode === 'death' ? _responsiveIntroPos : idleTargetPos
     const reverseTargetLook = cameraMode === 'death' ? _responsiveIntroLook : idleTargetLook
     const reverseTargetFov = cameraMode === 'death' ? responsiveIntroFov : idleTargetFov
