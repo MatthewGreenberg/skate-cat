@@ -1363,8 +1363,11 @@ export default function App() {
     sfxPlayerRef.current?.play('plop', 0.5)
   }, [])
 
+  const suppressClickSfxRef = useRef(false)
+  suppressClickSfxRef.current = isTouchDevice && runActive
   useEffect(() => {
     const handleGlobalClick = () => {
+      if (suppressClickSfxRef.current) return
       sfxPlayerRef.current?.play('click', 0.25)
     }
     window.addEventListener('pointerdown', handleGlobalClick)

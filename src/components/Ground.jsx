@@ -11,6 +11,7 @@ import { useOptionalControls } from '../lib/debugControls'
 const SEGMENT_COUNT = 8
 const SEGMENT_LENGTH = 20
 const SEGMENT_WIDTH = 12
+const MOBILE_GRASS_PRELOAD_SEGMENTS = 1
 
 const roadVertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -147,7 +148,8 @@ export default function Ground({
   if (gameState.speed.current > 0 && gameState.speed.current < baseSpeed) gameState.speed.current = baseSpeed
   const groundMaterial = useMemo(() => new THREE.MeshToonMaterial({ color: '#4CB944' }), [])
   const groupRefs = useRef([])
-  const detailRefs = useRef([])
+  const grassRefs = useRef([])
+  const wildflowerRefs = useRef([])
   const totalLength = SEGMENT_COUNT * SEGMENT_LENGTH
   const scrollOffset = useRef(0)
 
@@ -179,6 +181,7 @@ export default function Ground({
     lerpDayNightColor(groundMaterial.color, '#4CB944', '#1a3318', nightFactor, '#7a8a30', warmFactor)
 
     scrollOffset.current += gameState.speed.current * gameDelta
+    const grassVisibleSegmentCount = foliageSegmentCount + (renderProfile.isMobileDevice ? MOBILE_GRASS_PRELOAD_SEGMENTS : 0)
     for (let i = 0; i < SEGMENT_COUNT; i++) {
       // Each segment has a fixed slot; we wrap the scroll offset modularly
       const pos = i * SEGMENT_LENGTH - (scrollOffset.current % totalLength)
@@ -187,8 +190,13 @@ export default function Ground({
       if (groupRefs.current[i]) {
         groupRefs.current[i].position.z = -wrapped
       }
-      if (detailRefs.current[i]) {
-        detailRefs.current[i].visible =
+      if (grassRefs.current[i]) {
+        grassRefs.current[i].visible =
+          wrapped >= -SEGMENT_LENGTH &&
+          wrapped < SEGMENT_LENGTH * grassVisibleSegmentCount
+      }
+      if (wildflowerRefs.current[i]) {
+        wildflowerRefs.current[i].visible =
           wrapped >= -SEGMENT_LENGTH &&
           wrapped < SEGMENT_LENGTH * foliageSegmentCount
       }
@@ -218,8 +226,10 @@ export default function Ground({
             </mesh>
           )}
           <Pebbles segmentSeed={i} />
-          <group ref={(el) => (detailRefs.current[i] = el)}>
+          <group ref={(el) => (grassRefs.current[i] = el)}>
             <Grass quality={quality} renderProfile={renderProfile} />
+          </group>
+          <group ref={(el) => (wildflowerRefs.current[i] = el)}>
             {!renderProfile.disableWildflowers && <Wildflowers />}
           </group>
         </group>

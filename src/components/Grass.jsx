@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useCallback } from 'react'
+import { useRef, useMemo, useEffect, useCallback, useId } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
@@ -11,6 +11,36 @@ const SEGMENT_WIDTH = 12
 const ROAD_HALF = 1.5
 const ROAD_HALF_CAM_SIDE = 1.8 // push grass back on camera-facing side
 const CAM_SIDE_MAX = 3.5 // don't waste instances off-screen on camera side
+const FAR_SIDE_MAX = SEGMENT_WIDTH / 2
+const MOBILE_CAM_SIDE_MIN = 1.65
+const MOBILE_CAM_SIDE_MAX_RELAXED = 3.1
+const MOBILE_CAM_SIDE_MAX = 2.9
+const MOBILE_FAR_SIDE_MAX_RELAXED = 4.8
+const MOBILE_FAR_SIDE_MAX = 4.2
+
+function mulberry32(seed) {
+  let t = seed
+  return function random() {
+    t += 0x6D2B79F5
+    let r = Math.imul(t ^ (t >>> 15), 1 | t)
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r)
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function hashStringToSeed(value) {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function sampleBiasedRange(random, min, max, bias = 1) {
+  const t = bias === 1 ? random() : Math.pow(random(), bias)
+  return min + t * (max - min)
+}
 
 function createBladeGeometry() {
   const geo = new THREE.BufferGeometry()
@@ -136,6 +166,10 @@ const grassFragmentShader = /* glsl */ `
 
 export default function Grass({ quality = 'auto', renderProfile = {} }) {
   const meshRef = useRef()
+  const materialRef = useRef()
+  const grassId = useId()
+  const isMobileGrassTuned = !!renderProfile.isMobileDevice
+  const isConstrainedMobileGrassTuned = !!renderProfile.isConstrainedMobile
 
   const { windEnabled, windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
     Grass: folder({
@@ -191,7 +225,7 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
     }, { collapsed: true }),
   }, [])
 
-  const uniformsRef = useRef({
+  const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uWindSpeed: { value: 2.0 },
     uWindStrength: { value: 0.12 },
@@ -209,48 +243,74 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
     uToonSteps: { value: 4.0 },
     uShadowBrightness: { value: 0.55 },
     uCullDistance: { value: 30.0 },
-  })
+  }), [])
 
   const geometry = useMemo(() => createBladeGeometry(), [])
 
   const material = useMemo(() => {
     return new THREE.ShaderMaterial({
-      uniforms: uniformsRef.current,
+      uniforms,
       vertexShader: grassVertexShader,
       fragmentShader: grassFragmentShader,
       side: THREE.DoubleSide,
     })
-  }, [])
+  }, [uniforms])
+
+  useEffect(() => {
+    materialRef.current = material
+    return () => {
+      materialRef.current = null
+      material.dispose()
+    }
+  }, [material])
 
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const seedData = useMemo(() => {
+    const seed = hashStringToSeed(
+      `${grassId}:${isMobileGrassTuned ? 'mobile' : 'desktop'}:${isConstrainedMobileGrassTuned ? 'constrained' : 'full'}`
+    )
+    const random = mulberry32(seed)
+    const edgeBias = isConstrainedMobileGrassTuned ? 1.85 : isMobileGrassTuned ? 1.35 : 1
+    const farSideMax = isConstrainedMobileGrassTuned
+      ? MOBILE_FAR_SIDE_MAX
+      : isMobileGrassTuned
+        ? MOBILE_FAR_SIDE_MAX_RELAXED
+        : FAR_SIDE_MAX
+    const camSideMin = isMobileGrassTuned ? MOBILE_CAM_SIDE_MIN : ROAD_HALF_CAM_SIDE
+    const camSideMax = isConstrainedMobileGrassTuned
+      ? MOBILE_CAM_SIDE_MAX
+      : isMobileGrassTuned
+        ? MOBILE_CAM_SIDE_MAX_RELAXED
+        : CAM_SIDE_MAX
+
     // Store random seeds so height can be remapped
     const data = []
     for (let i = 0; i < MAX_BLADES; i++) {
       let x
-      if (Math.random() < 0.5) {
-        x = -ROAD_HALF - Math.random() * (SEGMENT_WIDTH / 2 - ROAD_HALF)
+      if (random() < 0.5) {
+        x = -sampleBiasedRange(random, ROAD_HALF, farSideMax, edgeBias)
       } else {
-        x = ROAD_HALF_CAM_SIDE + Math.random() * (CAM_SIDE_MAX - ROAD_HALF_CAM_SIDE)
+        x = sampleBiasedRange(random, camSideMin, camSideMax, edgeBias)
       }
       data.push({
         x,
-        z: (Math.random() - 0.5) * SEGMENT_LENGTH,
-        heightRand: Math.random(),
-        widthRand: 0.8 + Math.random() * 0.4,
-        leanX: (Math.random() - 0.5) * 0.24,
-        leanZ: (Math.random() - 0.5) * 0.24,
-        rotY: Math.random() * Math.PI,
+        z: (random() - 0.5) * SEGMENT_LENGTH,
+        heightRand: random(),
+        widthRand: 0.8 + random() * 0.4,
+        leanX: (random() - 0.5) * 0.24,
+        leanZ: (random() - 0.5) * 0.24,
+        rotY: random() * Math.PI,
       })
     }
     return data
-  }, [])
+  }, [grassId, isConstrainedMobileGrassTuned, isMobileGrassTuned])
 
   const updateInstanceMatrices = useCallback((mesh, minHeight, maxHeight) => {
     if (!mesh) return
+    const heightBoost = isConstrainedMobileGrassTuned ? 1.12 : isMobileGrassTuned ? 1.05 : 1
     for (let i = 0; i < MAX_BLADES; i++) {
       const s = seedData[i]
-      const h = minHeight + s.heightRand * (maxHeight - minHeight)
+      const h = (minHeight + s.heightRand * (maxHeight - minHeight)) * heightBoost
       dummy.position.set(s.x, 0, s.z)
       dummy.rotation.set(s.leanX, s.rotY, s.leanZ)
       dummy.scale.set(s.widthRand, h, 1)
@@ -260,16 +320,16 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
     mesh.instanceMatrix.needsUpdate = true
     mesh.computeBoundingSphere()
     mesh.computeBoundingBox()
-  }, [seedData, dummy])
+  }, [dummy, isConstrainedMobileGrassTuned, isMobileGrassTuned, seedData])
 
   useEffect(() => {
     updateInstanceMatrices(meshRef.current, bladeMinHeight, bladeMaxHeight)
   }, [bladeMinHeight, bladeMaxHeight, updateInstanceMatrices])
 
   useFrame((_, delta) => {
-    if (!meshRef.current || meshRef.current.parent?.visible === false) return
+    if (!meshRef.current || !materialRef.current || meshRef.current.parent?.visible === false) return
 
-    const u = uniformsRef.current
+    const u = materialRef.current.uniforms
     const t = gameState.timeOfDay.current
     const nightFactor = getNightFactor(t)
     const sunsetFactor = getSunsetFactor(t)
@@ -279,7 +339,7 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
     if (windEnabled && !renderProfile.disableGrassWind) u.uTime.value += delta
     u.uWindSpeed.value = windSpeed
     u.uWindStrength.value = windEnabled && !renderProfile.disableGrassWind ? windStrength : 0
-    u.uThickness.value = thickness
+    u.uThickness.value = thickness * (isConstrainedMobileGrassTuned ? 1.28 : isMobileGrassTuned ? 1.12 : 1)
     u.uVisibleCount.value = resolvedBladeCount
     meshRef.current.count = resolvedBladeCount
 

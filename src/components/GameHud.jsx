@@ -473,9 +473,9 @@ function MobileControlHint({ side, glyph, label, pressed }) {
       style={{
         position: 'fixed',
         bottom: '1.75rem',
-        [side]: '1.75rem',
-        width: '5.5rem',
-        height: '5.5rem',
+        [side]: 'calc(1.75rem + 10vw)',
+        width: '6.875rem',
+        height: '6.875rem',
         borderRadius: '50%',
         background: pressed
           ? 'linear-gradient(135deg, rgba(255, 107, 53, 0.75), rgba(255, 180, 92, 0.75))'
@@ -500,12 +500,12 @@ function MobileControlHint({ side, glyph, label, pressed }) {
         zIndex: 62,
       }}
     >
-      <span style={{ fontFamily: 'Knewave', fontSize: '2.2rem', lineHeight: 1 }}>{glyph}</span>
+      <span style={{ fontFamily: 'Knewave', fontSize: '2.75rem', lineHeight: 1 }}>{glyph}</span>
       <span
         style={{
           fontFamily: 'Nunito, sans-serif',
           fontWeight: 800,
-          fontSize: '0.62rem',
+          fontSize: '0.775rem',
           letterSpacing: '0.14em',
         }}
       >
