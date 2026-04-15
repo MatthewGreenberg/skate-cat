@@ -90,22 +90,32 @@ const bgFragmentShader = /* glsl */ `
     return mix(vec3(luma), color, saturation);
   }
 
-  float starField(vec2 uv) {
-    vec2 starUv = vec2(uv.x + uSkyOffset * 0.08, uv.y) * vec2(110.0, 68.0);
+  float starLayer(vec2 uv, vec2 gridScale, float threshold, float drift, float minRadius, float maxRadius, float haloStrength) {
+    vec2 starUv = vec2(uv.x + uSkyOffset * drift, uv.y) * gridScale;
     vec2 cell = floor(starUv);
     vec2 local = fract(starUv) - 0.5;
     float seed = hash(cell);
-    float star = 0.0;
 
-    if (seed > 0.985) {
-      vec2 offset = vec2(hash(cell + 4.1), hash(cell + 8.7)) - 0.5;
-      float dist = length(local - offset * 0.55);
-      float radius = mix(0.03, 0.12, hash(cell + 2.3));
-      float sparkle = 0.72 + 0.28 * sin(uTime * (1.4 + hash(cell + 5.2) * 2.4) + seed * 50.0);
-      star = (1.0 - smoothstep(radius * 0.35, radius, dist)) * sparkle;
+    if (seed <= threshold) {
+      return 0.0;
     }
 
-    return star;
+    vec2 offset = (vec2(hash(cell + 4.1), hash(cell + 8.7)) - 0.5) * 0.72;
+    float dist = length(local - offset);
+    float radius = mix(minRadius, maxRadius, hash(cell + 2.3));
+    float core = 1.0 - smoothstep(radius * 0.35, radius, dist);
+    float halo = exp(-dist * mix(14.0, 26.0, hash(cell + 6.4))) * haloStrength;
+    float sparkle = 0.7 + 0.3 * sin(uTime * (1.2 + hash(cell + 5.2) * 2.8) + seed * 61.0);
+
+    return (core + halo) * sparkle;
+  }
+
+  float starField(vec2 uv) {
+    float primary = starLayer(uv, vec2(92.0, 56.0), 0.962, 0.05, 0.022, 0.07, 0.18);
+    float secondary = starLayer(uv + vec2(3.7, 1.9), vec2(148.0, 84.0), 0.985, 0.08, 0.015, 0.04, 0.1);
+    float bright = starLayer(uv + vec2(8.4, 6.2), vec2(54.0, 34.0), 0.992, 0.03, 0.03, 0.09, 0.26);
+
+    return primary + secondary * 0.45 + bright * 1.2;
   }
 
   void main() {
@@ -142,8 +152,8 @@ const bgFragmentShader = /* glsl */ `
     color = mix(color, uCloudColor, cloudMask * uCloudStreakStrength);
 
     float stars = starField(uv);
-    stars *= smoothstep(horizonLine + 0.08, 0.68, uv.y) * uStarVisibility;
-    color += uStarColor * stars;
+    stars *= smoothstep(horizonLine + 0.04, 0.46, uv.y) * uStarVisibility;
+    color += uStarColor * stars * (0.85 + uStarVisibility * 0.95);
 
     float sep = uLayerSeparation;
 
@@ -322,7 +332,7 @@ export default function Background({ active = true, renderProfile = {} }) {
       cloudStreakStrength * 0.42,
       nightFactor
     )
-    uniforms.uStarVisibility.value = Math.max(0, (nightFactor - 0.34) / 0.66)
+    uniforms.uStarVisibility.value = THREE.MathUtils.smoothstep(nightFactor, 0.18, 0.78)
     uniforms.uNightFactor.value = nightFactor
     uniforms.uSkyOffset.value = sharedOffset * (0.04 + parallaxStrength * 0.02) * parallaxScale
     uniforms.uFarOffset.value = sharedOffset * (0.11 + parallaxStrength * 0.06) * parallaxScale

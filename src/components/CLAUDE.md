@@ -6,7 +6,7 @@
 - **CameraRig.jsx** — Camera positioning for intro/game/transition with FOV changes and screen shake. `getResponsiveMix` returns `{ mix, mobileLandscapeMix }`; the mobile factor fires for narrow-tall landscape viewports (short side ≤ 500px) and adds extra back-off + FOV bump for intro/results/failed/leaderboard framing and the gameplay camera (Leva: Game → Mobile Landscape).
 
 ## Scene Composition
-- **GameWorld.jsx** — Assembles the game scene: Ground, Background, Sky, SkateCat, Obstacles, particles, effects.
+- **GameWorld.jsx** — Assembles the game scene: Ground, Background, SkateCat, Obstacles, particles, effects.
 - **DayNightController.jsx** — Animates lighting, fog, and hemisphere colors through a day/night cycle.
 - **PostEffects.jsx** — Post-processing: bloom, brightness/contrast, hue/saturation, transition portal rendering.
 
@@ -19,8 +19,7 @@
 
 ## Environment
 - **Ground.jsx** — Scrolling road with shader-based gradient.
-- **Background.jsx** — Parallax layered background with day/night colors.
-- **Sky.jsx** — Instanced cloud rendering with night opacity.
+- **Background.jsx** — Parallax layered background with day/night colors, shader cloud streaks, and night stars.
 - **Grass.jsx** — Instanced grass blades with wind animation.
 - **Wildflowers.jsx** — Random flower instances on ground segments.
 - **Pebbles.jsx** — Ground detail pebbles.

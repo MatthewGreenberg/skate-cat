@@ -91,7 +91,6 @@ export function createRenderProfile({
     disableDustTrail: isConstrainedMobile,
     disableSpeedLines: false,
     disableWildflowers: false,
-    disableSkyClouds: false,
     grassBladeCountCap: isConstrainedMobile ? 1200 : null,
     disableGrassWind: false,
     backgroundLowCost: isConstrainedMobile,

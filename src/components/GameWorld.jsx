@@ -8,7 +8,6 @@ import KickflipSparks from './KickflipSparks'
 import DustTrail from './DustTrail'
 import AmbientParticles from './AmbientParticles'
 import Background from './Background'
-import Sky from './Sky'
 import DayNightController from './DayNightController'
 
 export function GameWorldWarmup({ active, onComplete }) {
@@ -50,7 +49,6 @@ export default function GameWorld({
   const showSpeedLines = !renderProfile.disableSpeedLines
   const showDustTrail = !renderProfile.disableDustTrail
   const showAmbientParticles = !renderProfile.disableAmbientParticles
-  const showSky = !renderProfile.disableSkyClouds
 
   return (
     <>
@@ -65,7 +63,6 @@ export default function GameWorld({
           renderProfile={renderProfile}
         />
         <Background active={sceneActive} renderProfile={renderProfile} />
-        {showSky && <Sky active={sceneActive} />}
         <group visible={visible}>
           <SkateCat
             trailTargetRef={trailTargetRef}
