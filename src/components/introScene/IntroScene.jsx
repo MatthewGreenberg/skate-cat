@@ -539,7 +539,7 @@ export default function IntroScene({
         />
       </group>
 
-      {/* GitHub Octocat — click to open github.com */}
+      {/* GitHub Octocat — click to open the Skate Cat repo */}
       {octocat.root && (
         <group
           position={[octocatCtrl.octocatPosX, octocatCtrl.octocatPosY, octocatCtrl.octocatPosZ]}
@@ -547,7 +547,7 @@ export default function IntroScene({
           scale={octocatCtrl.octocatScale}
           onClick={(e) => {
             e.stopPropagation()
-            window.open('https://github.com', '_blank', 'noopener,noreferrer')
+            window.open('https://github.com/MatthewGreenberg/skate-cat', '_blank', 'noopener,noreferrer')
           }}
           onPointerOver={(e) => {
             e.stopPropagation()
