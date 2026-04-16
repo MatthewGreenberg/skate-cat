@@ -107,7 +107,7 @@ export default function Ground({
     gradientStrength, edgeLineWidth, centerLineOpacity, vignetteStrength,
   } = useOptionalControls('Game', {
     Road: folder({
-      baseSpeed: { value: 10, min: 0, max: 30, step: 0.5 },
+      baseSpeed: { value: 9, min: 0, max: 30, step: 0.5 },
       roadColor: '#c49468',
       roadDetail: '#8B6B4A',
       edgeColor: '#F5E6D0',
@@ -174,7 +174,9 @@ export default function Ground({
       roadMaterial.uniforms.uGradientStrength.value = gradientStrength
       roadMaterial.uniforms.uEdgeLineWidth.value = edgeLineWidth
       roadMaterial.uniforms.uCenterLineOpacity.value = centerLineOpacity
-      roadMaterial.uniforms.uVignetteStrength.value = vignetteStrength
+      roadMaterial.uniforms.uVignetteStrength.value = renderProfile.isMobileDevice
+        ? vignetteStrength * 2.4
+        : vignetteStrength
     }
 
     // Lerp ground green color — warm tint at sunset/sunrise

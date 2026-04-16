@@ -2,7 +2,7 @@ import { createRef } from "react";
 import * as THREE from "three";
 
 const DEFAULT_TIMING_OFFSET_SECONDS = null;
-export const MAX_RUN_LIVES = 2;
+export const MAX_RUN_LIVES = 3;
 export const MAX_EXTRA_CAT_COUNT = 3;
 const debugParams = new URLSearchParams(window.location.search);
 const qualityParam = debugParams.get("quality") || "auto";

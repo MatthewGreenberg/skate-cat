@@ -55,6 +55,32 @@ body {
   100% { transform: translateX(-50%) translateY(0px) scale(1); opacity: 1; }
 }
 
+@keyframes gameHudIntro {
+  0% {
+    transform: translateX(-50%) translateY(-28px) scale(0.84);
+    opacity: 0;
+  }
+  58% {
+    transform: translateX(-50%) translateY(4px) scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) translateY(0px) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes gameHudSegmentIntro {
+  0% {
+    transform: translateY(-10px) scale(0.92);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0px) scale(1);
+    opacity: 1;
+  }
+}
+
 @keyframes hudJudgementPop {
   0% { transform: translateX(-50%) translateY(16px) rotate(2deg) scale(0.5); opacity: 0; }
   35% { transform: translateX(-50%) translateY(-4px) rotate(-1deg) scale(1.15); opacity: 1; }

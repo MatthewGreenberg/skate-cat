@@ -2,86 +2,93 @@ import { useEffect, useState, useRef } from 'react'
 import { gameState, MAX_RUN_LIVES } from '../store'
 import { BEAT_INTERVAL, getPerceivedMusicTime } from '../rhythm'
 
-const hudStyle = {
+const hudStyle = (isTouchDevice) => ({
   position: 'fixed',
-  top: '1rem',
+  top: isTouchDevice ? '0.6rem' : '1rem',
   left: '50%',
   transform: 'translateX(-50%)',
   display: 'flex',
   alignItems: 'center',
-  gap: '0.9rem',
-  padding: '0.55rem 1.2rem',
+  gap: isTouchDevice ? '0.55rem' : '0.9rem',
+  padding: isTouchDevice ? '0.35rem 0.8rem' : '0.55rem 1.2rem',
   borderRadius: '999px',
   background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.88), rgba(255, 160, 72, 0.88))',
-  border: '3px solid rgba(255, 255, 255, 0.35)',
+  border: `${isTouchDevice ? 2 : 3}px solid rgba(255, 255, 255, 0.35)`,
   boxShadow: '0 6px 24px rgba(255, 107, 53, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
   fontFamily: 'Knewave',
   color: '#fff',
   zIndex: 60,
   pointerEvents: 'none',
   letterSpacing: '0.04em',
-}
+  animation: 'gameHudIntro 520ms cubic-bezier(0.22, 1, 0.36, 1) both',
+  willChange: 'transform, opacity',
+})
 
-const dotRowStyle = {
+const hudSegmentIntroStyle = (delayMs = 0) => ({
+  animation: `gameHudSegmentIntro 420ms cubic-bezier(0.22, 1, 0.36, 1) ${delayMs}ms both`,
+  willChange: 'transform, opacity',
+})
+
+const dotRowStyle = (isTouchDevice) => ({
   display: 'flex',
   alignItems: 'center',
-  gap: '0.45rem',
-}
+  gap: isTouchDevice ? '0.3rem' : '0.45rem',
+})
 
-const scorePillStyle = {
+const scorePillStyle = (isTouchDevice) => ({
   display: 'flex',
   alignItems: 'center',
-  gap: '0.35rem',
-  padding: '0.2rem 0.75rem',
+  gap: isTouchDevice ? '0.25rem' : '0.35rem',
+  padding: isTouchDevice ? '0.15rem 0.5rem' : '0.2rem 0.75rem',
   borderRadius: '999px',
   background: 'rgba(0, 0, 0, 0.22)',
   border: '1px solid rgba(255, 255, 255, 0.12)',
-  fontSize: '1rem',
+  fontSize: isTouchDevice ? '0.75rem' : '1rem',
   letterSpacing: '0.06em',
   textShadow: '0 1px 4px rgba(0, 0, 0, 0.3)',
-}
+})
 
-const scoreLabelStyle = {
-  fontSize: '0.6rem',
+const scoreLabelStyle = (isTouchDevice) => ({
+  fontSize: isTouchDevice ? '0.5rem' : '0.6rem',
   fontFamily: 'Nunito, sans-serif',
   fontWeight: 800,
   letterSpacing: '0.12em',
   opacity: 0.65,
-}
+})
 
-const scoreNumStyle = {
-  fontSize: '1.05rem',
+const scoreNumStyle = (isTouchDevice) => ({
+  fontSize: isTouchDevice ? '0.8rem' : '1.05rem',
   letterSpacing: '0.04em',
-}
+})
 
-const multiplierBadgeStyle = {
-  padding: '0.12rem 0.45rem',
+const multiplierBadgeStyle = (isTouchDevice) => ({
+  padding: isTouchDevice ? '0.1rem 0.35rem' : '0.12rem 0.45rem',
   borderRadius: '999px',
   background: 'rgba(255, 255, 255, 0.14)',
   border: '1px solid rgba(255, 255, 255, 0.16)',
-  fontSize: '0.8rem',
+  fontSize: isTouchDevice ? '0.65rem' : '0.8rem',
   letterSpacing: '0.08em',
-}
+})
 
-const lifeRowStyle = {
+const lifeRowStyle = (isTouchDevice) => ({
   display: 'flex',
   alignItems: 'center',
-  gap: '0.35rem',
-}
+  gap: isTouchDevice ? '0.25rem' : '0.35rem',
+})
 
-const lifePillStyle = {
+const lifePillStyle = (isTouchDevice) => ({
   display: 'flex',
   alignItems: 'center',
-  gap: '0.25rem',
-  padding: '0.18rem 0.5rem',
+  gap: isTouchDevice ? '0.2rem' : '0.25rem',
+  padding: isTouchDevice ? '0.12rem 0.35rem' : '0.18rem 0.5rem',
   borderRadius: '999px',
   background: 'rgba(0, 0, 0, 0.18)',
   border: '1px solid rgba(255, 255, 255, 0.14)',
-}
+})
 
-const lifeDotStyle = (active) => ({
-  width: '0.7rem',
-  height: '0.7rem',
+const lifeDotStyle = (active, isTouchDevice) => ({
+  width: isTouchDevice ? '0.55rem' : '0.7rem',
+  height: isTouchDevice ? '0.55rem' : '0.7rem',
   borderRadius: '999px',
   background: active ? '#fff3d1' : 'rgba(255, 255, 255, 0.18)',
   boxShadow: active ? '0 0 10px rgba(255, 209, 102, 0.55)' : 'none',
@@ -117,10 +124,12 @@ const judgementToneStyles = {
   Sloppy: popToneStyles.Sloppy,
 }
 
-function getDotStyle(isActive, isAnchorBeat) {
+function getDotStyle(isActive, isAnchorBeat, isTouchDevice) {
+  const activeSize = isTouchDevice ? '1rem' : '1.3rem'
+  const idleSize = isTouchDevice ? '0.7rem' : '0.9rem'
   return {
-    width: isActive ? '1.3rem' : '0.9rem',
-    height: isActive ? '1.3rem' : '0.9rem',
+    width: isActive ? activeSize : idleSize,
+    height: isActive ? activeSize : idleSize,
     borderRadius: '999px',
     background: isActive ? '#fff' : isAnchorBeat ? 'rgba(255, 255, 255, 0.38)' : 'rgba(255, 255, 255, 0.2)',
     border: `2px solid ${isAnchorBeat ? 'rgba(255, 255, 255, 0.85)' : 'rgba(255, 255, 255, 0.55)'}`,
@@ -293,30 +302,31 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
           {judgementText}
         </div>
       )}
-      <div style={hudStyle}>
-        <div style={dotRowStyle}>
+      <div style={hudStyle(isTouchDevice)}>
+        <div style={{ ...dotRowStyle(isTouchDevice), ...hudSegmentIntroStyle(90) }}>
           {[0, 1, 2, 3].map((beat) => (
-            <span key={beat} style={getDotStyle(activeBeat === beat, beat === 1 || beat === 3)} />
+            <span key={beat} style={getDotStyle(activeBeat === beat, beat === 1 || beat === 3, isTouchDevice)} />
           ))}
         </div>
-        <div style={lifeRowStyle}>
-          <span style={scoreLabelStyle}>LIVES</span>
-          <div style={lifePillStyle}>
+        <div style={{ ...lifeRowStyle(isTouchDevice), ...hudSegmentIntroStyle(150) }}>
+          <span style={scoreLabelStyle(isTouchDevice)}>LIVES</span>
+          <div style={lifePillStyle(isTouchDevice)}>
             {Array.from({ length: maxLives }).map((_, index) => (
-              <span key={index} style={lifeDotStyle(index < remainingLives)} />
+              <span key={index} style={lifeDotStyle(index < remainingLives, isTouchDevice)} />
             ))}
           </div>
         </div>
         <div style={{
           width: '1px',
-          height: '1.2rem',
+          height: isTouchDevice ? '0.9rem' : '1.2rem',
           background: 'rgba(255, 255, 255, 0.2)',
           borderRadius: '999px',
+          ...hudSegmentIntroStyle(210),
         }} />
-        <div style={scorePillStyle}>
-          <span style={scoreLabelStyle}>SCORE</span>
-          <span style={scoreNumStyle}>{score}</span>
-          <span style={multiplierBadgeStyle}>x{multiplier}</span>
+        <div style={{ ...scorePillStyle(isTouchDevice), ...hudSegmentIntroStyle(270) }}>
+          <span style={scoreLabelStyle(isTouchDevice)}>SCORE</span>
+          <span style={scoreNumStyle(isTouchDevice)}>{score}</span>
+          <span style={multiplierBadgeStyle(isTouchDevice)}>x{multiplier}</span>
         </div>
       </div>
       {showPoints && pointsText && (

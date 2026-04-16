@@ -26,6 +26,8 @@ const bgFragmentShader = /* glsl */ `
   uniform float uHazeStrength;
   uniform float uCloudStreakStrength;
   uniform float uStarVisibility;
+  uniform float uStarIntensity;
+  uniform float uMoonIntensity;
   uniform float uNightFactor;
   uniform float uSkyOffset;
   uniform float uFarOffset;
@@ -134,15 +136,15 @@ const bgFragmentShader = /* glsl */ `
 
     float sunNightBlend = smoothstep(0.25, 0.75, uNightFactor);
     vec2 sunPos = vec2(0.7 - uSkyOffset * 0.025, horizonLine + 0.11);
-    vec2 moonPos = vec2(0.74 - uSkyOffset * 0.012, 0.7);
+    vec2 moonPos = vec2(0.62 - uSkyOffset * 0.01, 0.74);
     float sunDist = length(vec2(uv.x - sunPos.x, (uv.y - sunPos.y) * 1.35));
     float moonDist = length(vec2(uv.x - moonPos.x, (uv.y - moonPos.y) * 1.15));
     float sunDisc = 1.0 - smoothstep(0.045, 0.058, sunDist);
-    float moonDisc = 1.0 - smoothstep(0.055, 0.07, moonDist);
+    float moonDisc = 1.0 - smoothstep(0.07, 0.088, moonDist);
     float sunGlow = exp(-sunDist * 8.5) * 0.24;
-    float moonGlow = exp(-moonDist * 7.5) * 0.22;
+    float moonGlow = exp(-moonDist * 8.6) * 0.3;
     color += uSunColor * (sunGlow + sunDisc * 0.5) * (1.0 - sunNightBlend);
-    color += uMoonColor * (moonGlow + moonDisc * 0.7) * sunNightBlend;
+    color += uMoonColor * (moonGlow + moonDisc * 1.1) * sunNightBlend * uMoonIntensity;
 
     float streak1 = fbm(vec2((uv.x + uSkyOffset * 0.22) * 4.2, uv.y * 10.0 + 1.7));
     float streak2 = ridge(vec2((uv.x + uSkyOffset * 0.32) * 6.8 + 4.0, uv.y * 13.0 + 0.8));
@@ -153,7 +155,8 @@ const bgFragmentShader = /* glsl */ `
 
     float stars = starField(uv);
     stars *= smoothstep(horizonLine + 0.04, 0.46, uv.y) * uStarVisibility;
-    color += uStarColor * stars * (0.85 + uStarVisibility * 0.95);
+    float starBrightnessComp = mix(1.0, clamp(1.0 / max(uBrightness, 0.001), 1.0, 2.2), uStarVisibility * 0.75);
+    color += uStarColor * stars * uStarIntensity * (1.0 + uStarVisibility * 0.8) * starBrightnessComp;
 
     float sep = uLayerSeparation;
 
@@ -246,7 +249,9 @@ export default function Background({ active = true, renderProfile = {} }) {
     nightMidColor,
     nightNearColor,
     moonColor,
+    moonIntensity,
     starColor,
+    starIntensity,
   } = useOptionalControls('Game', {
     'Background Night': folder({
       nightSkyTop: '#09112b',
@@ -257,7 +262,9 @@ export default function Background({ active = true, renderProfile = {} }) {
       nightMidColor: '#151b32',
       nightNearColor: '#0d1020',
       moonColor: '#d9e6ff',
+      moonIntensity: { value: 1.75, min: 0, max: 4, step: 0.01 },
       starColor: '#9ed3ff',
+      starIntensity: { value: 2.5, min: 0, max: 3.5, step: 0.01 },
     }, { collapsed: true }),
   }, [])
 
@@ -270,6 +277,8 @@ export default function Background({ active = true, renderProfile = {} }) {
     uHazeStrength: { value: 0.14 },
     uCloudStreakStrength: { value: 0.08 },
     uStarVisibility: { value: 0 },
+    uStarIntensity: { value: 2.5 },
+    uMoonIntensity: { value: 1.75 },
     uNightFactor: { value: 0 },
     uSkyOffset: { value: 0 },
     uFarOffset: { value: 0 },
@@ -333,6 +342,7 @@ export default function Background({ active = true, renderProfile = {} }) {
       nightFactor
     )
     uniforms.uStarVisibility.value = THREE.MathUtils.smoothstep(nightFactor, 0.18, 0.78)
+    uniforms.uStarIntensity.value = starIntensity
     uniforms.uNightFactor.value = nightFactor
     uniforms.uSkyOffset.value = sharedOffset * (0.04 + parallaxStrength * 0.02) * parallaxScale
     uniforms.uFarOffset.value = sharedOffset * (0.11 + parallaxStrength * 0.06) * parallaxScale
@@ -350,6 +360,7 @@ export default function Background({ active = true, renderProfile = {} }) {
     lerpDayNightColor(uniforms.uHazeColor.value, dayHorizon, nightHorizon, nightFactor, '#ffab73', warmFactor)
     lerpDayNightColor(uniforms.uSunColor.value, '#ffd17a', '#89a6ff', nightFactor, '#ff9f6a', warmFactor)
     uniforms.uMoonColor.value.set(moonColor)
+    uniforms.uMoonIntensity.value = moonIntensity
     uniforms.uStarColor.value.set(starColor)
 
     camera.getWorldDirection(dir)
