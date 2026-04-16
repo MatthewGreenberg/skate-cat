@@ -424,12 +424,6 @@ export default function IntroScene({
     if (!image?.width || !image?.height) return 0.72
     return image.width / image.height
   }, [posterTexture])
-  const phishPosterAspect = useMemo(() => {
-    const image = phishPosterTexture?.image
-    if (!image?.width || !image?.height) return 0.6
-    return image.width / image.height
-  }, [phishPosterTexture])
-
   useEffect(() => {
     for (const tex of [posterTexture, phishPosterTexture]) {
       if (!tex) continue
@@ -724,7 +718,6 @@ export default function IntroScene({
         posterTexture={posterTexture}
         posterAspect={posterAspect}
         secondaryPosterTexture={phishPosterTexture}
-        secondaryPosterAspect={phishPosterAspect}
         posterFadeTargetRef={posterFadeTargetRef}
         posterVisible={posterCtrl.posterVisible}
         posterPosition={[posterCtrl.posterPosX, posterCtrl.posterPosY, posterCtrl.posterPosZ]}

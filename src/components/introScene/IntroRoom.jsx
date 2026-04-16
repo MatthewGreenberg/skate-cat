@@ -2,7 +2,7 @@
  * Procedural room shell: wood floor layers, rug, contact shadows, back/side walls, ceiling, floor lamp, wall art.
  */
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { RUG_COLOR } from './constants'
@@ -45,20 +45,85 @@ export function IntroRoom({
   posterMaxWidth = 1.08,
   posterMaxHeight = 1.48,
   secondaryPosterTexture,
-  secondaryPosterAspect = 0.72,
   posterFadeTargetRef,
   onPosterClick,
   screenWorld,
   tvPanelCenterY,
   backWallZ,
 }) {
-  const primaryPosterMatRef = useRef()
-  const secondaryPosterMatRef = useRef()
+  const posterMeshRef = useRef()
   const glareMatRef = useRef()
   const posterPulseGroupRef = useRef()
   const posterFadeCurrentRef = useRef(0)
   const posterLastTargetRef = useRef(0)
   const posterPulseRef = useRef(0)
+
+  const posterMaterialRef = useRef(null)
+  if (posterMaterialRef.current === null) {
+    posterMaterialRef.current = new THREE.ShaderMaterial({
+    uniforms: {
+      uTexA: { value: null },
+      uTexB: { value: null },
+      uProgress: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uTexA;
+      uniform sampler2D uTexB;
+      uniform float uProgress;
+      varying vec2 vUv;
+
+      float hash21(vec2 p) {
+        p = fract(p * vec2(234.34, 435.345));
+        p += dot(p, p + 34.23);
+        return fract(p.x * p.y);
+      }
+
+      void main() {
+        float p = clamp(uProgress, 0.0, 1.0);
+        vec3 colA = texture2D(uTexA, vUv).rgb;
+        vec3 colB = texture2D(uTexB, vUv).rgb;
+
+        // Chunky dither dissolve + faint scanlines
+        float noise = hash21(floor(vUv * 56.0));
+        float scan = sin(vUv.y * 380.0) * 0.5 + 0.5;
+        float pixelValue = noise * 0.65 + scan * 0.35;
+        float threshold = p * 1.3 - 0.15;
+        float edge = smoothstep(-0.10, 0.10, threshold - pixelValue);
+
+        vec3 col = mix(colA, colB, edge);
+
+        // Bright sweep line tracks progress
+        float sweepDist = abs(vUv.y - p);
+        float activeWindow = smoothstep(0.02, 0.12, p) * smoothstep(0.98, 0.88, p);
+        float sweep = smoothstep(0.035, 0.0, sweepDist) * activeWindow;
+        col += vec3(0.85, 0.6, 1.1) * sweep;
+
+        // Chromatic split near the sweep
+        float splitAmount = sweep * 0.012;
+        float rShift = texture2D(uTexB, vUv + vec2(splitAmount, 0.0)).r;
+        float bShift = texture2D(uTexB, vUv - vec2(splitAmount, 0.0)).b;
+        col.r = mix(col.r, rShift, edge * sweep);
+        col.b = mix(col.b, bShift, edge * sweep);
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  })
+  }
+  useEffect(() => {
+    const mat = posterMaterialRef.current
+    if (!mat) return
+    mat.uniforms.uTexA.value = posterTexture ?? null
+    mat.uniforms.uTexB.value = secondaryPosterTexture ?? null
+    if (posterMeshRef.current) posterMeshRef.current.material = mat
+  }, [posterTexture, secondaryPosterTexture])
 
   useFrame((_, delta) => {
     const target = posterFadeTargetRef?.current ?? 0
@@ -67,34 +132,25 @@ export function IntroRoom({
       posterPulseRef.current = 1
     }
 
-    // Exponential ease toward target — starts fast, slows near landing.
     const current = posterFadeCurrentRef.current
     const diff = target - current
     let next = current
     if (Math.abs(diff) > 0.0005) {
-      const lerpAmt = 1 - Math.exp(-delta * 9)
-      next = current + diff * lerpAmt
+      next = current + diff * (1 - Math.exp(-delta * 7))
     } else {
       next = target
     }
     posterFadeCurrentRef.current = next
+    posterMaterialRef.current.uniforms.uProgress.value = next
 
-    // Eased opacity for a snappier crossfade.
-    const secondaryOpacity = next * next * (3 - 2 * next) // smoothstep
-    const primaryOpacity = 1 - secondaryOpacity
-    if (primaryPosterMatRef.current) primaryPosterMatRef.current.opacity = primaryOpacity
-    if (secondaryPosterMatRef.current) secondaryPosterMatRef.current.opacity = secondaryOpacity
-    if (glareMatRef.current) glareMatRef.current.opacity = 0.06 * primaryOpacity
+    if (glareMatRef.current) glareMatRef.current.opacity = 0.06 * (1 - next)
 
-    // Pulse: decays from 1 to 0 over ~0.45s; drives scale + z pop.
     posterPulseRef.current = Math.max(0, posterPulseRef.current - delta * 2.2)
     const pulse = posterPulseRef.current
     if (posterPulseGroupRef.current) {
       const wave = Math.sin((1 - pulse) * Math.PI)
-      const scalePop = 1 + wave * 0.085
-      posterPulseGroupRef.current.scale.setScalar(scalePop)
-      posterPulseGroupRef.current.position.z = wave * 0.045
-      posterPulseGroupRef.current.rotation.z = wave * 0.06 * (1 - 2 * next)
+      posterPulseGroupRef.current.scale.setScalar(1 + wave * 0.06)
+      posterPulseGroupRef.current.position.z = wave * 0.035
     }
   })
   const safePosterAspect = Math.max(0.01, getFinite(posterAspect, 0.72))
@@ -113,13 +169,6 @@ export function IntroRoom({
   if (posterHeight > scaledPosterMaxHeight) {
     posterHeight = scaledPosterMaxHeight
     posterWidth = posterHeight * safePosterAspect
-  }
-  const safeSecondaryAspect = Math.max(0.01, getFinite(secondaryPosterAspect, safePosterAspect))
-  let secondaryPosterWidth = scaledPosterMaxWidth
-  let secondaryPosterHeight = secondaryPosterWidth / safeSecondaryAspect
-  if (secondaryPosterHeight > scaledPosterMaxHeight) {
-    secondaryPosterHeight = scaledPosterMaxHeight
-    secondaryPosterWidth = secondaryPosterHeight * safeSecondaryAspect
   }
   const framePadding = 0.05
   const mountWidth = posterWidth + framePadding * 2
@@ -206,40 +255,12 @@ export function IntroRoom({
           <group position={safePosterPosition} rotation={[0, 0, safePosterRotationZ]}>
             <group ref={posterPulseGroupRef}>
               <mesh
+                ref={posterMeshRef}
                 position={[0, 0, 0.002]}
                 onClick={onPosterClick ? (e) => { e.stopPropagation(); onPosterClick() } : undefined}
               >
                 <planeGeometry args={[posterWidth, posterHeight]} />
-                <meshStandardMaterial
-                  ref={primaryPosterMatRef}
-                  key={posterTexture?.uuid ?? 'poster-placeholder'}
-                  color={posterTexture ? '#ffffff' : '#d9c6a3'}
-                  map={posterTexture ?? null}
-                  roughness={0.9}
-                  metalness={0}
-                  envMapIntensity={0.12}
-                  transparent
-                />
               </mesh>
-              {secondaryPosterTexture && (
-                <mesh
-                  position={[0, 0, 0.0035]}
-                  onClick={onPosterClick ? (e) => { e.stopPropagation(); onPosterClick() } : undefined}
-                >
-                  <planeGeometry args={[secondaryPosterWidth, secondaryPosterHeight]} />
-                  <meshStandardMaterial
-                    ref={secondaryPosterMatRef}
-                    key={secondaryPosterTexture?.uuid ?? 'poster-secondary'}
-                    color="#ffffff"
-                    map={secondaryPosterTexture}
-                    roughness={0.9}
-                    metalness={0}
-                    envMapIntensity={0.12}
-                    transparent
-                    opacity={0}
-                  />
-                </mesh>
-              )}
               <mesh position={[0.02, 0.03, 0.006]}>
                 <planeGeometry args={[posterWidth * 0.96, posterHeight * 0.18]} />
                 <meshBasicMaterial
