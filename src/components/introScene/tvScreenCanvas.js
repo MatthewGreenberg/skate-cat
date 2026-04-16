@@ -580,11 +580,12 @@ function drawBootScreen(ctx, width, height, {
 function drawTitleScreen(ctx, width, height, { highScore = 0, highScoresHovered = false }) {
 
 
-  drawHudPill(ctx, width * 0.16, height * 0.09, 160, 56, "1UP", {
+  drawHudPill(ctx, width * 0.16, height * 0.09, 160, 56, "\u2665 \u2665 \u2665", {
     fill: "rgba(54, 15, 64, 0.94)",
-    stroke: "#7cf7ff",
-    text: "#dbfdff",
-    glow: "rgba(124, 247, 255, 0.5)",
+    stroke: "#ff81b5",
+    text: "#ffb0cf",
+    glow: "rgba(255, 129, 181, 0.5)",
+    font: '900 30px "Nunito", sans-serif',
   });
   const hiScoreLabel = highScore > 0 ? `HI-SCORE ${highScore}` : "HI-SCORE ---";
   drawHudPill(ctx, width * 0.5, height * 0.09, 320, 56, hiScoreLabel, {

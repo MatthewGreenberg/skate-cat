@@ -2,11 +2,12 @@
  * CRT TV room intro: loads TV / cat / chair GLTFs, Leva tuning, animated lights, procedural room, curved UI screen + start.
  */
 
-import { useEffect, useMemo, useRef } from 'react'
-import { useGLTF, useTexture } from '@react-three/drei'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Center, Text3D, useGLTF, useTexture } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
+import helvetikerBoldUrl from 'three/examples/fonts/helvetiker_bold.typeface.json?url'
 import { useOptionalControls } from '../../lib/debugControls'
 import { configureKTX2Loader } from '../../lib/ktx2Loader'
 import { createContactShadowTexture } from '../../lib/toonMaterials'
@@ -21,6 +22,13 @@ import { IntroRoom } from './IntroRoom'
 import { prepareAsset } from './prepareAsset'
 import { createFloorTexture, createWallTexture } from './textures'
 import { TvScreen } from './TvScreen'
+
+const CAT_BREATH_DURATION = 1.15
+const CAT_BREATH_SCALE_AMOUNT = 0.045
+const MEOW_BURST_DURATION = 0.9
+const CARTRIDGE_EJECT_DURATION = 0.7
+const MAX_CONCURRENT_MEOWS = 8
+const MEOW_SLOT_INDICES = Array.from({ length: MAX_CONCURRENT_MEOWS }, (_, index) => index)
 
 export default function IntroScene({
   onStart,
@@ -51,6 +59,29 @@ export default function IntroScene({
   const sweepSpotlightTargetRef = useRef()
   const boardGlowRef = useRef()
   const shadowTargetRef = useRef()
+  const catGroupRef = useRef()
+  const catBreathElapsedRef = useRef(CAT_BREATH_DURATION)
+  const meowAnchorRefs = useRef([])
+  const meowBillboardRefs = useRef([])
+  const meowMaterialRefs = useRef([])
+  const meowSpawnCountRef = useRef(0)
+  const meowBurstsRef = useRef(
+    MEOW_SLOT_INDICES.map(() => ({
+      elapsed: MEOW_BURST_DURATION,
+      lateral: 0,
+      rise: 0,
+      depth: 0,
+      swayPhase: 0,
+      twist: 0,
+    }))
+  )
+  const chairGroupRef = useRef()
+  const chairSpinRef = useRef({ progress: 0, target: 0 })
+  const cartridgeGroupRef = useRef()
+  const cartridgeEjectRef = useRef({ progress: 1, active: false })
+  const crtGlitchRef = useRef(0)
+  const skateboardGroupRef = useRef()
+  const kickflipRef = useRef({ progress: 1, active: false })
   const { scene: tvScene } = useGLTF(
     '/models/intro/crt_tv.glb',
     false,
@@ -93,6 +124,37 @@ export default function IntroScene({
     normal: '/textures/wood/normal.webp',
   })
   const posterTexture = useTexture('/textures/poster.webp')
+  const phishPosterTexture = useTexture('/textures/phish.webp')
+  const [posterMode, setPosterMode] = useState('original')
+  const posterModeRef = useRef(posterMode)
+  const posterFadeTargetRef = useRef(0)
+  useEffect(() => {
+    posterModeRef.current = posterMode
+    posterFadeTargetRef.current = posterMode === 'phish' ? 1 : 0
+  }, [posterMode])
+  const phishAudioRef = useRef(null)
+  useEffect(() => {
+    if (typeof Audio === 'undefined') return undefined
+    const audio = new Audio('/audio/sfx/suzy.mp3')
+    audio.volume = 0.5
+    phishAudioRef.current = audio
+    return () => {
+      audio.pause()
+      phishAudioRef.current = null
+    }
+  }, [])
+  const handlePosterClick = useCallback(() => {
+    const prev = posterModeRef.current
+    const next = prev === 'phish' ? 'original' : 'phish'
+    setPosterMode(next)
+    if (prev === 'original' && next === 'phish') {
+      const audio = phishAudioRef.current
+      if (audio) {
+        audio.currentTime = 0
+        audio.play().catch(() => {})
+      }
+    }
+  }, [])
   const floorTexture = useMemo(() => createFloorTexture(), [])
   const wallTexture = useMemo(() => createWallTexture(), [])
   const floorY = 0
@@ -260,6 +322,46 @@ export default function IntroScene({
     const depth = Math.max(catWorldSize.z * 1.95, 1.15)
     return [width, depth]
   }, [catWorldSize])
+  const catMouthLocalPosition = useMemo(
+    () => new THREE.Vector3(
+      cat.center.x + cat.size.x * 0.02,
+      cat.min.y + cat.size.y * 0.72,
+      cat.max.z + cat.size.z * 0.22
+    ),
+    [cat]
+  )
+  const meowTextSize = cat.size.y * 0.14
+  const meowTextHeight = cat.size.y * 0.03
+  const meowBevelSize = cat.size.y * 0.005
+  const meowBevelThickness = cat.size.y * 0.004
+  const spawnMeowBurst = () => {
+    const bursts = meowBurstsRef.current
+    const spawnCount = meowSpawnCountRef.current++
+    const patternIndex = spawnCount % 5
+    const lateralPattern = [-1, -0.45, 0, 0.45, 1]
+    const risePattern = [0.02, 0.08, 0.05, 0.11, 0.07]
+    const depthPattern = [0, 0.02, 0.04, 0.06, 0.08]
+    const twistPattern = [-0.2, -0.08, 0, 0.08, 0.2]
+
+    let slotIndex = bursts.findIndex((burst) => burst.elapsed >= MEOW_BURST_DURATION)
+    if (slotIndex === -1) {
+      slotIndex = bursts.reduce(
+        (oldestIndex, burst, index, list) => (
+          burst.elapsed > list[oldestIndex].elapsed ? index : oldestIndex
+        ),
+        0
+      )
+    }
+
+    bursts[slotIndex] = {
+      elapsed: 0,
+      lateral: lateralPattern[patternIndex],
+      rise: risePattern[patternIndex],
+      depth: depthPattern[patternIndex],
+      swayPhase: spawnCount * 0.8,
+      twist: twistPattern[patternIndex],
+    }
+  }
   const catLightShadowDirection = useMemo(() => {
     const offset = new THREE.Vector3(
       catPosition.x - screenWorld.x,
@@ -322,26 +424,31 @@ export default function IntroScene({
     if (!image?.width || !image?.height) return 0.72
     return image.width / image.height
   }, [posterTexture])
+  const phishPosterAspect = useMemo(() => {
+    const image = phishPosterTexture?.image
+    if (!image?.width || !image?.height) return 0.6
+    return image.width / image.height
+  }, [phishPosterTexture])
 
   useEffect(() => {
-    if (!posterTexture) return
-
-    /* eslint-disable react-hooks/immutability -- Three.js textures are mutable GPU resources configured after load. */
-    posterTexture.colorSpace = THREE.SRGBColorSpace
-    posterTexture.wrapS = THREE.ClampToEdgeWrapping
-    posterTexture.wrapT = THREE.ClampToEdgeWrapping
-    posterTexture.minFilter = THREE.LinearMipmapLinearFilter
-    posterTexture.magFilter = THREE.LinearFilter
-    posterTexture.anisotropy = Math.min(gl.capabilities.getMaxAnisotropy(), 8)
-    posterTexture.needsUpdate = true
-    /* eslint-enable react-hooks/immutability */
-  }, [gl, posterTexture])
+    for (const tex of [posterTexture, phishPosterTexture]) {
+      if (!tex) continue
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.wrapS = THREE.ClampToEdgeWrapping
+      tex.wrapT = THREE.ClampToEdgeWrapping
+      tex.minFilter = THREE.LinearMipmapLinearFilter
+      tex.magFilter = THREE.LinearFilter
+      tex.anisotropy = Math.min(gl.capabilities.getMaxAnisotropy(), 8)
+      tex.needsUpdate = true
+    }
+  }, [gl, posterTexture, phishPosterTexture])
 
   useEffect(() => {
     return () => {
       catContactShadowTexture?.dispose()
       floorTexture?.dispose()
       wallTexture?.dispose()
+      document.body.style.cursor = 'auto'
     }
   }, [catContactShadowTexture, floorTexture, wallTexture])
 
@@ -402,15 +509,32 @@ export default function IntroScene({
   }, [])
 
   // Flicker TV/accent lights; orbit hero + sweep spots; follow cat/board for shadows and glow
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const t = state.clock.elapsedTime
     const roomPower = THREE.MathUtils.lerp(0.16, 1, bootVisualMix)
     const accentPower = THREE.MathUtils.lerp(0.12, 1, bootVisualMix)
+    const cartridgePulse = cartridgeEjectRef.current
+    if (cartridgePulse.active) {
+      cartridgePulse.progress = Math.min(1, cartridgePulse.progress + delta / CARTRIDGE_EJECT_DURATION)
+      if (cartridgePulse.progress >= 1) {
+        cartridgePulse.progress = 1
+        cartridgePulse.active = false
+      }
+    }
+    const cartridgeProgress = cartridgePulse.progress
+    const cartridgePop = Math.sin(cartridgeProgress * Math.PI)
+    const cartridgeRattle = Math.sin(cartridgeProgress * Math.PI * 9) * Math.pow(1 - cartridgeProgress, 1.7)
+    const cartridgeGlitchMix = cartridgePop * 0.65 + Math.abs(cartridgeRattle) * 0.35
+    crtGlitchRef.current = cartridgeGlitchMix
     if (tvGlowRef.current) {
-      tvGlowRef.current.intensity = (21.5 + Math.sin(t * 8.4) * 1.2 + Math.sin(t * 15.5) * 0.5) * roomPower
+      const baseGlow = 21.5 + Math.sin(t * 8.4) * 1.2 + Math.sin(t * 15.5) * 0.5
+      const glitchGlow = 1 + cartridgeGlitchMix * (0.5 + Math.sin(t * 35) * 0.18)
+      tvGlowRef.current.intensity = baseGlow * roomPower * glitchGlow
     }
     if (accentLightRef.current) {
-      accentLightRef.current.intensity = (6.4 + Math.sin(t * 2.6) * 0.55) * accentPower
+      const baseAccent = 6.4 + Math.sin(t * 2.6) * 0.55
+      const glitchAccent = 1 + cartridgeGlitchMix * (0.22 + Math.sin(t * 28) * 0.1)
+      accentLightRef.current.intensity = baseAccent * accentPower * glitchAccent
     }
     if (heroSpotlightRef.current) {
       heroSpotlightRef.current.position.set(
@@ -445,6 +569,113 @@ export default function IntroScene({
     if (boardGlowRef.current) {
       boardGlowRef.current.position.set(boardAnchor.x, boardAnchor.y + 0.18, boardAnchor.z + 0.02)
       boardGlowRef.current.intensity = (motionFxCtrl.boardGlowIntensity + (Math.sin(t * 3.4) * 0.5 + 0.5) * 0.9) * roomPower
+    }
+    if (catGroupRef.current) {
+      catBreathElapsedRef.current = Math.min(catBreathElapsedRef.current + delta, CAT_BREATH_DURATION)
+
+      const breathProgress = catBreathElapsedRef.current / CAT_BREATH_DURATION
+      const breathWave = Math.sin(breathProgress * Math.PI * 2)
+      const breathEnvelope = Math.pow(1 - breathProgress, 1.4)
+      const animatedScale = catCtrl.catScale * (1 + breathWave * breathEnvelope * CAT_BREATH_SCALE_AMOUNT)
+
+      // Keep the cat planted on the floor while the click pulse scales it.
+      catGroupRef.current.position.set(
+        catPosition.x,
+        catPosition.y - cat.min.y * (animatedScale - catCtrl.catScale),
+        catPosition.z
+      )
+      catGroupRef.current.scale.setScalar(animatedScale)
+    }
+    for (const index of MEOW_SLOT_INDICES) {
+      const burst = meowBurstsRef.current[index]
+      const anchor = meowAnchorRefs.current[index]
+      const billboard = meowBillboardRefs.current[index]
+      const material = meowMaterialRefs.current[index]
+
+      if (!burst || !anchor || !billboard) continue
+
+      burst.elapsed = Math.min(burst.elapsed + delta, MEOW_BURST_DURATION)
+      const isMeowActive = burst.elapsed < MEOW_BURST_DURATION
+      anchor.visible = isMeowActive
+
+      if (isMeowActive) {
+        const progress = burst.elapsed / MEOW_BURST_DURATION
+        const eased = 1 - Math.pow(1 - progress, 3)
+        const pop = Math.sin(progress * Math.PI)
+        const driftX = (
+          burst.lateral * cat.size.x * (0.018 + eased * 0.12)
+          + Math.sin(progress * 9 + burst.swayPhase) * cat.size.x * 0.01
+        )
+        const driftY = cat.size.y * (0.04 + burst.rise + eased * 0.2)
+        const driftZ = -cat.size.z * (0.02 + burst.depth + eased * 0.18)
+
+        anchor.position.set(
+          catMouthLocalPosition.x + driftX,
+          catMouthLocalPosition.y + driftY,
+          catMouthLocalPosition.z + driftZ
+        )
+        billboard.lookAt(camera.position)
+        billboard.rotateZ(burst.twist + eased * 0.14 * Math.sign(burst.lateral || 1))
+        billboard.scale.setScalar(0.52 + pop * 0.54)
+
+        if (material) {
+          material.opacity = Math.min(1, pop * 1.35)
+          material.emissiveIntensity = 0.8 + pop * 1.15
+        }
+      } else if (material) {
+        material.opacity = 0
+      }
+    }
+    const spin = chairSpinRef.current
+    const remaining = spin.target - spin.progress
+    if (remaining > 0) {
+      const velocity = Math.max(2.5, remaining * 3.2)
+      spin.progress = Math.min(spin.target, spin.progress + delta * velocity)
+    }
+    if (chairGroupRef.current) {
+      chairGroupRef.current.rotation.y = chairCtrl.chairRotY + spin.progress
+    }
+    if (cartridgeGroupRef.current) {
+      cartridgeGroupRef.current.position.set(
+        cartridgeCtrl.cartridgePosX + cartridgeRattle * 0.018,
+        floorY + cartridgeCtrl.cartridgePosY + cartridgePop * 0.16 + Math.abs(cartridgeRattle) * 0.028,
+        cartridgeCtrl.cartridgePosZ - cartridgePop * 0.08
+      )
+      cartridgeGroupRef.current.rotation.set(
+        cartridgeCtrl.cartridgeRotX - cartridgePop * 0.72 + cartridgeRattle * 0.08,
+        cartridgeCtrl.cartridgeRotY + cartridgeRattle * 0.3,
+        cartridgeCtrl.cartridgeRotZ + cartridgePop * 0.28
+      )
+      cartridgeGroupRef.current.scale.setScalar(
+        cartridgeCtrl.cartridgeScale * (1 + cartridgePop * 0.09)
+      )
+    }
+    if (catGroupRef.current) {
+      catGroupRef.current.rotation.y = catCtrl.catRotY + spin.progress
+    }
+    if (skateboardGroupRef.current) {
+      const kf = kickflipRef.current
+      if (kf.active) {
+        kf.progress = Math.min(1, kf.progress + delta * 2)
+        if (kf.progress >= 1) {
+          kf.progress = 1
+          kf.active = false
+        }
+      }
+      const p = kf.progress
+      const heightBump = Math.sin(p * Math.PI) * 0.28
+      const flipAngle = p * Math.PI * 2
+      const grp = skateboardGroupRef.current
+      grp.position.set(
+        skateboardPosition[0],
+        skateboardPosition[1] + heightBump,
+        skateboardPosition[2]
+      )
+      grp.rotation.set(
+        skateboardRotation[0],
+        skateboardRotation[1],
+        skateboardRotation[2] + flipAngle
+      )
     }
   })
 
@@ -492,23 +723,33 @@ export default function IntroScene({
         lampCtrl={lampCtrl}
         posterTexture={posterTexture}
         posterAspect={posterAspect}
+        secondaryPosterTexture={phishPosterTexture}
+        secondaryPosterAspect={phishPosterAspect}
+        posterFadeTargetRef={posterFadeTargetRef}
         posterVisible={posterCtrl.posterVisible}
         posterPosition={[posterCtrl.posterPosX, posterCtrl.posterPosY, posterCtrl.posterPosZ]}
         posterRotationZ={posterCtrl.posterRotZ}
         posterScale={posterCtrl.posterScale}
         posterMaxWidth={posterCtrl.posterMaxWidth}
         posterMaxHeight={posterCtrl.posterMaxHeight}
+        onPosterClick={handlePosterClick}
       />
 
-      {/* Chair GLTF */}
-      <primitive
-        object={chair.root}
+      {/* Chair GLTF — click to spin */}
+      <group
+        ref={chairGroupRef}
         position={[chairCtrl.chairPosX, floorY + chairCtrl.chairPosY - chair.min.y * chairCtrl.chairScale, chairCtrl.chairPosZ]}
         rotation={[0, chairCtrl.chairRotY, 0]}
-        scale={chairCtrl.chairScale}
-      />
+        onClick={(e) => {
+          e.stopPropagation()
+          chairSpinRef.current.target += Math.PI * 2
+        }}
+      >
+        <primitive object={chair.root} scale={chairCtrl.chairScale} />
+      </group>
 
       <group
+        ref={cartridgeGroupRef}
         position={[
           cartridgeCtrl.cartridgePosX,
           floorY + cartridgeCtrl.cartridgePosY,
@@ -520,6 +761,17 @@ export default function IntroScene({
           cartridgeCtrl.cartridgeRotZ,
         ]}
         scale={cartridgeCtrl.cartridgeScale}
+        onClick={(event) => {
+          event.stopPropagation()
+          cartridgeEjectRef.current = { progress: 0, active: true }
+        }}
+        onPointerOver={(event) => {
+          event.stopPropagation()
+          document.body.style.cursor = 'pointer'
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = 'auto'
+        }}
       >
         <primitive
           object={cartridge.root}
@@ -527,11 +779,18 @@ export default function IntroScene({
         />
       </group>
 
-      {/* Skateboard on floor */}
+      {/* Skateboard — click to kickflip */}
       <group
+        ref={skateboardGroupRef}
         position={skateboardPosition}
         rotation={skateboardRotation}
         scale={skateboardScale}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (!kickflipRef.current.active) {
+            kickflipRef.current = { progress: 0, active: true }
+          }
+        }}
       >
         <primitive
           object={skateboard.root}
@@ -615,18 +874,79 @@ export default function IntroScene({
           leaderboards={leaderboards}
           leaderboardTab={leaderboardTab}
           initialsEntry={initialsEntry}
+          crtGlitchRef={crtGlitchRef}
           renderProfile={renderProfile}
         />
       </group>
 
       {/* Maxwell cat GLTF (separate from TV group) */}
       {cat.root && (
-        <primitive
-          object={cat.root}
+        <group
+          ref={catGroupRef}
           position={catPosition.toArray()}
           rotation={[catCtrl.catRotX, catCtrl.catRotY, catCtrl.catRotZ]}
           scale={catCtrl.catScale}
-        />
+          onClick={(event) => {
+            event.stopPropagation()
+            catBreathElapsedRef.current = 0
+            spawnMeowBurst()
+          }}
+          onPointerOver={(event) => {
+            event.stopPropagation()
+            document.body.style.cursor = 'pointer'
+          }}
+          onPointerOut={() => {
+            document.body.style.cursor = 'auto'
+          }}
+        >
+          <primitive
+            object={cat.root}
+          />
+          {MEOW_SLOT_INDICES.map((index) => (
+            <group
+              key={index}
+              ref={(node) => {
+                meowAnchorRefs.current[index] = node
+              }}
+              visible={false}
+            >
+              <group
+                ref={(node) => {
+                  meowBillboardRefs.current[index] = node
+                }}
+              >
+                <Center>
+                  <Text3D
+                    font={helvetikerBoldUrl}
+                    size={meowTextSize}
+                    height={meowTextHeight}
+                    curveSegments={8}
+                    bevelEnabled
+                    bevelSize={meowBevelSize}
+                    bevelThickness={meowBevelThickness}
+                    bevelSegments={4}
+                    castShadow
+                  >
+                    MEOW
+                    <meshStandardMaterial
+                      ref={(node) => {
+                        meowMaterialRefs.current[index] = node
+                      }}
+                      color="#fff8d6"
+                      emissive="#ff8c61"
+                      emissiveIntensity={0}
+                      roughness={0.28}
+                      metalness={0.08}
+                      transparent
+                      opacity={0}
+                      depthWrite={false}
+                    />
+                  </Text3D>
+                </Center>
+              </group>
+            </group>
+          ))}
+        </group>
       )}
 
     </>
@@ -635,3 +955,4 @@ export default function IntroScene({
 
 useGLTF.preload('/models/cat/scene.gltf')
 useTexture.preload('/textures/poster.webp')
+useTexture.preload('/textures/phish.webp')

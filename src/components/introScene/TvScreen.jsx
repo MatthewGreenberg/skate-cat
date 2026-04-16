@@ -51,6 +51,7 @@ export function TvScreen({
   leaderboards = { daily: [], weekly: [], alltime: [] },
   leaderboardTab = 'alltime',
   initialsEntry = null,
+  crtGlitchRef = null,
   renderProfile = {},
 }) {
   const [hoveredAction, setHoveredAction] = useState(null)
@@ -302,11 +303,17 @@ export function TvScreen({
     }
     const uniforms = gpu.material.uniforms
     const c = crtRef.current
+    const crtGlitch = THREE.MathUtils.clamp(crtGlitchRef?.current ?? 0, 0, 1)
+    const glitchFlipIntensity = crtGlitch * (0.82 + 0.18 * Math.sin(state.clock.elapsedTime * 44))
+    const glitchNoise = glitchFlipIntensity * 0.82
+    const glitchDim = 1 - glitchFlipIntensity * 0.78
+    const glitchAberration = glitchFlipIntensity * 0.03
+
     uniforms.uTime.value = state.clock.elapsedTime
     uniforms.uHover.value = hoveredAction ? 1 : 0
-    uniforms.uWarp.value = c.warp
-    uniforms.uAberration.value = c.aberration
-    uniforms.uEdgeAberration.value = c.edgeAberration
+    uniforms.uWarp.value = c.warp + glitchFlipIntensity * 0.003
+    uniforms.uAberration.value = c.aberration + glitchAberration
+    uniforms.uEdgeAberration.value = c.edgeAberration + glitchFlipIntensity * 0.034
     uniforms.uHoverBoost.value = c.hoverBoost
     // Power-on effect: ramp brightness, boost scanlines and noise during warm-up
     const pwr = powerOnRef.current
@@ -321,18 +328,18 @@ export function TvScreen({
     const flipNoise = flipIntensity * 0.7
     const flipDim = 1 - flipIntensity * 0.85
     const flipAberration = flipIntensity * 0.025
-    uniforms.uScanlineIntensity.value = c.scanlineIntensity + (isPoweringOn ? (1 - powerEase) * 0.4 : 0) + flipIntensity * 0.5
+    uniforms.uScanlineIntensity.value = c.scanlineIntensity + (isPoweringOn ? (1 - powerEase) * 0.4 : 0) + flipIntensity * 0.5 + glitchFlipIntensity * 0.7
     uniforms.uScanlineDensity.value = c.scanlineDensity
     uniforms.uGrilleIntensity.value = c.grilleIntensity
     uniforms.uGrilleDensity.value = c.grilleDensity
-    uniforms.uRollIntensity.value = c.rollIntensity + flipIntensity * 0.8
-    uniforms.uRollSpeed.value = c.rollSpeed
-    uniforms.uNoiseIntensity.value = c.noiseIntensity + (isPoweringOn ? (1 - powerEase) * 0.3 : 0) + flipNoise
+    uniforms.uRollIntensity.value = c.rollIntensity + flipIntensity * 0.8 + glitchFlipIntensity * 1.25
+    uniforms.uRollSpeed.value = c.rollSpeed + glitchFlipIntensity * 0.18
+    uniforms.uNoiseIntensity.value = c.noiseIntensity + (isPoweringOn ? (1 - powerEase) * 0.3 : 0) + flipNoise + glitchNoise
     uniforms.uVignetteStrength.value = c.vignetteStrength
     uniforms.uVignetteStart.value = c.vignetteStart
-    uniforms.uBrightness.value = c.brightness * (screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials' ? powerEase : 1) * bootBrightnessMix * flipDim
+    uniforms.uBrightness.value = c.brightness * (screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials' ? powerEase : 1) * bootBrightnessMix * flipDim * glitchDim
     uniforms.uBlackLevel.value = c.blackLevel
-    uniforms.uAberration.value = c.aberration + flipAberration
+    uniforms.uAberration.value = c.aberration + flipAberration + glitchAberration
   })
 
   const handlePointerDown = (event) => {
