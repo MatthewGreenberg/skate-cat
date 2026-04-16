@@ -20,6 +20,7 @@ import {
 import { IntroLighting } from './IntroLighting'
 import { IntroRoom } from './IntroRoom'
 import { prepareAsset } from './prepareAsset'
+import { RoomDust } from './RoomDust'
 import { createFloorTexture, createWallTexture } from './textures'
 import { TvScreen } from './TvScreen'
 
@@ -490,6 +491,7 @@ export default function IntroScene({
       sweepColor: '#89baff',
       boardGlowIntensity: { value: 1.8, min: 0, max: 8, step: 0.05 },
       boardGlowColor: '#bc702e',
+      roomDustOpacity: { value: 0.45, min: 0, max: 1, step: 0.01 },
     }),
   }, [])
 
@@ -726,6 +728,13 @@ export default function IntroScene({
         posterMaxWidth={posterCtrl.posterMaxWidth}
         posterMaxHeight={posterCtrl.posterMaxHeight}
         onPosterClick={handlePosterClick}
+      />
+
+      {/* TV-lit dust motes */}
+      <RoomDust
+        tvCenter={screenWorld}
+        bootVisualMix={bootVisualMix}
+        opacity={motionFxCtrl.roomDustOpacity}
       />
 
       {/* Chair GLTF — click to spin */}

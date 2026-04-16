@@ -10,7 +10,7 @@ export const toonVertexShader = /* glsl */ `
     vUv = uv;
     gl_Position = projectionMatrix * viewPosition;
   }
-`
+`;
 
 export const toonFragmentShader = /* glsl */ `
   uniform vec3 uColor;
@@ -63,4 +63,4 @@ export const toonFragmentShader = /* glsl */ `
     vec3 finalColor = baseColor * lightIntensity + specular * vec3(0.06) + rimIntensity * uRimColor;
     gl_FragColor = vec4(finalColor, texColor.a);
   }
-`
+`;
