@@ -1438,6 +1438,88 @@ export default function App() {
         onSkip={handleTutorialSkip}
         onComplete={handleTutorialComplete}
       />
+      {isTouchDevice && introScreenMode === 'initials' && initialsEntry && (
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 1.2rem)',
+            zIndex: 1400,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '0.75rem',
+            pointerEvents: 'none',
+          }}
+        >
+          <input
+            autoFocus
+            type="text"
+            inputMode="text"
+            autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={3}
+            value={initialsEntry.initials.join('')}
+            placeholder="TAP TO TYPE"
+            onChange={(e) => {
+              const cleaned = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
+              const next = ['A', 'A', 'A']
+              for (let i = 0; i < cleaned.length; i++) next[i] = cleaned[i]
+              setInitialsEntry(prev => prev ? {
+                ...prev,
+                initials: next,
+                cursorPos: Math.min(2, cleaned.length),
+              } : prev)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                e.currentTarget.blur()
+                handleTvAction('confirmInitials')
+              }
+            }}
+            style={{
+              width: 'min(70%, 260px)',
+              fontFamily: 'Knewave, cursive',
+              fontSize: '2.2rem',
+              textAlign: 'center',
+              letterSpacing: '0.45rem',
+              textTransform: 'uppercase',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '14px',
+              border: '2px solid rgba(124, 247, 255, 0.75)',
+              background: 'rgba(18, 10, 34, 0.92)',
+              color: '#ffffff',
+              boxShadow: '0 6px 20px rgba(0, 0, 0, 0.45), 0 0 18px rgba(124, 247, 255, 0.35)',
+              outline: 'none',
+              pointerEvents: 'auto',
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => handleTvAction('confirmInitials')}
+            style={{
+              fontFamily: 'Knewave, cursive',
+              fontSize: '1.3rem',
+              letterSpacing: '0.08em',
+              padding: '0.55rem 1.8rem',
+              borderRadius: '999px',
+              border: '2px solid rgba(255, 255, 255, 0.4)',
+              background: 'linear-gradient(180deg, #ff9ab3 0%, #ff3d6b 100%)',
+              color: '#ffffff',
+              textShadow: '0 2px 6px rgba(0, 0, 0, 0.45)',
+              boxShadow: '0 6px 16px rgba(255, 61, 107, 0.45)',
+              pointerEvents: 'auto',
+              cursor: 'pointer',
+            }}
+          >
+            SUBMIT
+          </button>
+        </div>
+      )}
       {isCountdownActive && (
         <>
           <div
