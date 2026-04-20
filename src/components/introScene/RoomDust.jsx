@@ -7,7 +7,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-const PARTICLE_COUNT = 30
+const PARTICLE_COUNT = 200
 const BOUNDS = {
   minX: -3.0, maxX: 3.0,
   minY: 0.4, maxY: 2.8,
@@ -70,7 +70,7 @@ export function RoomDust({ tvCenter, bootVisualMix = 1, opacity = 0.45 }) {
   const uniforms = useMemo(() => ({
     uOpacity: { value: opacity },
     uPixelRatio: { value: typeof window !== 'undefined' ? window.devicePixelRatio : 1 },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [])
 
   useFrame((state, delta) => {
@@ -119,7 +119,7 @@ export function RoomDust({ tvCenter, bootVisualMix = 1, opacity = 0.45 }) {
           uniform float uOpacity;
           varying vec3 vColor;
           void main() {
-            vec2 p = gl_PointCoord - 0.5;
+            vec2 p = gl_PointCoord - 0.9;
             float d = length(p);
             if (d > 0.5) discard;
             float soft = smoothstep(0.5, 0.0, d);

@@ -32,7 +32,7 @@ export function IntroLighting({
       intensity: { value: 3.3, min: 0, max: 24, step: 0.05 },
       distance: { value: 12.0, min: 0, max: 20, step: 0.1 },
       decay: { value: 1.97, min: 0, max: 3, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   })
   const roomPower = 0.14 + bootVisualMix * 0.86
   const ambientPower = 0.25 + bootVisualMix * 0.75
@@ -55,11 +55,11 @@ export function IntroLighting({
         intensity={6.4 * roomPower}
         distance={7.8}
         decay={1.85}
-        color="#fff"
+        color="#fff8ea"
       />
 
       {/* Cat hero key + room sweep (intensities/positions animated in parent) */}
-      <spotLight
+      {/* <spotLight
         ref={heroSpotlightRef}
         position={[catHeroTarget.x + 0.95, catHeroTarget.y + motionFxCtrl.heroHeight, catHeroTarget.z + 1.75]}
         intensity={motionFxCtrl.heroSpotIntensity}
@@ -75,7 +75,7 @@ export function IntroLighting({
         shadow-camera-far={20}
         shadow-bias={-0.00035}
         shadow-normalBias={0.025}
-      />
+      /> */}
 
       {/* Skateboard rim highlight */}
       <pointLight
@@ -99,13 +99,13 @@ export function IntroLighting({
       />
 
 
-      <pointLight
+      {/* <pointLight
         position={[-wallEdgeCoolLight.x, wallEdgeCoolLight.y, wallEdgeCoolLight.z]}
         intensity={wallEdgeCoolLight.intensity * roomPower}
         distance={wallEdgeCoolLight.distance}
         decay={wallEdgeCoolLight.decay}
         color={'pink'}
-      />
+      /> */}
     </>
   )
 }

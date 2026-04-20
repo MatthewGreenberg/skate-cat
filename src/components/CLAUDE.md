@@ -8,7 +8,7 @@
 ## Scene Composition
 - **GameWorld.jsx** — Assembles the game scene: Ground, Background, SkateCat, Obstacles, particles, effects.
 - **DayNightController.jsx** — Animates lighting, fog, and hemisphere colors through a day/night cycle.
-- **PostEffects.jsx** — Post-processing: bloom, brightness/contrast, hue/saturation, transition portal rendering.
+- **PostEffects.jsx** — Post-processing: bloom, brightness/contrast, hue/saturation, transition portal rendering. Also runs a selective Depth-of-Field in the intro scene: `DepthOfFieldEffect` blurs the whole frame, then a custom `SharpOverlayPass` (defined in `introScene/sharpSelection.js`) re-renders any meshes registered via `registerSharpGroup` on top, keeping them crisp. Intro also gets god rays: `GodRaysEffect` uses the CRT screen mesh as the light source (published by `TvScreen.jsx` via `setGodRaysSource`); the effect lives after bloom and is gated on tier ≥ 2, non-Safari, and intro-visible. See `introScene/sharpSelection.js` for both the sharp-layer selection and the god-rays source ref.
 
 ## Visual Effects
 - **KickflipSparks.jsx** — Instanced particle system for jump/land/grind effects.
@@ -28,6 +28,7 @@
 - **GameHud.jsx** — Score, beat dots, timing feedback.
 - **GameOverScreen.jsx** — End game modal with animated score counter. Restart via keyboard or tap/click.
 - **RotationPrompt.jsx** — Full-screen overlay (z-index 1500) shown on touch devices in portrait. Pairs with `useOrientation` hook; when visible, `gameState.paused` is set and gameplay freezes.
+- **TutorialOverlay.jsx** — First-time-player interactive tutorial (z-index 1300). Three steps (jump / grind / spin) that detect real keyboard or touch inputs matching the real game controls. Gated by `src/lib/tutorialStorage.js` localStorage flag; rendered only when `phase === PHASE_TUTORIAL`. Always-visible Skip button. On complete or skip, `App.jsx` marks localStorage and returns to `PHASE_INTRO`.
 - **TimingDebugHud.jsx** — Dev: live timing offset visualization.
 - **ObstacleSpacingDebugHud.jsx** — Dev: obstacle spacing conflict debug.
 

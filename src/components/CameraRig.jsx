@@ -192,7 +192,7 @@ export default function CameraRig({
       introLookX: { value: 0.3, min: -5, max: 5, step: 0.1 },
       introLookY: { value: 0.8, min: -2, max: 5, step: 0.1 },
       introLookZ: { value: -1.6, min: -5, max: 5, step: 0.1 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const {
@@ -210,7 +210,7 @@ export default function CameraRig({
       resultsLookX: { value: 0.3, min: -5, max: 5, step: 0.1 },
       resultsLookY: { value: 0.92, min: -2, max: 5, step: 0.1 },
       resultsLookZ: { value: -1.6, min: -5, max: 5, step: 0.1 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const {
@@ -230,7 +230,7 @@ export default function CameraRig({
       deathLookY: { value: 0.9, min: -2, max: 5, step: 0.01 },
       deathLookZ: { value: -1.2, min: -5, max: 5, step: 0.01 },
       deathFov: { value: DEATH_FOV, min: 20, max: 60, step: 0.5 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const {

@@ -81,7 +81,7 @@ const HOP_ON_HEIGHT = 0.8
 const ENTRANCE_DROP_DURATION = 0.55
 const ENTRANCE_DROP_HEIGHT = 3.5
 const ENTRANCE_SPIN_ROTATIONS = 1
-const JUMP_KEY_CODES = new Set(['ArrowUp', 'Space', 'KeyW', 'KeyD'])
+const JUMP_KEY_CODES = new Set(['ArrowUp'])
 const SPIN_KEY_CODES = new Set(['ArrowLeft', 'ArrowDown', 'KeyA', 'KeyS'])
 
 const _grindSparkLocal = new THREE.Vector3()

@@ -21,9 +21,10 @@
 
 ### Scene Flow
 1. **Intro**: CRT TV room with cat model (`IntroScene`). Player presses start.
-2. **Transition**: Circular reveal effect (`TransitionEffect` + `PostEffects`) blends intro → game.
-3. **Game**: Cat skateboards, jumps logs, grinds rails to music beats. Scoring is timing-based.
-4. **Game Over**: Score screen with restart option.
+2. **Tutorial** (first play only, or any-time from CRT): On the first Start tap, `PHASE_TUTORIAL` shows a DOM `TutorialOverlay` over the intro scene that walks the player through jump / grind / spin with real keyboard/touch input detection. Gated by `localStorage` via `src/lib/tutorialStorage.js` (key `skate-cat:tutorial-completed-v1`). Skip button always visible. On finish, returns to `PHASE_INTRO` for a real Start tap — this keeps the launch-transition + iOS audio-unlock path untouched. A **HOW TO PLAY** pill on the CRT title + summary screens (right of HIGH SCORES) fires the `'tutorial'` action and relaunches the overlay regardless of the localStorage flag.
+3. **Transition**: Circular reveal effect (`TransitionEffect` + `PostEffects`) blends intro → game.
+4. **Game**: Cat skateboards, jumps logs, grinds rails to music beats. Scoring is timing-based.
+5. **Game Over**: Score screen with restart option.
 
 ### Key Files
 - `src/App.jsx` — Top-level orchestrator: state, callbacks, Canvas setup

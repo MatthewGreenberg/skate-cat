@@ -21,6 +21,10 @@ import { IntroLighting } from './IntroLighting'
 import { IntroRoom } from './IntroRoom'
 import { prepareAsset } from './prepareAsset'
 import { RoomDust } from './RoomDust'
+import {
+  enableAllLayersOnLights,
+  registerSharpGroup,
+} from './sharpSelection'
 import { createFloorTexture, createWallTexture } from './textures'
 import { TvScreen } from './TvScreen'
 
@@ -52,7 +56,8 @@ export default function IntroScene({
   initialsEntry = null,
   renderProfile = {},
 }) {
-  const { camera, gl } = useThree()
+  const { camera, gl, scene } = useThree()
+  const tvAssemblyRef = useRef()
   const tvGlowRef = useRef()
   const accentLightRef = useRef()
   const heroSpotlightRef = useRef()
@@ -175,7 +180,7 @@ export default function IntroScene({
       tvPosZ: { value: DEFAULT_TV.posZ, min: -5, max: 5, step: 0.01 },
       tvRotY: { value: DEFAULT_TV.rotY, min: -Math.PI, max: Math.PI, step: 0.01 },
       tvScale: { value: DEFAULT_TV.scale, min: 0.1, max: 8, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const chairCtrl = useOptionalControls('Intro', {
@@ -185,7 +190,7 @@ export default function IntroScene({
       chairPosZ: { value: -0.1, min: -5, max: 5, step: 0.01 },
       chairRotY: { value: 0.81, min: -Math.PI, max: Math.PI, step: 0.01 },
       chairScale: { value: 1.79, min: 0.1, max: 3, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const catCtrl = useOptionalControls('Intro', {
@@ -197,7 +202,7 @@ export default function IntroScene({
       catRotY: { value: DEFAULT_CAT.rotY, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
       catRotZ: { value: DEFAULT_CAT.rotZ, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
       catScale: { value: DEFAULT_CAT.scale, min: 0.005, max: 1, step: 0.001 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const cartridgeCtrl = useOptionalControls('Intro', {
@@ -209,7 +214,7 @@ export default function IntroScene({
       cartridgeRotY: { value: 0, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
       cartridgeRotZ: { value: -0.8, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
       cartridgeScale: { value: 0.00008, min: 0.00001, max: 0.01, step: 0.00001 },
-    }),
+    }, { collapsed: true }),
   }, [])
   const skateboardPosition = [0.31, floorY + 1.99, -1.0]
   const skateboardRotation = [0.35, -4.5, 0]
@@ -224,7 +229,7 @@ export default function IntroScene({
       octocatRotY: { value: -0.4, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
       octocatRotZ: { value: 0, min: -Math.PI * 2, max: Math.PI * 2, step: 0.01 },
       octocatScale: { value: 0.03, min: 0.001, max: 2, step: 0.001 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const tvUiCtrl = useOptionalControls('Intro', {
@@ -243,7 +248,7 @@ export default function IntroScene({
       glowScaleY: { value: DEFAULT_TV_UI.glowScaleY, min: 0.5, max: 1.5, step: 0.001 },
       glowOpacity: { value: DEFAULT_TV_UI.glowOpacity, min: 0, max: 0.2, step: 0.001 },
       glowOffsetZ: { value: DEFAULT_TV_UI.glowOffsetZ, min: -0.25, max: 0.25, step: 0.001 },
-    }),
+    }, { collapsed: true }),
   }, [])
   const tvCrtCtrl = useOptionalControls('Intro', {
     'TV CRT': folder({
@@ -263,7 +268,7 @@ export default function IntroScene({
       crtBrightness: { value: DEFAULT_TV_CRT.brightness, min: 0.6, max: 1.6, step: 0.01 },
       crtBlackLevel: { value: DEFAULT_TV_CRT.blackLevel, min: 0, max: 0.08, step: 0.001 },
       crtPowerOnDuration: { value: DEFAULT_TV_CRT.powerOnDuration, min: 0.05, max: 2, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   }, [])
   const posterCtrl = useOptionalControls('Intro', {
     Poster: folder({
@@ -275,7 +280,7 @@ export default function IntroScene({
       posterScale: { value: 1.08, min: 0.4, max: 2.5, step: 0.01 },
       posterMaxWidth: { value: 1.08, min: 0.3, max: 2.4, step: 0.01 },
       posterMaxHeight: { value: 1.48, min: 0.4, max: 3.2, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   const tvPosition = useMemo(
@@ -474,7 +479,7 @@ export default function IntroScene({
       lampRotY: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
       lampRotZ: { value: 0, min: -Math.PI, max: Math.PI, step: 0.01 },
       lampScale: { value: 1, min: 0.25, max: 3, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   }, [defaultLampPosition.x, defaultLampPosition.y, defaultLampPosition.z])
   const motionFxCtrl = useOptionalControls('Intro', {
     'Motion FX': folder({
@@ -492,7 +497,7 @@ export default function IntroScene({
       boardGlowIntensity: { value: 1.8, min: 0, max: 8, step: 0.05 },
       boardGlowColor: '#bc702e',
       roomDustOpacity: { value: 0.45, min: 0, max: 1, step: 0.01 },
-    }),
+    }, { collapsed: true }),
   }, [])
 
   useEffect(() => {
@@ -503,6 +508,21 @@ export default function IntroScene({
       sweepSpotlightRef.current.target = sweepSpotlightTargetRef.current
     }
   }, [])
+
+  // DOF exclusion: register TV + CRT + cat meshes with the shared sharp selection so
+  // the SharpOverlayPass re-renders them on top of the blurred scene. Also ensure
+  // every light in the scene affects all render layers — the overlay pass temporarily
+  // switches the camera to the sharp layer, and unlit lights on the default layer
+  // alone would leave the re-rendered meshes completely black.
+  useEffect(() => {
+    enableAllLayersOnLights(scene)
+    const unregisterTv = registerSharpGroup(tvAssemblyRef.current)
+    const unregisterCat = registerSharpGroup(catGroupRef.current)
+    return () => {
+      unregisterTv()
+      unregisterCat()
+    }
+  }, [scene, tv, cat, renderProfile.disableIntroScreenGlow])
 
   // Flicker TV/accent lights; orbit hero + sweep spots; follow cat/board for shadows and glow
   useFrame((state, delta) => {
@@ -826,7 +846,12 @@ export default function IntroScene({
       )}
 
       {/* CRT model + curved UI screen (canvas → CRT shader) */}
-      <group position={[tvPosition.x, tvPosition.y, tvPosition.z]} rotation={[0, tvCtrl.tvRotY, 0]} scale={tvCtrl.tvScale}>
+      <group
+        ref={tvAssemblyRef}
+        position={[tvPosition.x, tvPosition.y, tvPosition.z]}
+        rotation={[0, tvCtrl.tvRotY, 0]}
+        scale={tvCtrl.tvScale}
+      >
         <primitive object={tv.root} />
         <TvScreen
           position={tv.screenPlanePosition?.toArray() ?? [screenCenter.x, screenCenter.y, screenCenter.z + 0.015]}

@@ -9,6 +9,7 @@ import * as THREE from 'three'
 import { DEFAULT_TV_CRT, SCREEN_CYAN } from './constants'
 import { CRT_FRAGMENT_SHADER, CRT_VERTEX_SHADER } from './crtShaders'
 import { createCurvedScreenGeometry } from './curvedScreenGeometry'
+import { setGodRaysSource } from './sharpSelection'
 import { drawTvScreen, getTvScreenActionAtPoint } from './tvScreenCanvas'
 import { isSafari } from '../../store'
 
@@ -109,6 +110,8 @@ export function TvScreen({
       fragmentShader: CRT_FRAGMENT_SHADER,
       toneMapped: false,
       depthTest: false,
+      depthWrite: false,
+      transparent: true,
       side: THREE.DoubleSide,
     })
     return { canvas, ctx, texture, material }
@@ -274,6 +277,7 @@ export function TvScreen({
       prevDrawInputsRef.current = drawInputs
       drawTvScreen(gpu.ctx, gpu.canvas, state.clock.elapsedTime, {
         hovered: hoveredAction === 'start' || hoveredAction === 'back' || hoveredAction === 'confirmInitials',
+        tutorialHovered: hoveredAction === 'tutorial',
         disabled,
         buttonLabel,
         instructionLabel,
@@ -351,7 +355,7 @@ export function TvScreen({
       return
     }
     // Route new actions through onAction
-    if (action === 'highscores' || action === 'back' || action === 'confirmInitials') {
+    if (action === 'highscores' || action === 'back' || action === 'confirmInitials' || action === 'tutorial') {
       onAction?.(action)
       return
     }
@@ -390,6 +394,9 @@ export function TvScreen({
           </mesh>
         )}
           <mesh
+          ref={(node) => {
+            setGodRaysSource(node)
+          }}
           geometry={screenGeometry}
           renderOrder={4}
           onPointerEnter={(event) => {

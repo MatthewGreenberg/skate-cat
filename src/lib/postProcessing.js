@@ -25,9 +25,9 @@ export const DEFAULT_GAME_POST_SETTINGS = {
 };
 
 export const DEFAULT_INTRO_POST_SETTINGS = {
-  bloomIntensity: 0.75,
+  bloomIntensity: 0.1,
   bloomThreshold: 0,
-  bloomSmoothing: 0.15,
+  bloomSmoothing: 1.0,
   brightness: 0.0,
   contrast: 0.08,
   hue: 0,

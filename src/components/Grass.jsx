@@ -171,7 +171,19 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
   const isMobileGrassTuned = !!renderProfile.isMobileDevice
   const isConstrainedMobileGrassTuned = !!renderProfile.isConstrainedMobile
 
-  const { windEnabled, windSpeed, windStrength, bladeMinHeight, bladeMaxHeight, bladeCount, thickness } = useOptionalControls('Game', {
+  const {
+    windEnabled,
+    windSpeed,
+    windStrength,
+    bladeMinHeight,
+    bladeMaxHeight,
+    bladeCount,
+    thickness,
+    bladesPerPatch,
+    patchRadius,
+    patchRadiusJitter,
+    patchCenterBias,
+  } = useOptionalControls('Game', {
     Grass: folder({
       bladeCount: { value: 8000, min: 100, max: MAX_BLADES, step: 100 },
       thickness: { value: 0.10, min: 0.005, max: 0.2, step: 0.005 },
@@ -180,6 +192,10 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
       windStrength: { value: 0.29, min: 0, max: 0.5, step: 0.01 },
       bladeMinHeight: { value: 0.3, min: 0.01, max: 1.0, step: 0.01 },
       bladeMaxHeight: { value: 0.58, min: 0.1, max: 2.0, step: 0.01 },
+      bladesPerPatch: { value: 14, min: 1, max: 60, step: 1 },
+      patchRadius: { value: 0.42, min: 0.05, max: 2, step: 0.02 },
+      patchRadiusJitter: { value: 0.55, min: 0, max: 1, step: 0.05 },
+      patchCenterBias: { value: 0.65, min: 0.1, max: 2, step: 0.05 },
     }, { collapsed: true }),
   }, [])
   const {
@@ -283,18 +299,47 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
         ? MOBILE_CAM_SIDE_MAX_RELAXED
         : CAM_SIDE_MAX
 
-    // Store random seeds so height can be remapped
+    // Clumped placement: seed ~MAX_BLADES/bladesPerPatch tuft centers (uniform-random
+    // in the existing side ranges), then scatter blades around them with a
+    // power-biased radius so they're densest near the center of each tuft.
+    // Patches themselves still respect the road-avoidance ranges; blade offsets
+    // are small (~patchRadius * ~1), which keeps the road mostly clean without
+    // an explicit clamp.
+    const patchCount = Math.max(1, Math.floor(MAX_BLADES / Math.max(1, bladesPerPatch)))
+    const patches = []
+    for (let p = 0; p < patchCount; p++) {
+      let px
+      if (random() < 0.5) {
+        px = -sampleBiasedRange(random, ROAD_HALF, farSideMax, edgeBias)
+      } else {
+        px = sampleBiasedRange(random, camSideMin, camSideMax, edgeBias)
+      }
+      patches.push({
+        x: px,
+        z: (random() - 0.5) * SEGMENT_LENGTH,
+        radius: patchRadius * (1 - patchRadiusJitter + random() * patchRadiusJitter * 2),
+      })
+    }
+
     const data = []
     for (let i = 0; i < MAX_BLADES; i++) {
-      let x
-      if (random() < 0.5) {
-        x = -sampleBiasedRange(random, ROAD_HALF, farSideMax, edgeBias)
-      } else {
-        x = sampleBiasedRange(random, camSideMin, camSideMax, edgeBias)
+      const patch = patches[Math.floor(random() * patches.length)]
+      const angle = random() * Math.PI * 2
+      // patchCenterBias > 1 pulls blades toward center; < 1 pushes toward edge.
+      const r = Math.pow(random(), patchCenterBias) * patch.radius
+      let x = patch.x + Math.cos(angle) * r
+      const z = patch.z + Math.sin(angle) * r
+      // Keep blades off the road. Clamp toward the road-facing boundary of the
+      // patch's side: far-side caps at -ROAD_HALF, cam-side bottoms out at the
+      // per-device cam-side minimum so we keep the existing camera pushback.
+      if (patch.x < 0) {
+        if (x > -ROAD_HALF) x = -ROAD_HALF
+      } else if (x < camSideMin) {
+        x = camSideMin
       }
       data.push({
         x,
-        z: (random() - 0.5) * SEGMENT_LENGTH,
+        z,
         heightRand: random(),
         widthRand: 0.8 + random() * 0.4,
         leanX: (random() - 0.5) * 0.24,
@@ -303,7 +348,15 @@ export default function Grass({ quality = 'auto', renderProfile = {} }) {
       })
     }
     return data
-  }, [grassId, isConstrainedMobileGrassTuned, isMobileGrassTuned])
+  }, [
+    grassId,
+    isConstrainedMobileGrassTuned,
+    isMobileGrassTuned,
+    bladesPerPatch,
+    patchRadius,
+    patchRadiusJitter,
+    patchCenterBias,
+  ])
 
   const updateInstanceMatrices = useCallback((mesh, minHeight, maxHeight) => {
     if (!mesh) return

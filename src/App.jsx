@@ -11,6 +11,8 @@ import PostEffects, { TransitionAnimator } from './components/PostEffects'
 import SceneCapture from './components/SceneCapture'
 import CinematicLetterbox from './components/CinematicLetterbox'
 import RotationPrompt from './components/RotationPrompt'
+import TutorialOverlay from './components/TutorialOverlay'
+import { hasCompletedTutorial, markTutorialCompleted } from './lib/tutorialStorage'
 import useOrientation from './hooks/useOrientation'
 import {
   createIntroOverlayControls,
@@ -62,6 +64,7 @@ const START_PHASE_IDLE = 'idle'
 const START_PHASE_ARMING = 'arming'
 const START_PHASE_LAUNCHING = 'launching'
 const PHASE_INTRO = 'intro'
+const PHASE_TUTORIAL = 'tutorial'
 const PHASE_LAUNCHING = 'launching'
 const PHASE_RUNNING = 'running'
 const PHASE_END_GLITCH = 'endGlitch'
@@ -427,6 +430,7 @@ export default function App() {
   }, [])
   const [initialsEntry, setInitialsEntry] = useState(null)
   const [tvScreenOverride, setTvScreenOverride] = useState(null)
+  const [needsTutorial, setNeedsTutorial] = useState(() => !hasCompletedTutorial())
   const [isEndingLocked, setIsEndingLocked] = useState(false)
   const [isGameWorldPrimed, setIsGameWorldPrimed] = useState(false)
   const [showDeathFullscreen, setShowDeathFullscreen] = useState(false)
@@ -703,7 +707,7 @@ export default function App() {
 
   const introPost = useOptionalControls(
     'Intro',
-    { 'Post Processing': folder(createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS)) }
+    { 'Post Processing': folder(createPostProcessingControls(DEFAULT_INTRO_POST_SETTINGS), { collapsed: true }) }
   )
   const introOverlaySettings = useOptionalControls(
     'Intro',
@@ -733,7 +737,7 @@ export default function App() {
       dollyAmount: { value: 0.4, min: 0, max: 0.8, step: 0.01, label: 'Dolly' },
       dollyStart: { value: 0.2, min: 0, max: 0.2, step: 0.005, label: 'Dolly Start' },
       flashStrength: { value: 1, min: 0, max: 1, step: 0.05, label: 'Flash' },
-    }),
+    }, { collapsed: true }),
     'Return Transition': folder({
       reverseDuration: { value: 1.50, min: 0.1, max: 4.5, step: 0.05, label: 'Duration' },
       returnFreezeDuration: { value: 0.2, min: 0, max: 2, step: 0.01, label: 'Freeze Hold' },
@@ -748,7 +752,7 @@ export default function App() {
       returnGlowOuterOffset: { value: 0.14, min: 0.01, max: 0.3, step: 0.005, label: 'Glow Out' },
       returnDiffuseSpread: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'Diffuse Spread' },
       returnFlashStrength: { value: 0.6, min: 0, max: 1, step: 0.05, label: 'Flash' },
-    }),
+    }, { collapsed: true }),
   })
   const { timingOffsetMs, obstacleHitDelayMs, debugPlaybackRate } = useOptionalControls('Debug', {
     'Timing Debug': folder({
@@ -1196,8 +1200,18 @@ export default function App() {
 
   const handleStart = useCallback(() => {
     if (!introStartEnabled) return
+    if (needsTutorial && !isReturnScreenActive) {
+      setPhase(PHASE_TUTORIAL)
+      return
+    }
     queueLaunchStart(startLaunchTransition)
-  }, [introStartEnabled, queueLaunchStart, startLaunchTransition])
+  }, [introStartEnabled, needsTutorial, isReturnScreenActive, queueLaunchStart, startLaunchTransition])
+
+  const handleTutorialFinish = useCallback(() => {
+    markTutorialCompleted()
+    setNeedsTutorial(false)
+    setPhase(PHASE_INTRO)
+  }, [])
 
   const handleSceneCaptured = useCallback((sceneTexture) => {
     const captureMode = transitionCaptureModeRef.current
@@ -1272,6 +1286,10 @@ export default function App() {
   const handleTvAction = useCallback((action, payload) => {
     if (action === 'highscores') {
       flipToScreen('leaderboard')
+      return
+    }
+    if (action === 'tutorial') {
+      setPhase(PHASE_TUTORIAL)
       return
     }
     if (action === 'back') {
@@ -1395,6 +1413,12 @@ export default function App() {
         }
       />
       <RotationPrompt shouldBlock={orientationBlocked} />
+      <TutorialOverlay
+        active={phase === PHASE_TUTORIAL}
+        isTouchDevice={isTouchDevice}
+        onSkip={handleTutorialFinish}
+        onComplete={handleTutorialFinish}
+      />
       {isCountdownActive && (
         <>
           <div

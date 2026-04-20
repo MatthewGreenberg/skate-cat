@@ -434,6 +434,10 @@ export function getTvScreenActionAtPoint(
     if (isPointInBounds(x, y, hsBounds)) {
       return "highscores";
     }
+    const tutorialBounds = getTutorialButtonBounds(width, height);
+    if (isPointInBounds(x, y, tutorialBounds)) {
+      return "tutorial";
+    }
     return null;
   }
 
@@ -474,6 +478,10 @@ export function getTvScreenActionAtPoint(
   const hsBoundsSummary = getHighScoresButtonBounds(width, height);
   if (isPointInBounds(x, y, hsBoundsSummary)) {
     return "highscores";
+  }
+  const tutorialBoundsSummary = getTutorialButtonBounds(width, height);
+  if (isPointInBounds(x, y, tutorialBoundsSummary)) {
+    return "tutorial";
   }
 
   return null;
@@ -577,7 +585,92 @@ function drawBootScreen(ctx, width, height, {
   ctx.restore();
 }
 
-function drawTitleScreen(ctx, width, height, { highScore = 0, highScoresHovered = false }) {
+const CORNER_BUTTON_WIDTH = 230;
+const CORNER_BUTTON_HEIGHT = 54;
+
+const CORNER_BUTTON_ACCENTS = {
+  cyan: {
+    strokeHov: "rgba(124, 247, 255, 0.6)",
+    strokeIdle: "rgba(124, 247, 255, 0.28)",
+    gradTopHov: "#9bfcff",
+    gradTopIdle: "#7cf7ff",
+    gradMidHov: "#5fd4f7",
+    gradMidIdle: "#4db8d8",
+    gradBotHov: "#6fa0ff",
+    gradBotIdle: "#5580cc",
+  },
+  orange: {
+    strokeHov: "rgba(255, 170, 110, 0.65)",
+    strokeIdle: "rgba(255, 170, 110, 0.32)",
+    gradTopHov: "#ffe2a3",
+    gradTopIdle: "#ffc87a",
+    gradMidHov: "#ff9d70",
+    gradMidIdle: "#ff7b56",
+    gradBotHov: "#ff7bb0",
+    gradBotIdle: "#d45a8e",
+  },
+};
+
+function drawCornerPillButton(ctx, cx, cy, label, { hovered = false, accent = "cyan" } = {}) {
+  const theme = CORNER_BUTTON_ACCENTS[accent] || CORNER_BUTTON_ACCENTS.cyan;
+  const scale = hovered ? 1.06 : 1;
+  const w = CORNER_BUTTON_WIDTH * scale;
+  const h = CORNER_BUTTON_HEIGHT * scale;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x - 10, y - 8, w + 20, h + 16, 30);
+  ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
+  ctx.strokeStyle = hovered ? theme.strokeHov : theme.strokeIdle;
+  ctx.lineWidth = 3;
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 22);
+  const grad = ctx.createLinearGradient(0, y, 0, y + h);
+  grad.addColorStop(0, hovered ? theme.gradTopHov : theme.gradTopIdle);
+  grad.addColorStop(0.5, hovered ? theme.gradMidHov : theme.gradMidIdle);
+  grad.addColorStop(1, hovered ? theme.gradBotHov : theme.gradBotIdle);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.roundRect(x + 8, y + 5, w - 16, h * 0.32, 14);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 22);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#0a1428";
+  ctx.font = '900 21px "Nunito", sans-serif';
+  ctx.fillText(label, cx, cy + 1);
+  ctx.restore();
+}
+
+function getCornerPillButtonBoundsAt(cx, cy) {
+  return {
+    x: cx - CORNER_BUTTON_WIDTH / 2 - 10,
+    y: cy - CORNER_BUTTON_HEIGHT / 2 - 8,
+    width: CORNER_BUTTON_WIDTH + 20,
+    height: CORNER_BUTTON_HEIGHT + 16,
+  };
+}
+
+const HS_BUTTON_CX_RATIO = 0.28;
+const HS_BUTTON_CY_RATIO = 0.955;
+const TUTORIAL_BUTTON_CX_RATIO = 0.72;
+const TUTORIAL_BUTTON_CY_RATIO = 0.955;
+
+function drawTitleScreen(ctx, width, height, { highScore = 0, highScoresHovered = false, tutorialHovered = false }) {
 
 
   drawHudPill(ctx, width * 0.16, height * 0.09, 160, 56, "\u2665 \u2665 \u2665", {
@@ -658,56 +751,20 @@ function drawTitleScreen(ctx, width, height, { highScore = 0, highScoresHovered 
   drawSparkle(ctx, width * 0.18, height * 0.24, 13, "#fff2a8", 0.28, 0.9);
   drawSparkle(ctx, width * 0.82, height * 0.28, 13, "#73f7ff", -0.34, 0.9);
 
-  // "HIGH SCORES" button — styled like a smaller version of the main action button
-  const hsHov = highScoresHovered;
-  const hsScale = hsHov ? 1.06 : 1;
-  const hsW = 260 * hsScale;
-  const hsH = 54 * hsScale;
-  const hsX = width * 0.5;
-  const hsY = height * 0.965;
-  const hsBtnX = hsX - hsW / 2;
-  const hsBtnY = hsY - hsH / 2;
-
-  ctx.save();
-  // Outer frame glow
-  ctx.beginPath();
-  ctx.roundRect(hsBtnX - 10, hsBtnY - 8, hsW + 20, hsH + 16, 30);
-  ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
-  ctx.strokeStyle = hsHov ? "rgba(124, 247, 255, 0.6)" : "rgba(124, 247, 255, 0.28)";
-  ctx.lineWidth = 3;
-  ctx.fill();
-  ctx.stroke();
-
-  // Inner gradient fill
-  ctx.beginPath();
-  ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
-  const hsGrad = ctx.createLinearGradient(0, hsBtnY, 0, hsBtnY + hsH);
-  hsGrad.addColorStop(0, hsHov ? "#9bfcff" : "#7cf7ff");
-  hsGrad.addColorStop(0.5, hsHov ? "#5fd4f7" : "#4db8d8");
-  hsGrad.addColorStop(1, hsHov ? "#6fa0ff" : "#5580cc");
-  ctx.fillStyle = hsGrad;
-  ctx.fill();
-
-  // Specular highlight bar
-  ctx.beginPath();
-  ctx.roundRect(hsBtnX + 8, hsBtnY + 5, hsW - 16, hsH * 0.32, 14);
-  ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
-  ctx.fill();
-
-  // Border
-  ctx.beginPath();
-  ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-  ctx.stroke();
-
-  // Text
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#0a1428";
-  ctx.font = '900 22px "Nunito", sans-serif';
-  ctx.fillText("\u2605 HIGH SCORES \u2605", hsX, hsY + 1);
-  ctx.restore();
+  drawCornerPillButton(
+    ctx,
+    width * HS_BUTTON_CX_RATIO,
+    height * HS_BUTTON_CY_RATIO,
+    "\u2605 HIGH SCORES \u2605",
+    { hovered: highScoresHovered, accent: "cyan" },
+  );
+  drawCornerPillButton(
+    ctx,
+    width * TUTORIAL_BUTTON_CX_RATIO,
+    height * TUTORIAL_BUTTON_CY_RATIO,
+    "HOW TO PLAY",
+    { hovered: tutorialHovered, accent: "orange" },
+  );
 }
 
 // Easing helpers for summary animations
@@ -735,7 +792,7 @@ function animProgress(elapsed, start, duration) {
   return clamp01((elapsed - start) / duration);
 }
 
-function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = false, dismissHovered = false, elapsed = 99, highScoresHovered = false } = {}) {
+function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = false, dismissHovered = false, elapsed = 99, highScoresHovered = false, tutorialHovered = false } = {}) {
   const title = getSummaryTitle(summary);
   const subhead = getSummarySubhead(summary);
   const isComplete = summary?.outcome === "complete";
@@ -884,53 +941,25 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
     drawPawPrint(ctx, width * 0.88, height * 0.78, 0.68 * pawP, accentAlt, 0.34 * pawP, 0.2);
   }
 
-  // HIGH SCORES button
+  // HIGH SCORES + HOW TO PLAY buttons
   const hsButtonP = easeOutCubic(animProgress(elapsed, cardStaggerBase + 0.5, 0.4));
   if (hsButtonP > 0) {
-    const hsHov = highScoresHovered;
-    const hsScale = hsHov ? 1.06 : 1;
-    const hsW = 260 * hsScale;
-    const hsH = 54 * hsScale;
-    const hsX = width * 0.5;
-    const hsY = height * 0.965;
-    const hsBtnX = hsX - hsW / 2;
-    const hsBtnY = hsY - hsH / 2;
-
     ctx.save();
     ctx.globalAlpha = hsButtonP;
-    ctx.beginPath();
-    ctx.roundRect(hsBtnX - 10, hsBtnY - 8, hsW + 20, hsH + 16, 30);
-    ctx.fillStyle = "rgba(17, 10, 30, 0.72)";
-    ctx.strokeStyle = hsHov ? "rgba(124, 247, 255, 0.6)" : "rgba(124, 247, 255, 0.28)";
-    ctx.lineWidth = 3;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
-    const hsGrad = ctx.createLinearGradient(0, hsBtnY, 0, hsBtnY + hsH);
-    hsGrad.addColorStop(0, hsHov ? "#9bfcff" : "#7cf7ff");
-    hsGrad.addColorStop(0.5, hsHov ? "#5fd4f7" : "#4db8d8");
-    hsGrad.addColorStop(1, hsHov ? "#6fa0ff" : "#5580cc");
-    ctx.fillStyle = hsGrad;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.roundRect(hsBtnX + 8, hsBtnY + 5, hsW - 16, hsH * 0.32, 14);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.28)";
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.roundRect(hsBtnX, hsBtnY, hsW, hsH, 22);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#0a1428";
-    ctx.font = '900 22px "Nunito", sans-serif';
-    ctx.fillText("\u2605 HIGH SCORES \u2605", hsX, hsY + 1);
+    drawCornerPillButton(
+      ctx,
+      width * HS_BUTTON_CX_RATIO,
+      height * HS_BUTTON_CY_RATIO,
+      "\u2605 HIGH SCORES \u2605",
+      { hovered: highScoresHovered, accent: "cyan" },
+    );
+    drawCornerPillButton(
+      ctx,
+      width * TUTORIAL_BUTTON_CX_RATIO,
+      height * TUTORIAL_BUTTON_CY_RATIO,
+      "HOW TO PLAY",
+      { hovered: tutorialHovered, accent: "orange" },
+    );
     ctx.restore();
   }
 
@@ -943,14 +972,17 @@ function drawSummaryScreen(ctx, width, height, summary, { showDismissButton = fa
 }
 
 function getHighScoresButtonBounds(width, height) {
-  const hsWidth = 260;
-  const hsHeight = 54;
-  return {
-    x: width * 0.5 - hsWidth / 2 - 10,
-    y: height * 0.965 - hsHeight / 2 - 8,
-    width: hsWidth + 20,
-    height: hsHeight + 16,
-  };
+  return getCornerPillButtonBoundsAt(
+    width * HS_BUTTON_CX_RATIO,
+    height * HS_BUTTON_CY_RATIO,
+  );
+}
+
+function getTutorialButtonBounds(width, height) {
+  return getCornerPillButtonBoundsAt(
+    width * TUTORIAL_BUTTON_CX_RATIO,
+    height * TUTORIAL_BUTTON_CY_RATIO,
+  );
 }
 
 const RANK_COLORS = {
@@ -1319,6 +1351,7 @@ export function drawTvScreen(
     bootReady = false,
     highScore = 0,
     highScoresHovered = false,
+    tutorialHovered = false,
     leaderboards = { daily: [], weekly: [], alltime: [] },
     leaderboardTab = 'alltime',
     leaderboardElapsed = 0,
@@ -1352,6 +1385,7 @@ export function drawTvScreen(
       dismissHovered,
       elapsed: summaryElapsed,
       highScoresHovered,
+      tutorialHovered,
     });
   } else if (screenMode === "boot") {
     drawBootScreen(ctx, width, height, {
@@ -1374,7 +1408,7 @@ export function drawTvScreen(
       rank: initialsRank,
     });
   } else {
-    drawTitleScreen(ctx, width, height, { highScore, highScoresHovered });
+    drawTitleScreen(ctx, width, height, { highScore, highScoresHovered, tutorialHovered });
   }
 
   // Button logic per screen mode

@@ -1,13 +1,17 @@
 /* eslint-disable react-hooks/refs */
 import { useEffect, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { folder } from 'leva'
 import { EffectComposer } from '@react-three/postprocessing'
 import {
   BloomEffect,
   ChromaticAberrationEffect,
   BrightnessContrastEffect,
+  DepthOfFieldEffect,
+  GodRaysEffect,
   HueSaturationEffect,
+  KernelSize,
   LensDistortionEffect,
   VignetteEffect,
   VignetteTechnique,
@@ -18,6 +22,11 @@ import IntroFluidEffect from './IntroFluidEffect'
 import { gameState, getNightFactor, isSafari } from '../store'
 import { interpolatePostSettings } from '../lib/postProcessing'
 import { useOptionalControls } from '../lib/debugControls'
+import {
+  godRaysSourceRef,
+  SharpOverlayPass,
+  sharpSelection,
+} from './introScene/sharpSelection'
 
 const NIGHT_BLOOM_INTENSITY = 4.3
 
@@ -50,6 +59,7 @@ export default function PostEffects({
   renderProfile = {},
 }) {
   const tier = gpuTier?.tier ?? 3
+  const { scene, camera } = useThree()
   const aoCtrl = useOptionalControls('AO', {
     aoEnabled: true,
     aoRadius: { value: 0.5, min: 0.05, max: 3, step: 0.05 },
@@ -57,6 +67,25 @@ export default function PostEffects({
     aoIntensityGame: { value: 3, min: 0, max: 10, step: 0.1 },
     aoDistanceFalloff: { value: 1.05, min: 0, max: 2, step: 0.05 },
     aoHalfRes: true,
+  }, [])
+  const dofCtrl = useOptionalControls('Intro', {
+    'Depth of Field': folder({
+      dofEnabled: true,
+      dofFocusDistance: { value: 8.3, min: 0.1, max: 12, step: 0.05 },
+      dofFocusRange: { value: 0.9, min: 0.05, max: 6, step: 0.05 },
+      dofBokehScale: { value: 4.2, min: 0, max: 14, step: 0.1 },
+    }, { collapsed: true }),
+  }, [])
+  const godRaysCtrl = useOptionalControls('Intro', {
+    'God Rays': folder({
+      godRaysEnabled: true,
+      godRaysDensity: { value: 0.82, min: 0, max: 1, step: 0.005 },
+      godRaysDecay: { value: 0.9, min: 0.6, max: 0.99, step: 0.005 },
+      godRaysWeight: { value: 0.15, min: 0, max: 1.5, step: 0.01 },
+      godRaysExposure: { value: 0.41, min: 0, max: 1.4, step: 0.01 },
+      godRaysSamples: { value: 38, min: 10, max: 120, step: 1 },
+      godRaysClampMax: { value: 1, min: 0.2, max: 1, step: 0.01 },
+    }, { collapsed: true }),
   }, [])
   const shouldEnableAo = aoCtrl.aoEnabled
     && showGameWorld
@@ -71,6 +100,18 @@ export default function PostEffects({
   const shouldEnableIntroFluid = showIntroOverlay && introOverlaySettings.enabled && !renderProfile.disableIntroFluid
   const shouldEnableTransition = isTransitioning && (renderProfile.simpleTransition || capturedTexture)
   const shouldEnableColorGrading = true
+  // Desktop Safari kept off (GPU/driver quirks); allow on touch/coarse-pointer devices (iOS/Android).
+  const introDofGodRaysOk = !isSafari || renderProfile.isMobileDevice
+  const shouldEnableDof = dofCtrl.dofEnabled
+    && !showGameWorld
+    && tier >= 2
+    && introDofGodRaysOk
+    && !renderProfile.disableDof
+  const shouldEnableGodRays = godRaysCtrl.godRaysEnabled
+    && !showGameWorld
+    && tier >= 2
+    && introDofGodRaysOk
+    && !renderProfile.disableGodRays
 
   const aoRef = useRef(null)
   const bloomRef = useRef(null)
@@ -81,6 +122,10 @@ export default function PostEffects({
   const chromaticStrengthRef = useRef(0)
   const freezeEffectRef = useRef(0)
   const vignetteRef = useRef(null)
+  const dofRef = useRef(null)
+  const sharpOverlayRef = useRef(null)
+  const godRaysRef = useRef(null)
+  const godRaysDummyRef = useRef(null)
   const postMixRef = useRef(showGameWorld ? 1 : 0)
   const postMixStartRef = useRef(showGameWorld ? 1 : 0)
   const introOverlayMixRef = useRef(showIntroOverlay ? 1 : 0)
@@ -125,6 +170,35 @@ export default function PostEffects({
       darkness: 0,
     })
   }
+  if (dofRef.current == null) {
+    dofRef.current = new DepthOfFieldEffect(camera, {
+      focusDistance: dofCtrl.dofFocusDistance,
+      focusRange: dofCtrl.dofFocusRange,
+      bokehScale: dofCtrl.dofBokehScale,
+      resolutionScale: 0.5,
+    })
+  }
+  if (sharpOverlayRef.current == null) {
+    sharpOverlayRef.current = new SharpOverlayPass(scene, camera)
+  }
+  if (godRaysRef.current == null) {
+    // GodRaysEffect requires a non-null lightSource at construction. We swap
+    // in the real CRT screen mesh once TvScreen registers it via godRaysSourceRef.
+    godRaysDummyRef.current = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.0001, 0.0001),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, depthWrite: false, visible: false })
+    )
+    godRaysRef.current = new GodRaysEffect(camera, godRaysDummyRef.current, {
+      kernelSize: KernelSize.SMALL,
+      density: godRaysCtrl.godRaysDensity,
+      decay: godRaysCtrl.godRaysDecay,
+      weight: godRaysCtrl.godRaysWeight,
+      exposure: godRaysCtrl.godRaysExposure,
+      samples: godRaysCtrl.godRaysSamples,
+      clampMax: godRaysCtrl.godRaysClampMax,
+      blur: true,
+    })
+  }
 
   const bloom = bloomRef.current
   const brightnessContrast = brightnessContrastRef.current
@@ -132,6 +206,16 @@ export default function PostEffects({
   const lensDistortion = lensDistortionRef.current
   const chromaticAberration = chromaticAberrationRef.current
   const vignette = vignetteRef.current
+  const dof = dofRef.current
+  const sharpOverlay = sharpOverlayRef.current
+  const godRays = godRaysRef.current
+
+  useEffect(() => {
+    if (sharpOverlayRef.current) {
+      sharpOverlayRef.current.overlayScene = scene
+      sharpOverlayRef.current.overlayCamera = camera
+    }
+  }, [scene, camera])
 
   useEffect(() => () => {
     bloomRef.current?.dispose()
@@ -140,6 +224,11 @@ export default function PostEffects({
     lensDistortionRef.current?.dispose()
     chromaticAberrationRef.current?.dispose()
     vignetteRef.current?.dispose()
+    dofRef.current?.dispose()
+    sharpOverlayRef.current?.dispose()
+    godRaysRef.current?.dispose()
+    godRaysDummyRef.current?.geometry?.dispose()
+    godRaysDummyRef.current?.material?.dispose()
   }, [])
 
   useFrame(() => {
@@ -233,6 +322,38 @@ export default function PostEffects({
     chromaticAberration.enabled = shouldEnableChromatic && (chromaticStrengthRef.current > 0.001 || chromaticSpike > 0)
     lensDistortion.enabled = shouldEnableLensDistortion && (!isSafari || freezeT > 0.001)
     vignette.enabled = shouldEnableVignette && vignette.darkness > 0.001
+
+    if (dof) {
+      dof.enabled = shouldEnableDof
+      if (shouldEnableDof) {
+        dof.cocMaterial.focusDistance = dofCtrl.dofFocusDistance
+        dof.cocMaterial.focusRange = dofCtrl.dofFocusRange
+        dof.bokehScale = dofCtrl.dofBokehScale
+      }
+    }
+    if (sharpOverlay) {
+      sharpOverlay.enabled = shouldEnableDof && sharpSelection.size > 0
+    }
+    if (godRays) {
+      const source = godRaysSourceRef.current ?? godRaysDummyRef.current
+      if (source && godRays.lightSource !== source) {
+        godRays.lightSource = source
+      }
+      const hasRealSource = godRaysSourceRef.current != null
+      godRays.enabled = shouldEnableGodRays && hasRealSource
+      if (godRays.enabled) {
+        const mat = godRays.godRaysMaterial
+        if (mat) {
+          mat.density = godRaysCtrl.godRaysDensity
+          mat.decay = godRaysCtrl.godRaysDecay
+          mat.weight = godRaysCtrl.godRaysWeight
+          mat.exposure = godRaysCtrl.godRaysExposure
+          mat.samples = godRaysCtrl.godRaysSamples
+          const clampUniform = mat.uniforms?.clampMax
+          if (clampUniform) clampUniform.value = godRaysCtrl.godRaysClampMax
+        }
+      }
+    }
   })
 
   const shouldMountComposer = shouldEnableAo
@@ -242,6 +363,8 @@ export default function PostEffects({
     || shouldEnableColorGrading
     || shouldEnableLensDistortion
     || shouldEnableVignette
+    || shouldEnableDof
+    || shouldEnableGodRays
 
   if (!shouldMountComposer) return null
 
@@ -259,7 +382,10 @@ export default function PostEffects({
           quality={tier >= 3 && quality === 'high' ? 'medium' : 'performance'}
         />
       )}
+      {shouldEnableDof && <primitive object={dof} />}
+      {shouldEnableDof && <primitive object={sharpOverlay} />}
       {shouldEnableBloom && <primitive object={bloom} />}
+      {shouldEnableGodRays && <primitive object={godRays} />}
       {shouldEnableChromatic && <primitive object={chromaticAberration} />}
       {shouldEnableTransition && (
         <TransitionEffect
