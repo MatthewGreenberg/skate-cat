@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { folder } from 'leva'
 import * as THREE from 'three'
-import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor, isSafari } from '../store'
+import { gameState, getGameDelta, getNightFactor, getSunsetFactor, getSunriseFactor, lerpDayNightColor } from '../store'
 import { useOptionalControls } from '../lib/debugControls'
 
 const BACKGROUND_DISTANCE = 145
@@ -296,7 +296,7 @@ export default function Background({ active = true, renderProfile = {} }) {
     uSunColor: { value: new THREE.Color('#ffd17a') },
     uMoonColor: { value: new THREE.Color('#d9e6ff') },
     uStarColor: { value: new THREE.Color('#9ed3ff') },
-    uFbmOctaves: { value: (renderProfile.backgroundLowCost || isSafari) ? 2 : 4 },
+    uFbmOctaves: { value: renderProfile.backgroundLowCost ? 2 : 4 },
   }), [renderProfile.backgroundLowCost])
 
   const material = useMemo(() => new THREE.ShaderMaterial({

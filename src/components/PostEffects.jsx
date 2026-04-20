@@ -57,6 +57,7 @@ export default function PostEffects({
   chromaticSpike = 0,
   introOverlaySettings,
   renderProfile = {},
+  introScreenMode,
 }) {
   const tier = gpuTier?.tier ?? 3
   const { scene, camera } = useThree()
@@ -100,17 +101,16 @@ export default function PostEffects({
   const shouldEnableIntroFluid = showIntroOverlay && introOverlaySettings.enabled && !renderProfile.disableIntroFluid
   const shouldEnableTransition = isTransitioning && (renderProfile.simpleTransition || capturedTexture)
   const shouldEnableColorGrading = true
-  // Desktop Safari kept off (GPU/driver quirks); allow on touch/coarse-pointer devices (iOS/Android).
-  const introDofGodRaysOk = !isSafari || renderProfile.isMobileDevice
+  // AO / bloom use tier >= 2; intro DOF + god rays need tier 1 too — detect-gpu often
+  // classifies iOS Safari as tier 1 ("quiet"), which hid these entirely.
+  const introDofGodRaysTierOk = tier >= 1 || isSafari
   const shouldEnableDof = dofCtrl.dofEnabled
     && !showGameWorld
-    && tier >= 2
-    && introDofGodRaysOk
+    && introDofGodRaysTierOk
     && !renderProfile.disableDof
   const shouldEnableGodRays = godRaysCtrl.godRaysEnabled
     && !showGameWorld
-    && tier >= 2
-    && introDofGodRaysOk
+    && introDofGodRaysTierOk
     && !renderProfile.disableGodRays
 
   const aoRef = useRef(null)
@@ -130,6 +130,7 @@ export default function PostEffects({
   const postMixStartRef = useRef(showGameWorld ? 1 : 0)
   const introOverlayMixRef = useRef(showIntroOverlay ? 1 : 0)
   const wasTransitioningRef = useRef(false)
+  const godRaysDimRef = useRef(0)
 
   if (bloomRef.current == null) {
     bloomRef.current = new BloomEffect({
@@ -305,17 +306,16 @@ export default function PostEffects({
     vignette.offset = THREE.MathUtils.lerp(0.3, 0.05, freezeT)
     vignette.darkness = THREE.MathUtils.lerp(0, 0.85, freezeT)
     if (shouldEnableBloom) {
-      bloom.luminanceMaterial.threshold = activeSettings.bloomThreshold
-      bloom.luminanceMaterial.smoothing = activeSettings.bloomSmoothing
-    }
-
-    // Suppress bloom during early transition so the live intro buffer renders cleanly.
-    if (shouldEnableBloom && isTransitioning && transitionProgressRef.current < 0.15) {
-      bloom.intensity = 0
-    } else if (shouldEnableBloom) {
+      // During forward transition, snap bloom to game settings so there's no tween through
+      // an in-between look. Reverse and non-transition frames use the interpolated values.
+      const bloomSource = (isTransitioning && transitionDirection !== 'reverse')
+        ? gameSettings
+        : activeSettings
+      bloom.luminanceMaterial.threshold = bloomSource.bloomThreshold
+      bloom.luminanceMaterial.smoothing = bloomSource.bloomSmoothing
       const nightFactor = runActive ? getNightFactor(gameState.timeOfDay.current) : 0
-      bloom.intensity = THREE.MathUtils.lerp(activeSettings.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
-      bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(activeSettings.bloomThreshold, 0, nightFactor)
+      bloom.intensity = THREE.MathUtils.lerp(bloomSource.bloomIntensity, NIGHT_BLOOM_INTENSITY, nightFactor)
+      bloom.luminanceMaterial.threshold = THREE.MathUtils.lerp(bloomSource.bloomThreshold, 0, nightFactor)
     }
 
     // Disable effects that have no visual contribution to save full-screen passes
@@ -341,13 +341,23 @@ export default function PostEffects({
       }
       const hasRealSource = godRaysSourceRef.current != null
       godRays.enabled = shouldEnableGodRays && hasRealSource
+      // Tween god rays down when looking at the summary or leaderboard screens.
+      const shouldDimGodRays = introScreenMode === 'leaderboard'
+        || introScreenMode === 'initials'
+        || introScreenMode === 'summary'
+      godRaysDimRef.current = THREE.MathUtils.lerp(
+        godRaysDimRef.current,
+        shouldDimGodRays ? 1 : 0,
+        0.06
+      )
       if (godRays.enabled) {
         const mat = godRays.godRaysMaterial
         if (mat) {
+          const dimMul = THREE.MathUtils.lerp(1, 0.5, godRaysDimRef.current)
           mat.density = godRaysCtrl.godRaysDensity
           mat.decay = godRaysCtrl.godRaysDecay
-          mat.weight = godRaysCtrl.godRaysWeight
-          mat.exposure = godRaysCtrl.godRaysExposure
+          mat.weight = godRaysCtrl.godRaysWeight * dimMul
+          mat.exposure = godRaysCtrl.godRaysExposure * dimMul
           mat.samples = godRaysCtrl.godRaysSamples
           const clampUniform = mat.uniforms?.clampMax
           if (clampUniform) clampUniform.value = godRaysCtrl.godRaysClampMax

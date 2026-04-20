@@ -387,6 +387,7 @@ const SceneCanvas = memo(function SceneCanvas({
           chromaticSpike={chromaticSpike}
           introOverlaySettings={introOverlaySettings}
           renderProfile={renderProfile}
+          introScreenMode={introScreenMode}
         />
       </Canvas>
     </>
@@ -408,6 +409,7 @@ export default function App() {
   const shouldCaptureSceneRef = useRef(false)
   const transitionSnapshotTextureRef = useRef(null)
   const transitionCaptureModeRef = useRef(null)
+  const tutorialAutoStartRef = useRef(false)
   const [capturedTransitionTexture, setCapturedTransitionTexture] = useState(null)
   const [phase, setPhase] = useState(PHASE_INTRO)
   const [bootPhase, setBootPhase] = useState(BOOT_PHASE_LOADING)
@@ -1201,17 +1203,30 @@ export default function App() {
   const handleStart = useCallback(() => {
     if (!introStartEnabled) return
     if (needsTutorial && !isReturnScreenActive) {
+      tutorialAutoStartRef.current = true
       setPhase(PHASE_TUTORIAL)
       return
     }
     queueLaunchStart(startLaunchTransition)
   }, [introStartEnabled, needsTutorial, isReturnScreenActive, queueLaunchStart, startLaunchTransition])
 
-  const handleTutorialFinish = useCallback(() => {
+  const handleTutorialSkip = useCallback(() => {
+    tutorialAutoStartRef.current = false
     markTutorialCompleted()
     setNeedsTutorial(false)
     setPhase(PHASE_INTRO)
   }, [])
+
+  const handleTutorialComplete = useCallback(({ fromGesture = false } = {}) => {
+    const shouldAutoStart = tutorialAutoStartRef.current
+    tutorialAutoStartRef.current = false
+    markTutorialCompleted()
+    setNeedsTutorial(false)
+    setPhase(PHASE_INTRO)
+    if (shouldAutoStart && (!isTouchDevice || fromGesture)) {
+      queueLaunchStart(startLaunchTransition)
+    }
+  }, [isTouchDevice, queueLaunchStart, startLaunchTransition])
 
   const handleSceneCaptured = useCallback((sceneTexture) => {
     const captureMode = transitionCaptureModeRef.current
@@ -1289,6 +1304,7 @@ export default function App() {
       return
     }
     if (action === 'tutorial') {
+      tutorialAutoStartRef.current = false
       setPhase(PHASE_TUTORIAL)
       return
     }
@@ -1382,7 +1398,10 @@ export default function App() {
   }, [])
 
   const suppressClickSfxRef = useRef(false)
-  suppressClickSfxRef.current = isTouchDevice && runActive
+  useEffect(() => {
+    suppressClickSfxRef.current = isTouchDevice && runActive
+  }, [isTouchDevice, runActive])
+
   useEffect(() => {
     const handleGlobalClick = () => {
       if (suppressClickSfxRef.current) return
@@ -1416,8 +1435,8 @@ export default function App() {
       <TutorialOverlay
         active={phase === PHASE_TUTORIAL}
         isTouchDevice={isTouchDevice}
-        onSkip={handleTutorialFinish}
-        onComplete={handleTutorialFinish}
+        onSkip={handleTutorialSkip}
+        onComplete={handleTutorialComplete}
       />
       {isCountdownActive && (
         <>

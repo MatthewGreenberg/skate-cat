@@ -10,10 +10,11 @@ const STEPS = [
     badge: 'Move 1 of 3',
     title: 'JUMP THE LOG',
     body: 'Logs roll in on the beat. Tap to hop over them — nail the timing for bigger points.',
+    bodyTouch: 'Tap JUMP to hop the log on beat.',
     keyHintDesktop: '\u2191  UP ARROW',
-    keyHintTouch: 'Tap RIGHT BUTTON to JUMP',
+    keyHintTouch: 'Tap JUMP',
     waiting: 'Press \u2191 once here to continue',
-    waitingTouch: 'Tap the RIGHT button once here to continue',
+    waitingTouch: 'Use the JUMP button below to continue',
     image: 'jump.png',
     imageTouch: 'jump-mobile.png',
   },
@@ -22,10 +23,11 @@ const STEPS = [
     badge: 'Move 2 of 3',
     title: 'GRIND THE RAIL',
     body: 'Hold \u2191 to lock onto rails. Stay on while the beat runs, then release to land a trick.',
+    bodyTouch: 'Hold JUMP to lock onto the rail.',
     keyHintDesktop: 'HOLD  \u2191  FOR A BEAT',
-    keyHintTouch: 'HOLD RIGHT BUTTON FOR A BEAT',
+    keyHintTouch: 'Hold JUMP',
     waiting: 'Hold \u2191 until the bar fills to continue',
-    waitingTouch: 'Hold the RIGHT button until the bar fills to continue',
+    waitingTouch: 'Hold the JUMP button below until the bar fills',
     image: 'grind.png',
     imageTouch: 'grind-mobile.png',
   },
@@ -34,10 +36,11 @@ const STEPS = [
     badge: 'Move 3 of 3',
     title: 'SPIN A 360',
     body: 'Hit the left arrow to do a 360.',
+    bodyTouch: 'Tap SPIN to throw a 360.',
     keyHintDesktop: 'PRESS \u2190',
-    keyHintTouch: 'Tap LEFT BUTTON to SPIN',
+    keyHintTouch: 'Tap SPIN',
     waiting: 'Press \u2190 once here to continue',
-    waitingTouch: 'Tap the LEFT button once here to continue',
+    waitingTouch: 'Use the SPIN button below to continue',
     image: 'spin.png',
     imageTouch: 'spin-mobile.png',
   },
@@ -47,6 +50,8 @@ const STEPS = [
     title: 'Second cat joins the stack',
     body:
       'Mid-run, new cats drop onto your stack. The taller tower makes jumps trickier, but each one raises your speed bonus — keep unlocking cats to push your score higher.',
+    bodyTouch: 'More cats stack onto your run. Bigger bonus, trickier landings.',
+    waitingTouch: 'Tap either button to start your run',
     infoOnly: true,
     image: 'fall.png',
   },
@@ -77,6 +82,15 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
     setStepCompleted(true)
   }, [stepCompleted])
 
+  const finishTutorial = useCallback((options = {}) => {
+    if (completingRef.current) return
+    completingRef.current = true
+    window.clearTimeout(grindTimeoutRef.current)
+    setIsHolding(false)
+    setPressedControl(null)
+    onComplete?.(options)
+  }, [onComplete])
+
   const stopGrindHold = useCallback(() => {
     window.clearTimeout(grindTimeoutRef.current)
     setIsHolding(false)
@@ -95,7 +109,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
   const handleTouchControlPress = useCallback((side) => {
     if (stepCompleted) return
     if (step.infoOnly) {
-      markStepDone()
+      finishTutorial({ fromGesture: true })
       return
     }
     if (step.id === 'jump' && side === 'right') {
@@ -109,7 +123,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
     if (step.id === 'grind' && side === 'right') {
       startGrindHold()
     }
-  }, [markStepDone, startGrindHold, step, stepCompleted])
+  }, [finishTutorial, markStepDone, startGrindHold, step, stepCompleted])
 
   const handleTouchControlRelease = useCallback((side) => {
     if (step.id === 'grind' && side === 'right') stopGrindHold()
@@ -130,6 +144,8 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
         markStepDone()
       } else if (step.id === 'grind' && event.code === 'ArrowUp') {
         startGrindHold()
+      } else if (step.infoOnly && (event.code === 'Enter' || event.code === 'NumpadEnter')) {
+        markStepDone()
       }
     }
 
@@ -186,17 +202,19 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
         setStepCompleted(false)
         setIsHolding(false)
       } else {
-        completingRef.current = true
-        setPressedControl(null)
-        onComplete?.()
+        finishTutorial()
       }
     }, 720)
     return () => window.clearTimeout(timeout)
-  }, [stepCompleted, stepIndex, onComplete])
+  }, [finishTutorial, stepCompleted, stepIndex])
 
   const keyHint = step.infoOnly ? null : (isTouchDevice ? step.keyHintTouch : step.keyHintDesktop)
+  const bodyText = isTouchDevice && step.bodyTouch ? step.bodyTouch : step.body
+  const mobileActionLabel = step.infoOnly
+    ? 'Tap Either Button'
+    : keyHint
   const actionWaiting = step.infoOnly
-    ? (isTouchDevice ? 'Tap either button to continue' : null)
+    ? (isTouchDevice ? step.waitingTouch : null)
     : (isTouchDevice ? step.waitingTouch : step.waiting)
   const grindBarWidth = stepCompleted || isHolding ? '100%' : '0%'
   const grindBarTransition = isHolding
@@ -211,16 +229,12 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
 
   const handleTouchButtonDown = (side) => (event) => {
     event.preventDefault()
-    event.currentTarget.setPointerCapture?.(event.pointerId)
     setPressedControl(side)
     handleTouchControlPress(side)
   }
 
   const handleTouchButtonUp = (side) => (event) => {
     event.preventDefault()
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
     setPressedControl((current) => (current === side ? null : current))
     handleTouchControlRelease(side)
   }
@@ -273,16 +287,18 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
       <div
         key={stepIndex}
         style={{
-          width: 'min(520px, calc(100vw - 0.75rem))',
+          width: isTouchDevice ? 'min(100%, 30rem)' : 'min(520px, calc(100vw - 0.75rem))',
           maxHeight: isTouchDevice
-            ? 'calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 9.75rem)'
+            ? 'calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 9.25rem)'
             : 'calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.25rem)',
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 'clamp(0.4rem, 2.2vmin, 1.15rem)',
-          padding: 'clamp(0.55rem, 2.8vmin, 2.25rem) clamp(0.65rem, 3vmin, 2.25rem)',
+          gap: isTouchDevice ? '0.55rem' : 'clamp(0.4rem, 2.2vmin, 1.15rem)',
+          padding: isTouchDevice
+            ? '0.8rem 0.8rem 1rem'
+            : 'clamp(0.55rem, 2.8vmin, 2.25rem) clamp(0.65rem, 3vmin, 2.25rem)',
           borderRadius: 'clamp(16px, 4vmin, 28px)',
           background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.96), rgba(255, 160, 72, 0.96))',
           border: '3px solid rgba(255, 255, 255, 0.35)',
@@ -297,7 +313,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
           style={{
             fontFamily: 'Nunito, sans-serif',
             fontWeight: 900,
-            fontSize: 'clamp(0.62rem, 2vmin, 0.78rem)',
+            fontSize: isTouchDevice ? '0.62rem' : 'clamp(0.62rem, 2vmin, 0.78rem)',
             letterSpacing: '0.24em',
             textTransform: 'uppercase',
             color: 'rgba(255, 247, 213, 0.92)',
@@ -309,7 +325,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
         <div
           style={{
             fontFamily: 'Knewave',
-            fontSize: 'clamp(1.35rem, 6.5vmin, 3.6rem)',
+            fontSize: isTouchDevice ? 'clamp(1.18rem, 6vw, 2.05rem)' : 'clamp(1.35rem, 6.5vmin, 3.6rem)',
             lineHeight: 1.05,
             letterSpacing: '0.05em',
             color: '#fff7d5',
@@ -319,20 +335,75 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
           {step.title}
         </div>
 
+        {isTouchDevice && mobileActionLabel != null && !stepCompleted && (
+          <div
+            style={{
+              width: '100%',
+              padding: '0.58rem 0.75rem',
+              borderRadius: '18px',
+              background: 'rgba(10, 12, 18, 0.72)',
+              border: '2px solid rgba(255, 255, 255, 0.24)',
+              boxShadow: '0 10px 24px rgba(0, 0, 0, 0.18)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'Nunito, sans-serif',
+                fontWeight: 900,
+                fontSize: '0.62rem',
+                letterSpacing: '0.22em',
+                textTransform: 'uppercase',
+                color: 'rgba(255, 247, 213, 0.75)',
+              }}
+            >
+              Do This Now
+            </div>
+            <div
+              style={{
+                marginTop: '0.18rem',
+                fontFamily: 'Knewave',
+                fontSize: '1.15rem',
+                letterSpacing: '0.08em',
+                color: '#fff7d5',
+                textTransform: 'uppercase',
+                textShadow: '0 1px 3px rgba(0, 0, 0, 0.35)',
+              }}
+            >
+              {mobileActionLabel}
+            </div>
+          </div>
+        )}
+
+        {(isTouchDevice && step.imageTouch) || step.image ? (
+          <img
+            src={`/images/${isTouchDevice && step.imageTouch ? step.imageTouch : step.image}`}
+            alt={step.title}
+            style={{
+              width: '100%',
+              maxWidth: '100%',
+              height: 'auto',
+              maxHeight: isTouchDevice ? 'min(24vh, 150px)' : 'min(34vmin, 42vh, 220px)',
+              objectFit: 'contain',
+              flexShrink: 0,
+              order: isTouchDevice ? -1 : 0,
+            }}
+          />
+        ) : null}
+
         <div
           style={{
             fontFamily: 'Nunito, sans-serif',
             fontWeight: 700,
-            fontSize: 'clamp(0.8rem, 2.8vmin, 1.05rem)',
-            lineHeight: 1.35,
+            fontSize: isTouchDevice ? '0.83rem' : 'clamp(0.8rem, 2.8vmin, 1.05rem)',
+            lineHeight: isTouchDevice ? 1.28 : 1.35,
             color: 'rgba(255, 255, 255, 0.92)',
             maxWidth: '36rem',
           }}
         >
-          {step.body}
+          {bodyText}
         </div>
 
-        {!step.infoOnly && !stepCompleted && (
+        {!isTouchDevice && !step.infoOnly && !stepCompleted && (
           <div
             style={{
               fontFamily: 'Nunito, sans-serif',
@@ -350,7 +421,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
 
         {keyHint != null && (
           <>
-            {!stepCompleted && (
+            {!isTouchDevice && !stepCompleted && (
               <div
                 style={{
                   fontFamily: 'Nunito, sans-serif',
@@ -406,22 +477,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
           </div>
         )}
 
-        {(isTouchDevice && step.imageTouch) || step.image ? (
-          <img
-            src={`/images/${isTouchDevice && step.imageTouch ? step.imageTouch : step.image}`}
-            alt={step.title}
-            style={{
-              width: '100%',
-              maxWidth: '100%',
-              height: 'auto',
-              maxHeight: 'min(34vmin, 42vh, 220px)',
-              objectFit: 'contain',
-              flexShrink: 0,
-            }}
-          />
-        ) : null}
-
-        {step.infoOnly && !stepCompleted && (
+        {step.infoOnly && !stepCompleted && !isTouchDevice && (
           <button
             type="button"
             onClick={() => {
