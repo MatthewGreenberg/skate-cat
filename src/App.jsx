@@ -80,7 +80,7 @@ const PRIMING_PHASE_MIN_MS = 700
 const BOOT_REVEAL_DURATION_MS = 1100
 const BOOT_ATTRACT_SETTLE_MS = 480
 const START_CONFIRM_MS = 220
-const FAILED_RETURN_DURATION_SECONDS = 0.9
+const FAILED_RETURN_DURATION_SECONDS = 1.6
 const MAIN_MUSIC_VOLUME = 0.5
 
 function clamp01(value) {
@@ -768,7 +768,7 @@ export default function App() {
   }, [])
   const reverseTransitionDuration = (
     currentOutcome === 'failed'
-      ? Math.min(transitionSettings.reverseDuration, FAILED_RETURN_DURATION_SECONDS)
+      ? FAILED_RETURN_DURATION_SECONDS
       : transitionSettings.reverseDuration
   )
 

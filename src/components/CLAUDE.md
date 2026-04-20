@@ -16,7 +16,7 @@
 - **SpeedLines.jsx** — Shader-based speed line overlay.
 - **AmbientParticles.jsx** — Floating firefly-like particles.
 - **TransitionEffect.jsx** — Custom post-processing pass for circular reveal transition.
-- **VhsGlitchEffect.jsx** — Custom post-processing `Effect` that plays a VHS-eject glitch during `PHASE_END_GLITCH` (failure death moment). Four beats over 700ms (`VHS_GLITCH_DURATION_SECONDS` in `PostEffects.jsx`): impact pop → tracking loss → rewind rips → CRT power-off pinch. Progress is computed inside `PostEffects` by watching `chromaticSpike` transition 0→1 (driven by `App.jsx` when phase enters `PHASE_END_GLITCH`); mounted after bloom/chromatic but before `TransitionEffect` so it acts on the live scene, not the captured frame. Replaces the previous lens-zoom + vignette-darken freeze treatment.
+- **VhsGlitchEffect.jsx** — Custom post-processing `Effect` that plays a VHS-eject glitch during `PHASE_END_GLITCH` (failure death moment). Four beats over 700ms (`VHS_GLITCH_DURATION_SECONDS` in `PostEffects.jsx`): impact pop → tracking loss → rewind rips → CRT power-off pinch. Progress is computed inside `PostEffects` by watching `chromaticSpike` transition 0→1 (driven by `App.jsx` when phase enters `PHASE_END_GLITCH`); mounted after bloom/chromatic but before `TransitionEffect` so it acts on the live scene, not the captured frame. Replaces the previous lens-zoom + vignette-darken freeze treatment. Every shader magic number is a uniform with defaults in `DEFAULTS` and a leva control under the "VHS Glitch" tab (Timing / Judder / Wobble / Tear / RGB Split / Color-Scan / Static / Flash / Eject folders, all collapsed).
 
 ## Environment
 - **Ground.jsx** — Scrolling road with shader-based gradient.
