@@ -1,12 +1,31 @@
 import { useEffect, useState, useRef } from 'react'
 import { gameState, MAX_RUN_LIVES } from '../store'
 import { BEAT_INTERVAL, getPerceivedMusicTime } from '../rhythm'
+import DayCycleIndicator from './DayCycleIndicator'
 
-const hudStyle = (isTouchDevice) => ({
+const hudRowStyle = (isTouchDevice) => ({
   position: 'fixed',
   top: isTouchDevice ? '0.6rem' : '1rem',
   left: '50%',
   transform: 'translateX(-50%)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: isTouchDevice ? '0.5rem' : '0.75rem',
+  zIndex: 60,
+  pointerEvents: 'none',
+})
+
+const dayCycleIndicatorWrapperStyle = (isTouchDevice) => ({
+  position: 'fixed',
+  top: isTouchDevice ? '0.6rem' : '1rem',
+  left: isTouchDevice ? 'calc(50% + 9.2rem)' : 'calc(50% + 12.6rem)',
+  zIndex: 60,
+  pointerEvents: 'none',
+  animation: 'gameHudSegmentIntro 420ms cubic-bezier(0.22, 1, 0.36, 1) 330ms both',
+  willChange: 'transform, opacity',
+})
+
+const hudStyle = (isTouchDevice) => ({
   display: 'flex',
   alignItems: 'center',
   gap: isTouchDevice ? '0.55rem' : '0.9rem',
@@ -17,8 +36,6 @@ const hudStyle = (isTouchDevice) => ({
   boxShadow: '0 6px 24px rgba(255, 107, 53, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
   fontFamily: 'Knewave',
   color: '#fff',
-  zIndex: 60,
-  pointerEvents: 'none',
   letterSpacing: '0.04em',
   animation: 'gameHudIntro 520ms cubic-bezier(0.22, 1, 0.36, 1) both',
   willChange: 'transform, opacity',
@@ -59,6 +76,7 @@ const scoreLabelStyle = (isTouchDevice) => ({
 const scoreNumStyle = (isTouchDevice) => ({
   fontSize: isTouchDevice ? '0.8rem' : '1.05rem',
   letterSpacing: '0.04em',
+  fontVariantNumeric: 'tabular-nums',
 })
 
 const multiplierBadgeStyle = (isTouchDevice) => ({
@@ -302,6 +320,7 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
           {judgementText}
         </div>
       )}
+      <div style={hudRowStyle(isTouchDevice)}>
       <div style={hudStyle(isTouchDevice)}>
         <div style={{ ...dotRowStyle(isTouchDevice), ...hudSegmentIntroStyle(90) }}>
           {[0, 1, 2, 3].map((beat) => (
@@ -328,6 +347,10 @@ export default function GameHud({ musicRef, visible, isTouchDevice = false }) {
           <span style={scoreNumStyle(isTouchDevice)}>{score}</span>
           <span style={multiplierBadgeStyle(isTouchDevice)}>x{multiplier}</span>
         </div>
+      </div>
+      </div>
+      <div style={dayCycleIndicatorWrapperStyle(isTouchDevice)}>
+        <DayCycleIndicator visible={visible} isTouchDevice={isTouchDevice} />
       </div>
       {showPoints && pointsText && (
         <div

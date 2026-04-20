@@ -16,6 +16,7 @@
 - **SpeedLines.jsx** — Shader-based speed line overlay.
 - **AmbientParticles.jsx** — Floating firefly-like particles.
 - **TransitionEffect.jsx** — Custom post-processing pass for circular reveal transition.
+- **VhsGlitchEffect.jsx** — Custom post-processing `Effect` that plays a VHS-eject glitch during `PHASE_END_GLITCH` (failure death moment). Four beats over 700ms (`VHS_GLITCH_DURATION_SECONDS` in `PostEffects.jsx`): impact pop → tracking loss → rewind rips → CRT power-off pinch. Progress is computed inside `PostEffects` by watching `chromaticSpike` transition 0→1 (driven by `App.jsx` when phase enters `PHASE_END_GLITCH`); mounted after bloom/chromatic but before `TransitionEffect` so it acts on the live scene, not the captured frame. Replaces the previous lens-zoom + vignette-darken freeze treatment.
 
 ## Environment
 - **Ground.jsx** — Scrolling road with shader-based gradient.
@@ -26,6 +27,7 @@
 
 ## UI Overlays
 - **GameHud.jsx** — Score, beat dots, timing feedback.
+- **DayCycleIndicator.jsx** — HUD disc showing day/night cycle progress. A big-faced sun fills the disc during day, crossfades to a crescent-moon face during night; the outer ring fills as `gameState.timeOfDay` advances. Between `NEW_CAT_WARNING_TIME_OF_DAY` and `DAY_RETURN_TIME_OF_DAY` the celestial face is replaced by a full cat face (ear twitches, tail sway, orange glow pulse) that fills the whole disc — the cat is hidden entirely once `extraCatCount >= MAX_EXTRA_CAT_COUNT`. A `NEW CAT!` chip pops below while the cat is active. Polls `gameState` via `requestAnimationFrame` since `timeOfDay` is mutated inside R3F's `useFrame`.
 - **GameOverScreen.jsx** — End game modal with animated score counter. Restart via keyboard or tap/click.
 - **RotationPrompt.jsx** — Full-screen overlay (z-index 1500) shown on touch devices in portrait. Pairs with `useOrientation` hook; when visible, `gameState.paused` is set and gameplay freezes.
 - **TutorialOverlay.jsx** — First-time-player interactive tutorial (z-index 1300). Three steps (jump / grind / spin) that detect real keyboard or touch inputs matching the real game controls. Gated by `src/lib/tutorialStorage.js` localStorage flag; rendered only when `phase === PHASE_TUTORIAL`. Always-visible Skip button. On complete or skip, `App.jsx` marks localStorage and returns to `PHASE_INTRO`.

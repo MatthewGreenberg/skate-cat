@@ -68,15 +68,15 @@ body {
 
 @keyframes gameHudIntro {
   0% {
-    transform: translateX(-50%) translateY(-28px) scale(0.84);
+    transform: translateY(-28px) scale(0.84);
     opacity: 0;
   }
   58% {
-    transform: translateX(-50%) translateY(4px) scale(1.03);
+    transform: translateY(4px) scale(1.03);
     opacity: 1;
   }
   100% {
-    transform: translateX(-50%) translateY(0px) scale(1);
+    transform: translateY(0px) scale(1);
     opacity: 1;
   }
 }

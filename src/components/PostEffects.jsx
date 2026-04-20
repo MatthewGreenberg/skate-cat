@@ -19,6 +19,7 @@ import {
 import { N8AO } from '@react-three/postprocessing'
 import TransitionEffect from './TransitionEffect'
 import IntroFluidEffect from './IntroFluidEffect'
+import VhsGlitchEffect from './VhsGlitchEffect'
 import { gameState, getNightFactor, isSafari } from '../store'
 import { interpolatePostSettings } from '../lib/postProcessing'
 import { useOptionalControls } from '../lib/debugControls'
@@ -29,6 +30,7 @@ import {
 } from './introScene/sharpSelection'
 
 const NIGHT_BLOOM_INTENSITY = 4.3
+const VHS_GLITCH_DURATION_SECONDS = 0.7
 
 export function TransitionAnimator({ progressRef, isTransitioning, duration, onComplete }) {
   useFrame((_, delta) => {
@@ -121,6 +123,9 @@ export default function PostEffects({
   const chromaticAberrationRef = useRef(null)
   const chromaticStrengthRef = useRef(0)
   const freezeEffectRef = useRef(0)
+  const vhsProgressRef = useRef(0)
+  const vhsStartTimeRef = useRef(null)
+  const prevChromaticSpikeRef = useRef(0)
   const vignetteRef = useRef(null)
   const dofRef = useRef(null)
   const sharpOverlayRef = useRef(null)
@@ -289,22 +294,26 @@ export default function PostEffects({
       0.0038 * chromaticStrengthRef.current
     )
 
-    // Freeze-frame death effect: slow zoom + vignette darkening
-    freezeEffectRef.current = THREE.MathUtils.lerp(
-      freezeEffectRef.current,
-      chromaticSpike,
-      chromaticSpike > freezeEffectRef.current ? 0.06 : 0.15
-    )
-    const freezeT = freezeEffectRef.current
-    // Slow zoom: push lens distortion inward (barrel zoom)
-    const zoomAmount = freezeT * -0.12
-    lensDistortion.distortion.set(
-      activeSettings.distortionX + zoomAmount,
-      activeSettings.distortionY + zoomAmount
-    )
-    // Vignette: darken edges
-    vignette.offset = THREE.MathUtils.lerp(0.3, 0.05, freezeT)
-    vignette.darkness = THREE.MathUtils.lerp(0, 0.85, freezeT)
+    // VHS eject glitch drives the freeze moment now — keep lens/vignette at baseline
+    // so they don't fight the glitch pass.
+    freezeEffectRef.current = 0
+    lensDistortion.distortion.set(activeSettings.distortionX, activeSettings.distortionY)
+    vignette.offset = 0
+    vignette.darkness = 0
+
+    // Ramp VHS glitch progress over VHS_GLITCH_DURATION_SECONDS while chromaticSpike > 0
+    const prevSpike = prevChromaticSpikeRef.current
+    if (chromaticSpike > 0 && prevSpike <= 0) {
+      vhsStartTimeRef.current = performance.now()
+    }
+    if (chromaticSpike <= 0) {
+      vhsStartTimeRef.current = null
+      vhsProgressRef.current = 0
+    } else if (vhsStartTimeRef.current != null) {
+      const elapsed = (performance.now() - vhsStartTimeRef.current) / 1000
+      vhsProgressRef.current = Math.min(elapsed / VHS_GLITCH_DURATION_SECONDS, 1)
+    }
+    prevChromaticSpikeRef.current = chromaticSpike
     if (shouldEnableBloom) {
       // During forward transition, snap bloom to game settings so there's no tween through
       // an in-between look. Reverse and non-transition frames use the interpolated values.
@@ -319,8 +328,8 @@ export default function PostEffects({
     }
 
     // Disable effects that have no visual contribution to save full-screen passes
-    chromaticAberration.enabled = shouldEnableChromatic && (chromaticStrengthRef.current > 0.001 || chromaticSpike > 0)
-    lensDistortion.enabled = shouldEnableLensDistortion && (!isSafari || freezeT > 0.001)
+    chromaticAberration.enabled = shouldEnableChromatic && chromaticStrengthRef.current > 0.001
+    lensDistortion.enabled = shouldEnableLensDistortion && !isSafari
     vignette.enabled = shouldEnableVignette && vignette.darkness > 0.001
 
     if (dof) {
@@ -397,6 +406,7 @@ export default function PostEffects({
       {shouldEnableBloom && <primitive object={bloom} />}
       {shouldEnableGodRays && <primitive object={godRays} />}
       {shouldEnableChromatic && <primitive object={chromaticAberration} />}
+      <VhsGlitchEffect progressRef={vhsProgressRef} />
       {shouldEnableTransition && (
         <TransitionEffect
           capturedTexture={capturedTexture}

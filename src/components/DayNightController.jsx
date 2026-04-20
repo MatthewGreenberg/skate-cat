@@ -16,8 +16,8 @@ import {
 import { useOptionalControls } from '../lib/debugControls'
 
 const EXTRA_CAT_SPEED_BONUS = 0.45
-const NEW_CAT_WARNING_TIME_OF_DAY = 0.82
-const DAY_RETURN_TIME_OF_DAY = 0.9
+export const NEW_CAT_WARNING_TIME_OF_DAY = 0.82
+export const DAY_RETURN_TIME_OF_DAY = 0.9
 
 function didCrossTimeOfDayThreshold(previousTimeOfDay, nextTimeOfDay, threshold) {
   if (previousTimeOfDay <= nextTimeOfDay) {
@@ -31,7 +31,6 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
   const dirLightRef = useRef()
   const ambientRef = useRef()
   const hemiRef = useRef()
-  const previousTimeOfDayRef = useRef(gameState.timeOfDay.current || 0)
   const { scene } = useThree()
   const shadowMapSize = shadowMode === 'hybrid'
     ? 512
@@ -50,8 +49,10 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
   }, [])
 
   useFrame((_, delta) => {
-    const previousTimeOfDay = previousTimeOfDayRef.current
-    let nextTimeOfDay = gameState.timeOfDay.current
+    // Read from gameState (not a local ref) so `resetRunState()` setting timeOfDay=0 on
+    // restart takes effect — otherwise the cycle resumes from the stale previous-run value.
+    const previousTimeOfDay = gameState.timeOfDay.current
+    let nextTimeOfDay = previousTimeOfDay
 
     // Cycle timeOfDay only while the run is active (or use leva override when paused)
     if (paused) {
@@ -74,7 +75,6 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
 
       if (shouldWarnForNewCat) {
         gameState.pendingCatDrop.current = true
-        gameState.phaseAnnouncement.current = 'NEW CAT'
         emitHudScoreChange()
       }
 
@@ -84,12 +84,11 @@ export default function DayNightController({ isRunning, quality = 'auto', shadow
         gameState.extraCatCount.current = nextExtraCatCount
         gameState.loadLevel.current = nextExtraCatCount
         gameState.stackSpeedBonus.current = EXTRA_CAT_SPEED_BONUS * nextExtraCatCount
-        gameState.phaseAnnouncement.current = 'EXTRA CAT'
+        gameState.phaseAnnouncement.current = ''
         emitHudScoreChange()
       }
     }
     gameState.timeOfDay.current = nextTimeOfDay
-    previousTimeOfDayRef.current = nextTimeOfDay
 
     const nightFactor = getNightFactor(nextTimeOfDay)
     const sunriseFactor = getSunriseFactor(nextTimeOfDay)
