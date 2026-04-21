@@ -220,6 +220,15 @@ export function TvScreen({
   // Channel-flip transition: 0 = idle, >0 = animating (counts down from FLIP_DURATION)
   const channelFlipRef = useRef(0)
   const FLIP_DURATION = 0.35
+  // Press-feedback + hold-to-repeat for initials arrows. When a slotUp/slotDown
+  // arrow is held we dispatch letterUp/letterDown on an accelerating interval.
+  const pressedActionRef = useRef(null)
+  const pressProgressRef = useRef(0)
+  const pressHoldTimerRef = useRef(null)
+  const pressIntervalRef = useRef(null)
+  const pressPointerIdRef = useRef(null)
+  const HOLD_DELAY_MS = 320
+  const HOLD_STEP_MS = 90
 
   useFrame((state, delta) => {
     const modeChanged = prevScreenModeRef.current !== screenMode
@@ -262,11 +271,18 @@ export function TvScreen({
     if (screenMode === 'initials') {
       initialsElapsedRef.current += delta
     }
+
+    // Press-feedback decay — quick attack (when pressed), smooth release.
+    if (pressedActionRef.current) {
+      pressProgressRef.current = Math.min(1, pressProgressRef.current + delta * 10)
+    } else if (pressProgressRef.current > 0) {
+      pressProgressRef.current = Math.max(0, pressProgressRef.current - delta * 6)
+    }
     if (!gpu) return
 
     // Build a lightweight fingerprint of inputs that affect canvas output
     const isAnimatingMode = screenMode === 'summary' || screenMode === 'boot' || screenMode === 'leaderboard' || screenMode === 'initials'
-    const drawInputs = `${screenMode}|${hoveredAction}|${disabled}|${bootReady}|${Math.round(bootProgress)}|${highScore}`
+    const drawInputs = `${screenMode}|${hoveredAction}|${disabled}|${bootReady}|${Math.round(bootProgress)}|${highScore}|${pressedActionRef.current || ''}|${pressProgressRef.current.toFixed(2)}`
 
     // Animated modes need continuous redraws; static modes only redraw on input change
     const needsRedraw = isAnimatingMode
@@ -297,6 +313,8 @@ export function TvScreen({
         leaderboardElapsed: leaderboardElapsedRef.current,
         initials: initialsEntry?.initials ?? null,
         cursorPos: initialsEntry?.cursorPos ?? 0,
+        initialsPressedAction: pressedActionRef.current,
+        initialsPressProgress: pressProgressRef.current,
         initialsScore: initialsEntry?.score ?? 0,
         initialsRank: initialsEntry?.rank ?? 'F',
         initialsElapsed: initialsElapsedRef.current,
@@ -346,6 +364,37 @@ export function TvScreen({
     uniforms.uAberration.value = c.aberration + flipAberration + glitchAberration
   })
 
+  const vibrate = (ms) => {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try { navigator.vibrate(ms) } catch { /* ignore */ }
+    }
+  }
+
+  const dispatchSlotStep = (action) => {
+    if (!action) return
+    const slotIndex = parseInt(action.split('_')[1], 10)
+    onAction?.('slotSelect', slotIndex)
+    onAction?.(action.startsWith('slotUp_') ? 'letterUp' : 'letterDown')
+    vibrate(8)
+  }
+
+  const clearPressTimers = () => {
+    if (pressHoldTimerRef.current) {
+      window.clearTimeout(pressHoldTimerRef.current)
+      pressHoldTimerRef.current = null
+    }
+    if (pressIntervalRef.current) {
+      window.clearInterval(pressIntervalRef.current)
+      pressIntervalRef.current = null
+    }
+  }
+
+  const endPress = () => {
+    clearPressTimers()
+    pressedActionRef.current = null
+    pressPointerIdRef.current = null
+  }
+
   const handlePointerDown = (event) => {
     event.stopPropagation()
     const action = resolveActionFromEvent(event)
@@ -357,13 +406,24 @@ export function TvScreen({
     // Route new actions through onAction
     if (action === 'highscores' || action === 'back' || action === 'confirmInitials' || action === 'tutorial') {
       onAction?.(action)
+      vibrate(6)
       return
     }
-    // Handle slot clicks for initials (slotUp_0, slotDown_1, etc.)
+    // Handle slot clicks for initials (slotUp_0, slotDown_1, etc.) — immediate
+    // step on press, then hold-to-repeat after a short delay.
     if (action.startsWith('slotUp_') || action.startsWith('slotDown_')) {
-      const slotIndex = parseInt(action.split('_')[1], 10)
-      onAction?.('slotSelect', slotIndex)
-      onAction?.(action.startsWith('slotUp_') ? 'letterUp' : 'letterDown')
+      clearPressTimers()
+      pressedActionRef.current = action
+      pressPointerIdRef.current = event.pointerId ?? null
+      try { event.target?.setPointerCapture?.(event.pointerId) } catch { /* ignore */ }
+      dispatchSlotStep(action)
+      pressHoldTimerRef.current = window.setTimeout(() => {
+        pressIntervalRef.current = window.setInterval(() => {
+          const held = pressedActionRef.current
+          if (!held) return
+          dispatchSlotStep(held)
+        }, HOLD_STEP_MS)
+      }, HOLD_DELAY_MS)
       return
     }
     // Leaderboard tab pill clicks (tab_daily / tab_weekly / tab_alltime)
@@ -373,6 +433,43 @@ export function TvScreen({
     }
     onStart?.()
   }
+
+  const handlePointerUp = (event) => {
+    if (!pressedActionRef.current) return
+    if (
+      pressPointerIdRef.current != null
+      && event.pointerId != null
+      && event.pointerId !== pressPointerIdRef.current
+    ) return
+    try { event.target?.releasePointerCapture?.(event.pointerId) } catch { /* ignore */ }
+    endPress()
+  }
+
+  const handlePointerMove = (event) => {
+    setHoveredAction(resolveActionFromEvent(event))
+    // If the finger slides off the active arrow zone, cancel repeat so we
+    // don't keep ticking letters the user no longer intends.
+    if (!pressedActionRef.current) return
+    const current = resolveActionFromEvent(event)
+    if (current !== pressedActionRef.current) {
+      endPress()
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      clearPressTimers()
+      pressedActionRef.current = null
+      pressPointerIdRef.current = null
+    }
+  }, [])
+  useEffect(() => {
+    if (screenMode !== 'initials') {
+      clearPressTimers()
+      pressedActionRef.current = null
+      pressPointerIdRef.current = null
+    }
+  }, [screenMode])
 
   if (!gpu) return null
 
@@ -402,11 +499,14 @@ export function TvScreen({
           onPointerEnter={(event) => {
             setHoveredAction(resolveActionFromEvent(event))
           }}
-          onPointerMove={(event) => {
-            setHoveredAction(resolveActionFromEvent(event))
+          onPointerMove={handlePointerMove}
+          onPointerLeave={() => {
+            setHoveredAction(null)
+            endPress()
           }}
-          onPointerLeave={() => setHoveredAction(null)}
           onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
           <primitive object={gpu.material} attach="material" />
         </mesh>

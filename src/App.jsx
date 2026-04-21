@@ -12,7 +12,6 @@ import SceneCapture from './components/SceneCapture'
 import CinematicLetterbox from './components/CinematicLetterbox'
 import RotationPrompt from './components/RotationPrompt'
 import TutorialOverlay from './components/TutorialOverlay'
-import MobileInitialsEntry from './components/MobileInitialsEntry'
 import { hasCompletedTutorial, markTutorialCompleted } from './lib/tutorialStorage'
 import useOrientation from './hooks/useOrientation'
 import {
@@ -1439,20 +1438,6 @@ export default function App() {
         onSkip={handleTutorialSkip}
         onComplete={handleTutorialComplete}
       />
-      {isTouchDevice && introScreenMode === 'initials' && initialsEntry && (
-        <MobileInitialsEntry
-          initials={initialsEntry.initials}
-          cursorPos={initialsEntry.cursorPos}
-          onChange={(next, nextCursor) => {
-            setInitialsEntry(prev => prev ? {
-              ...prev,
-              initials: next,
-              cursorPos: nextCursor,
-            } : prev)
-          }}
-          onSubmit={() => handleTvAction('confirmInitials')}
-        />
-      )}
       {isCountdownActive && (
         <>
           <div

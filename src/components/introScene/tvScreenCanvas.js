@@ -458,11 +458,19 @@ export function getTvScreenActionAtPoint(
     if (isPointInBounds(x, y, actionBounds)) {
       return "confirmInitials";
     }
-    // Check letter slot clicks
+    // Check letter slot clicks — hit zones are extended above/below the slot
+    // to swallow the arrow triangles and give fat-finger-friendly targets.
     const slots = getInitialsSlotBounds(width, height);
+    const HIT_PAD = 36;
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
-      if (isPointInBounds(x, y, slot)) {
+      const hit = {
+        x: slot.x - 4,
+        y: slot.y - HIT_PAD,
+        width: slot.width + 8,
+        height: slot.height + HIT_PAD * 2,
+      };
+      if (isPointInBounds(x, y, hit)) {
         const midY = slot.y + slot.height / 2;
         if (y < midY) return `slotUp_${i}`;
         return `slotDown_${i}`;
@@ -1167,7 +1175,7 @@ function drawLeaderboardScreen(
   }
 }
 
-function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cursorPos = 0, elapsed = 0, score = 0, rank = "F" }) {
+function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cursorPos = 0, elapsed = 0, score = 0, rank = "F", pressedAction = null, pressProgress = 0 }) {
   // Title
   const titleP = easeOutBack(animProgress(elapsed, 0.1, 0.5));
   if (titleP > 0) {
@@ -1248,6 +1256,10 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
     for (let i = 0; i < 3; i++) {
       const sx = startX + i * (slotWidth + gap);
       const isActive = i === cursorPos;
+      const upPressed = pressedAction === `slotUp_${i}`;
+      const downPressed = pressedAction === `slotDown_${i}`;
+      const slotPressed = upPressed || downPressed;
+      const pressGlow = slotPressed ? pressProgress : 0;
 
       // Slot background
       ctx.beginPath();
@@ -1255,37 +1267,67 @@ function drawInitialsScreen(ctx, width, height, { initials = ["A", "A", "A"], cu
       ctx.fillStyle = "rgba(18, 10, 34, 0.85)";
       ctx.strokeStyle = isActive
         ? `rgba(124, 247, 255, ${0.6 + pulse * 0.4})`
-        : "rgba(255, 240, 210, 0.3)";
-      ctx.lineWidth = isActive ? 4 : 2.5;
+        : `rgba(255, 240, 210, ${0.32 + pressGlow * 0.35})`;
+      ctx.lineWidth = isActive ? 4 : 2.5 + pressGlow * 1.5;
       ctx.fill();
       ctx.stroke();
 
-      // Letter
+      // Letter (slight squash on press for tactile feel)
+      ctx.save();
+      const letterCx = sx + slotWidth / 2;
+      const letterCy = slotY + slotHeight / 2 + 4;
+      if (slotPressed) {
+        const squash = 1 - pressGlow * 0.08;
+        ctx.translate(letterCx, letterCy);
+        ctx.scale(1, squash);
+        ctx.translate(-letterCx, -letterCy);
+      }
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = isActive ? "#ffffff" : "rgba(255, 255, 255, 0.82)";
       ctx.font = '72px "Knewave", cursive';
-      ctx.fillText(initials[i] || "A", sx + slotWidth / 2, slotY + slotHeight / 2 + 4);
+      ctx.fillText(initials[i] || "A", letterCx, letterCy);
+      ctx.restore();
 
-      // Up/down arrows for active slot
-      if (isActive) {
-        const arrowX = sx + slotWidth / 2;
-        ctx.fillStyle = `rgba(124, 247, 255, ${0.6 + pulse * 0.3})`;
-        // Up arrow
-        ctx.beginPath();
-        ctx.moveTo(arrowX, slotY - 18);
-        ctx.lineTo(arrowX - 14, slotY - 4);
-        ctx.lineTo(arrowX + 14, slotY - 4);
-        ctx.closePath();
-        ctx.fill();
-        // Down arrow
-        ctx.beginPath();
-        ctx.moveTo(arrowX, slotY + slotHeight + 18);
-        ctx.lineTo(arrowX - 14, slotY + slotHeight + 4);
-        ctx.lineTo(arrowX + 14, slotY + slotHeight + 4);
-        ctx.closePath();
-        ctx.fill();
+      // Up/down arrows on every slot — active slot pulses, others stay dim.
+      const arrowX = sx + slotWidth / 2;
+      const baseArrowAlpha = isActive ? 0.6 + pulse * 0.3 : 0.38;
+      const upAlpha = upPressed ? 1 : baseArrowAlpha;
+      const downAlpha = downPressed ? 1 : baseArrowAlpha;
+      const upSize = upPressed ? 16 + pressGlow * 4 : 14;
+      const downSize = downPressed ? 16 + pressGlow * 4 : 14;
+      const upLift = upPressed ? -pressGlow * 3 : 0;
+      const downLift = downPressed ? pressGlow * 3 : 0;
+
+      // Up arrow
+      ctx.save();
+      ctx.fillStyle = `rgba(124, 247, 255, ${upAlpha})`;
+      if (upPressed) {
+        ctx.shadowColor = "rgba(124, 247, 255, 0.9)";
+        ctx.shadowBlur = 14 * pressGlow;
       }
+      ctx.beginPath();
+      ctx.moveTo(arrowX, slotY - 18 + upLift);
+      ctx.lineTo(arrowX - upSize, slotY - 4 + upLift);
+      ctx.lineTo(arrowX + upSize, slotY - 4 + upLift);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // Down arrow
+      ctx.save();
+      ctx.fillStyle = `rgba(124, 247, 255, ${downAlpha})`;
+      if (downPressed) {
+        ctx.shadowColor = "rgba(124, 247, 255, 0.9)";
+        ctx.shadowBlur = 14 * pressGlow;
+      }
+      ctx.beginPath();
+      ctx.moveTo(arrowX, slotY + slotHeight + 18 + downLift);
+      ctx.lineTo(arrowX - downSize, slotY + slotHeight + 4 + downLift);
+      ctx.lineTo(arrowX + downSize, slotY + slotHeight + 4 + downLift);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
 
     ctx.restore();
@@ -1360,6 +1402,8 @@ export function drawTvScreen(
     initialsScore = 0,
     initialsRank = "F",
     initialsElapsed = 0,
+    initialsPressedAction = null,
+    initialsPressProgress = 0,
   } = {},
 ) {
   const { width: rawWidth, height: rawHeight } = canvas;
@@ -1406,6 +1450,8 @@ export function drawTvScreen(
       elapsed: initialsElapsed,
       score: initialsScore,
       rank: initialsRank,
+      pressedAction: initialsPressedAction,
+      pressProgress: initialsPressProgress,
     });
   } else {
     drawTitleScreen(ctx, width, height, { highScore, highScoresHovered, tutorialHovered });
