@@ -31,6 +31,7 @@
 - **GameOverScreen.jsx** — End game modal with animated score counter. Restart via keyboard or tap/click.
 - **RotationPrompt.jsx** — Full-screen overlay (z-index 1500) shown on touch devices in portrait. Pairs with `useOrientation` hook; when visible, `gameState.paused` is set and gameplay freezes.
 - **TutorialOverlay.jsx** — First-time-player interactive tutorial (z-index 1300). Three steps (jump / grind / spin) that detect real keyboard or touch inputs matching the real game controls. Gated by `src/lib/tutorialStorage.js` localStorage flag; rendered only when `phase === PHASE_TUTORIAL`. Always-visible Skip button. On complete or skip, `App.jsx` marks localStorage and returns to `PHASE_INTRO`.
+- **MobileInitialsEntry.jsx** — Touch-only high-score initials entry. Renders a single 1x1 invisible `<input>` whose only job is to summon the iOS keyboard; typing is intercepted in `onBeforeInput` (fires on iOS even when the input's own value doesn't change) and routed straight into `initialsEntry.initials` in `App.jsx`, which feeds the CRT canvas slots rendered by `tvScreenCanvas.js`. There is no visible DOM overlay — the player sees letters appear in the TV itself. The TV's built-in SUBMIT button (canvas-rendered, handled by `TvScreen.jsx` pointer hits) fires `confirmInitials`. `fontSize: 16px` on the hidden input prevents iOS's focus-zoom.
 - **TimingDebugHud.jsx** — Dev: live timing offset visualization.
 - **ObstacleSpacingDebugHud.jsx** — Dev: obstacle spacing conflict debug.
 
