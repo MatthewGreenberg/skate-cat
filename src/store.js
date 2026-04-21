@@ -231,10 +231,12 @@ gameState.lastRunSummary.current = null;
 
 export function emitHudScoreChange() {
   if (!gameState.onHudScoreChange) return;
+  const multiplier = getScoreMultiplier(gameState.streak.current || 0);
+  gameState.scoreMultiplier.current = multiplier;
   gameState.onHudScoreChange({
     score: gameState.score,
     streak: gameState.streak.current,
-    multiplier: gameState.scoreMultiplier.current,
+    multiplier,
     remainingLives: gameState.remainingLives.current,
     maxLives: MAX_RUN_LIVES,
     tutorialPrompt: gameState.tutorialPrompt.current,
@@ -300,10 +302,14 @@ export function removeObstacleTarget(id) {
 }
 
 export function getScoreMultiplier(streak) {
-  if (streak >= 20) return 4;
-  if (streak >= 10) return 3;
-  if (streak >= 5) return 2;
-  return 1;
+  const extraCatCount = Number.isFinite(gameState.extraCatCount.current)
+    ? gameState.extraCatCount.current
+    : 0;
+  const baseMultiplier = 1 + Math.min(Math.max(Math.floor(extraCatCount), 0), MAX_EXTRA_CAT_COUNT);
+  if (streak >= 20) return baseMultiplier + 3;
+  if (streak >= 10) return baseMultiplier + 2;
+  if (streak >= 5) return baseMultiplier + 1;
+  return baseMultiplier;
 }
 
 export function resetExtraCatLoadState() {

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { createIdleGrindSparkState, createIdleGrindState, emitHudScoreChange, gameState, getGameDelta, getTargetRunSpeed, SPEED_RESPONSE } from '../store'
+import { createIdleGrindSparkState, createIdleGrindState, emitHudScoreChange, gameState, getGameDelta, getScoreMultiplier, getTargetRunSpeed, SPEED_RESPONSE } from '../store'
 import {
   getNearestScheduledTarget,
   getPerceivedMusicTime,
@@ -270,13 +270,16 @@ export default function useCatAnimation({
   }, [markPendingSpinTrick, triggerCatSpin])
 
   const triggerGroundSpin = useCallback(() => {
-    gameState.score += GROUND_SPIN_POINTS
+    const multiplier = getScoreMultiplier(gameState.streak.current || 0)
+    const points = GROUND_SPIN_POINTS * multiplier
+    gameState.scoreMultiplier.current = multiplier
+    gameState.score += points
     gameState.groundSpinCount.current = (gameState.groundSpinCount.current || 0) + 1
     gameState.lastScoringEvent.current = {
       id: performance.now(),
-      points: GROUND_SPIN_POINTS,
+      points,
       grade: 'Trick',
-      multiplier: gameState.scoreMultiplier.current,
+      multiplier,
       isRail: false,
       trickName: '360',
       label: '360',

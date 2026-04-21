@@ -256,7 +256,7 @@ export default function CameraRig({
     leaderboardMobileLookZ,
   } = useOptionalControls('Intro', {
     'Mobile Landscape': folder({
-      introMobileBack: { value: -2.2, min: -3, max: 3, step: 0.05 },
+      introMobileBack: { value: -2.8, min: -3, max: 3, step: 0.05 },
       introMobileFov: { value: -4, min: -20, max: 20, step: 0.5 },
       introMobileLookX: { value: 0, min: -2, max: 2, step: 0.02 },
       introMobileLookY: { value: 0.7, min: -2, max: 2, step: 0.02 },

@@ -18,7 +18,7 @@ const hudRowStyle = (isTouchDevice) => ({
 const dayCycleIndicatorWrapperStyle = (isTouchDevice) => ({
   position: 'fixed',
   top: isTouchDevice ? '0.6rem' : '1rem',
-  left: isTouchDevice ? 'calc(50% + 9.2rem)' : 'calc(50% + 12.6rem)',
+  left: isTouchDevice ? 'calc(50% + 11.6rem)' : 'calc(50% + 15.2rem)',
   zIndex: 60,
   pointerEvents: 'none',
   animation: 'gameHudSegmentIntro 420ms cubic-bezier(0.22, 1, 0.36, 1) 330ms both',

@@ -335,9 +335,10 @@ export default function PostEffects({
     if (dof) {
       dof.enabled = shouldEnableDof
       if (shouldEnableDof) {
+        const dofMobileMul = renderProfile.isMobileDevice ? 0.45 : 1
         dof.cocMaterial.focusDistance = dofCtrl.dofFocusDistance
         dof.cocMaterial.focusRange = dofCtrl.dofFocusRange
-        dof.bokehScale = dofCtrl.dofBokehScale
+        dof.bokehScale = dofCtrl.dofBokehScale * dofMobileMul
       }
     }
     if (sharpOverlay) {
@@ -363,10 +364,11 @@ export default function PostEffects({
         const mat = godRays.godRaysMaterial
         if (mat) {
           const dimMul = THREE.MathUtils.lerp(1, 0.5, godRaysDimRef.current)
+          const mobileMul = renderProfile.isMobileDevice ? 0.4 : 1
           mat.density = godRaysCtrl.godRaysDensity
           mat.decay = godRaysCtrl.godRaysDecay
-          mat.weight = godRaysCtrl.godRaysWeight * dimMul
-          mat.exposure = godRaysCtrl.godRaysExposure * dimMul
+          mat.weight = godRaysCtrl.godRaysWeight * dimMul * mobileMul
+          mat.exposure = godRaysCtrl.godRaysExposure * dimMul * mobileMul
           mat.samples = godRaysCtrl.godRaysSamples
           const clampUniform = mat.uniforms?.clampMax
           if (clampUniform) clampUniform.value = godRaysCtrl.godRaysClampMax

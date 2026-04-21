@@ -7,6 +7,14 @@ import App from './App.jsx'
 const isDebugMode = import.meta.env.DEV && new URLSearchParams(window.location.search).has('debug')
 const root = createRoot(document.getElementById('root'))
 
+if (typeof window !== 'undefined') {
+  const preventGesture = (event) => event.preventDefault()
+  window.addEventListener('gesturestart', preventGesture, { passive: false })
+  window.addEventListener('gesturechange', preventGesture, { passive: false })
+  window.addEventListener('gestureend', preventGesture, { passive: false })
+  document.addEventListener('dblclick', preventGesture, { passive: false })
+}
+
 async function waitForBootFonts() {
   if (typeof document === 'undefined' || !document.fonts?.load) return
 
