@@ -14,6 +14,10 @@ export const GOOD_EARLY_WINDOW_SECONDS = 0.21;
 export const GOOD_LATE_WINDOW_SECONDS = 0.06;
 export const MAX_TARGET_LOCK_WINDOW_SECONDS = BEAT_INTERVAL * 0.8;
 
+export const RAIL_MILESTONE_POINTS = 2;
+export const RAIL_MILESTONE_THRESHOLDS = [0.33, 0.66, 1.0];
+export const RAIL_MILESTONE_LABELS = ["RIDING!", "LOCKED IN!", "STYLIN'!"];
+
 export function getObstacleHitTime(
   beatIndex,
   obstacleHitDelaySeconds = gameState.obstacleHitDelaySeconds.current ??

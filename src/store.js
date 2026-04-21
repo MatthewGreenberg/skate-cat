@@ -25,7 +25,15 @@ export const isSafari = (() => {
 export const SPEED_RESPONSE = 4;
 
 export function createIdleGrindState() {
-  return { active: false, obstacleId: 0, x: 0, z: 0 };
+  return {
+    active: false,
+    obstacleId: 0,
+    x: 0,
+    z: 0,
+    entryZ: null,
+    railLength: 0,
+    nextMilestone: 0,
+  };
 }
 
 export function createIdleGrindSparkState() {

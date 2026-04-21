@@ -6,10 +6,21 @@ const GRIND_HOLD_MS = 500
 
 const STEPS = [
   {
+    id: 'concept',
+    badge: 'Rhythm Skate',
+    title: 'JUMP TO THE BEAT',
+    body: 'Every log, rail, and spin lands on the music. Nail the timing — the tighter you ride the beat, the more you score.',
+    bodyTouch: 'Every move lands on the beat. Tap in time to score big.',
+    waitingTouch: 'Tap either button to continue',
+    infoOnly: true,
+    image: 'jump.png',
+    imageTouch: 'jump-mobile.png',
+  },
+  {
     id: 'jump',
     badge: 'Move 1 of 3',
-    title: 'JUMP THE LOG',
-    body: 'Logs roll in on the beat. Tap to hop over them — nail the timing for bigger points.',
+    title: 'JUMP ON THE BEAT',
+    body: 'A log rolls in on every beat. Hop it in time — perfect timing = perfect score.',
     bodyTouch: 'Tap JUMP to hop the log on beat.',
     keyHintDesktop: '\u2191  UP ARROW',
     keyHintTouch: 'Tap JUMP',
@@ -21,8 +32,8 @@ const STEPS = [
   {
     id: 'grind',
     badge: 'Move 2 of 3',
-    title: 'GRIND THE RAIL',
-    body: 'Hold \u2191 to lock onto rails. Stay on while the beat runs, then release to land a trick.',
+    title: 'RIDE THE BEAT',
+    body: 'Hold \u2191 to lock onto rails. Ride the beat, then release to land the trick.',
     bodyTouch: 'Hold JUMP to lock onto the rail.',
     keyHintDesktop: 'HOLD  \u2191  FOR A BEAT',
     keyHintTouch: 'Hold JUMP',
@@ -34,9 +45,9 @@ const STEPS = [
   {
     id: 'spin',
     badge: 'Move 3 of 3',
-    title: 'SPIN A 360',
-    body: 'Hit the left arrow to do a 360.',
-    bodyTouch: 'Tap SPIN to throw a 360.',
+    title: 'SPIN TO THE BEAT',
+    body: 'Tap left to throw a 360 — land it on beat for bonus points.',
+    bodyTouch: 'Tap SPIN to throw a 360 on beat.',
     keyHintDesktop: 'PRESS \u2190',
     keyHintTouch: 'Tap SPIN',
     waiting: 'Press \u2190 once here to continue',
@@ -47,9 +58,9 @@ const STEPS = [
   {
     id: 'bonus',
     badge: 'Bonus stack',
-    title: 'Second cat joins the stack',
+    title: 'STACK UP, SPEED UP',
     body:
-      'Mid-run, new cats drop onto your stack. The taller tower makes jumps trickier, but each one raises your speed bonus — keep unlocking cats to push your score higher.',
+      'New cats drop onto your stack mid-run. Taller tower = trickier jumps, but each cat raises your speed bonus — keep stacking to push your score higher.',
     bodyTouch: 'More cats stack onto your run. Bigger bonus, trickier landings.',
     waitingTouch: 'Tap either button to start your run',
     infoOnly: true,
@@ -109,7 +120,12 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
   const handleTouchControlPress = useCallback((side) => {
     if (stepCompleted) return
     if (step.infoOnly) {
-      finishTutorial({ fromGesture: true })
+      const isLastStep = stepIndex >= STEPS.length - 1
+      if (isLastStep) {
+        finishTutorial({ fromGesture: true })
+      } else {
+        markStepDone()
+      }
       return
     }
     if (step.id === 'jump' && side === 'right') {
@@ -123,7 +139,7 @@ function TutorialContent({ isTouchDevice, onSkip, onComplete }) {
     if (step.id === 'grind' && side === 'right') {
       startGrindHold()
     }
-  }, [finishTutorial, markStepDone, startGrindHold, step, stepCompleted])
+  }, [finishTutorial, markStepDone, startGrindHold, step, stepCompleted, stepIndex])
 
   const handleTouchControlRelease = useCallback((side) => {
     if (step.id === 'grind' && side === 'right') stopGrindHold()

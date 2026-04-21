@@ -21,7 +21,14 @@ import {
   resetObstacleTargets,
   upsertObstacleTarget,
 } from '../store'
-import { BEAT_INTERVAL, getObstacleHitTime, getPerceivedMusicTime } from '../rhythm'
+import {
+  BEAT_INTERVAL,
+  getObstacleHitTime,
+  getPerceivedMusicTime,
+  RAIL_MILESTONE_LABELS,
+  RAIL_MILESTONE_POINTS,
+  RAIL_MILESTONE_THRESHOLDS,
+} from '../rhythm'
 import { createLogToonMaterial, createContactShadowTexture } from '../lib/toonMaterials'
 import { useOptionalControls } from '../lib/debugControls'
 import {
@@ -477,6 +484,9 @@ export default function Obstacles({
       obstacleId: obstacle.id,
       x: obstacle.x || 0,
       z: obstacle.z,
+      entryZ: obstacle.z,
+      railLength: getGrindHalfLength(obstacle) * 2,
+      nextMilestone: 0,
     }
   }
 
@@ -1153,11 +1163,48 @@ export default function Obstacles({
       if (!grindObstacle || grindObstacle.z > getGrindExitZ(grindObstacle)) {
         stopGrinding()
       } else {
+        const prevGrind = gameState.activeGrind.current
+        const entryZ = prevGrind.entryZ ?? grindObstacle.z
+        const railLength = prevGrind.railLength || getGrindHalfLength(grindObstacle) * 2
+        let nextMilestone = prevGrind.nextMilestone ?? 0
+
+        const progress = railLength > 0
+          ? (grindObstacle.z - entryZ) / railLength
+          : 0
+        while (
+          nextMilestone < RAIL_MILESTONE_THRESHOLDS.length &&
+          progress >= RAIL_MILESTONE_THRESHOLDS[nextMilestone]
+        ) {
+          const multiplier = getScoreMultiplier(gameState.streak.current)
+          const points = RAIL_MILESTONE_POINTS * multiplier
+          gameState.progressScore += points
+          gameState.score += points
+          gameState.lastScoringEvent.current = {
+            id: performance.now(),
+            points,
+            grade: 'Rail',
+            multiplier,
+            isRail: true,
+            trickName: '',
+            label: RAIL_MILESTONE_LABELS[nextMilestone],
+          }
+          const spark = gameState.grindSpark.current
+          if (spark) {
+            spark.impactId = performance.now()
+            spark.intensity = (spark.intensity || 1) * (1 + nextMilestone * 0.3)
+          }
+          emitHudScoreChange()
+          nextMilestone += 1
+        }
+
         gameState.activeGrind.current = {
           active: true,
           obstacleId: grindObstacle.id,
           x: grindObstacle.x || 0,
           z: grindObstacle.z,
+          entryZ,
+          railLength,
+          nextMilestone,
         }
       }
     }
